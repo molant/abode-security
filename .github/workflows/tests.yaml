@@ -1,0 +1,39 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_dev.txt
+
+      - name: Lint with ruff
+        run: |
+          python -m ruff check custom_components/abode_security tests
+          python -m ruff format --check custom_components/abode_security tests
+
+      - name: Type check with mypy
+        run: |
+          python -m mypy custom_components/abode_security --ignore-missing-imports
+
+      - name: Run tests with pytest
+        run: |
+          python -m pytest tests/ -v --tb=short

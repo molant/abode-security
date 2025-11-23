@@ -1,0 +1,58 @@
+capture_image:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: abode
+          domain: camera
+
+change_setting:
+  fields:
+    setting:
+      required: true
+      example: beeper_mute
+      selector:
+        text:
+    value:
+      required: true
+      example: "1"
+      selector:
+        text:
+
+trigger_automation:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: abode
+          domain: switch
+
+trigger_alarm:
+  fields:
+    alarm_type:
+      required: true
+      example: PANIC
+      selector:
+        text:
+
+acknowledge_alarm:
+  fields:
+    timeline_id:
+      required: true
+      example: "12345"
+      selector:
+        text:
+
+dismiss_alarm:
+  fields:
+    timeline_id:
+      required: true
+      example: "12345"
+      selector:
+        text:
+
+enable_test_mode: {}
+
+disable_test_mode: {}

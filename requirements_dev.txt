@@ -1,0 +1,8 @@
+jaraco.abode==6.2.1
+homeassistant
+pytest
+pytest-cov
+pytest-asyncio
+ruff
+mypy
+types-requests
