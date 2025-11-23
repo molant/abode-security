@@ -11,9 +11,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import AbodeSystem
+from .models import AbodeSystem
 from .const import DOMAIN
 from .entity import AbodeDevice
+
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
@@ -22,7 +24,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Abode cover devices."""
-    data: AbodeSystem = hass.data[DOMAIN]
+    data: AbodeSystem = entry.runtime_data
 
     async_add_entities(
         AbodeCover(data, device)

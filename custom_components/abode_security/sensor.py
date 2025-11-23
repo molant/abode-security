@@ -20,9 +20,11 @@ from homeassistant.const import LIGHT_LUX, PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import AbodeSystem
+from .models import AbodeSystem
 from .const import DOMAIN
 from .entity import AbodeDevice
+
+PARALLEL_UPDATES = 1
 
 ABODE_TEMPERATURE_UNIT_HA_UNIT = {
     "°F": UnitOfTemperature.FAHRENHEIT,
@@ -68,7 +70,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Abode sensor devices."""
-    data: AbodeSystem = hass.data[DOMAIN]
+    data: AbodeSystem = entry.runtime_data
 
     async_add_entities(
         AbodeSensor(data, device, description)

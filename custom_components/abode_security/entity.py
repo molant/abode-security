@@ -1,5 +1,7 @@
 """Support for Abode Security System entities."""
 
+from __future__ import annotations
+
 from . import _vendor  # noqa: F401
 
 from jaraco.abode.automation import Automation as AbodeAuto
@@ -8,7 +10,7 @@ from jaraco.abode.devices.base import Device as AbodeDev
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
-from . import AbodeSystem
+from .models import AbodeSystem
 from .const import ATTRIBUTION, DOMAIN
 
 
@@ -22,6 +24,7 @@ class AbodeEntity(Entity):
         """Initialize Abode entity."""
         self._data = data
         self._attr_should_poll = data.polling
+        self._abode_system = data
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to Abode connection status updates."""
@@ -31,7 +34,7 @@ class AbodeEntity(Entity):
             self._update_connection_status,
         )
 
-        self.hass.data[DOMAIN].entity_ids.add(self.entity_id)
+        self._abode_system.entity_ids.add(self.entity_id)
 
     async def async_will_remove_from_hass(self) -> None:
         """Unsubscribe from Abode connection status updates."""

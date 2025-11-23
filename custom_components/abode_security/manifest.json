@@ -3,6 +3,7 @@
   "name": "Abode Security",
   "codeowners": ["@yourusername"],
   "config_flow": true,
+  "diagnostics": true,
   "documentation": "https://github.com/yourusername/abode-security",
   "homekit": {
     "models": ["Abode", "Iota"]

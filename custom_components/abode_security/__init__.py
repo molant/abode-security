@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 
@@ -27,12 +26,13 @@ from homeassistant.const import (
     EVENT_HOMEASSISTANT_STOP,
     Platform,
 )
-from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 from .const import CONF_POLLING, DOMAIN, LOGGER
+from .models import AbodeSystem
 from .services import async_setup_services
 
 ATTR_DEVICE_NAME = "device_name"
@@ -57,16 +57,6 @@ PLATFORMS = [
     Platform.SENSOR,
     Platform.SWITCH,
 ]
-
-
-@dataclass
-class AbodeSystem:
-    """Abode System class."""
-
-    abode: Abode
-    polling: bool
-    entity_ids: set[str | None] = field(default_factory=set)
-    logout_listener: CALLBACK_TYPE | None = None
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -101,12 +91,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except (AbodeException, ConnectTimeout, HTTPError) as ex:
         raise ConfigEntryNotReady(f"Unable to connect to Abode: {ex}") from ex
 
-    hass.data[DOMAIN] = AbodeSystem(abode, polling)
+    entry.runtime_data = AbodeSystem(abode, polling)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    await setup_hass_events(hass)
-    await hass.async_add_executor_job(setup_abode_events, hass)
+    await setup_hass_events(hass, entry)
+    await hass.async_add_executor_job(setup_abode_events, hass, entry)
 
     return True
 
@@ -115,36 +105,38 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    await hass.async_add_executor_job(hass.data[DOMAIN].abode.events.stop)
-    await hass.async_add_executor_job(hass.data[DOMAIN].abode.logout)
+    abode_system: AbodeSystem = entry.runtime_data
+    await hass.async_add_executor_job(abode_system.abode.events.stop)
+    await hass.async_add_executor_job(abode_system.abode.logout)
 
-    hass.data[DOMAIN].logout_listener()
-    hass.data.pop(DOMAIN)
+    abode_system.logout_listener()
 
     return unload_ok
 
 
-async def setup_hass_events(hass: HomeAssistant) -> None:
+async def setup_hass_events(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Home Assistant start and stop callbacks."""
+    abode_system: AbodeSystem = entry.runtime_data
 
     def logout(event: Event) -> None:
         """Logout of Abode."""
-        if not hass.data[DOMAIN].polling:
-            hass.data[DOMAIN].abode.events.stop()
+        if not abode_system.polling:
+            abode_system.abode.events.stop()
 
-        hass.data[DOMAIN].abode.logout()
+        abode_system.abode.logout()
         LOGGER.info("Logged out of Abode")
 
-    if not hass.data[DOMAIN].polling:
-        await hass.async_add_executor_job(hass.data[DOMAIN].abode.events.start)
+    if not abode_system.polling:
+        await hass.async_add_executor_job(abode_system.abode.events.start)
 
-    hass.data[DOMAIN].logout_listener = hass.bus.async_listen_once(
+    abode_system.logout_listener = hass.bus.async_listen_once(
         EVENT_HOMEASSISTANT_STOP, logout
     )
 
 
-def setup_abode_events(hass: HomeAssistant) -> None:
+def setup_abode_events(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Event callbacks."""
+    abode_system: AbodeSystem = entry.runtime_data
 
     def event_callback(event: str, event_json: dict[str, str]) -> None:
         """Handle an event callback from Abode."""
@@ -180,6 +172,6 @@ def setup_abode_events(hass: HomeAssistant) -> None:
     ]
 
     for event in events:
-        hass.data[DOMAIN].abode.events.add_event_callback(
+        abode_system.abode.events.add_event_callback(
             event, partial(event_callback, event)
         )

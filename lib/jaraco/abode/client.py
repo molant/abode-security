@@ -401,20 +401,16 @@ class Client:
         return timeline_events
 
     def get_test_mode(self):
-        """Get the current test mode status from the security panel."""
-        response = self.send_request("get", urls.SECURITY_PANEL)
+        """Get the current test mode status from CMS settings."""
+        response = self.send_request("get", urls.CMS_SETTINGS)
 
-        log.debug("Get Test Mode URL (get): %s", urls.SECURITY_PANEL)
+        log.debug("Get Test Mode URL (get): %s", urls.CMS_SETTINGS)
         log.debug("Get Test Mode Response: %s", response.text)
 
         response_object = response.json()
 
-        # Test mode status is in attributes.cms.testModeActive
-        test_mode_active = (
-            response_object.get('attributes', {})
-            .get('cms', {})
-            .get('testModeActive', False)
-        )
+        # Test mode status is in the response directly
+        test_mode_active = response_object.get('testModeActive', False)
 
         log.info('Test mode is currently: %s', 'enabled' if test_mode_active else 'disabled')
 

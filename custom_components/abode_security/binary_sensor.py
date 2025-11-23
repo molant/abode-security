@@ -17,9 +17,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util.enum import try_parse_enum
 
-from . import AbodeSystem
+from .models import AbodeSystem
 from .const import DOMAIN
 from .entity import AbodeDevice
+
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
@@ -28,7 +30,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Abode binary sensor devices."""
-    data: AbodeSystem = hass.data[DOMAIN]
+    data: AbodeSystem = entry.runtime_data
 
     device_types = [
         "connectivity",

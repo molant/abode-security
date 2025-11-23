@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any, cast
 
 from . import _vendor  # noqa: F401
@@ -18,8 +19,10 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN, LOGGER
-from . import AbodeSystem
+from .models import AbodeSystem
 from .entity import AbodeAutomation, AbodeDevice
+
+PARALLEL_UPDATES = 1
 
 try:
     from jaraco.abode.helpers.timeline import Groups as TimelineGroups
@@ -50,7 +53,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Abode switch devices."""
-    data: AbodeSystem = hass.data[DOMAIN]
+    data: AbodeSystem = entry.runtime_data
 
     entities: list[SwitchEntity] = [
         AbodeSwitch(data, device)
@@ -70,7 +73,7 @@ async def async_setup_entry(
         for alarm_type in MANUAL_ALARM_TYPES
     )
 
-    # Add test mode switch
+    # Add test mode switch (wrapper methods handle missing methods gracefully)
     entities.append(AbodeTestModeSwitch(data, alarm))
 
     async_add_entities(entities)
@@ -167,7 +170,7 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         self._data = data
         self._device = device
         self._alarm_type = alarm_type
-        self._attr_unique_id = f"{device.uuid}-manual-alarm-{alarm_type.lower()}"
+        self._attr_unique_id = f"{device.id}-manual-alarm-{alarm_type.lower()}"
         self._attr_name = self.ALARM_NAMES.get(alarm_type, alarm_type.replace('_', ' ').title())
         self._attr_icon = self.ALARM_ICONS.get(alarm_type)
         self._attr_available = True
@@ -321,7 +324,7 @@ class AbodeTestModeSwitch(SwitchEntity):
     _attr_has_entity_name = True
     _attr_name = "Test Mode"
     _attr_icon = "mdi:test-tube"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
         """Initialize the test mode switch."""
@@ -329,8 +332,9 @@ class AbodeTestModeSwitch(SwitchEntity):
         self._alarm = alarm
         self._is_on = False
         self._user_enabled = False  # Track if user explicitly enabled test mode
-        # Use alarm UUID for unique ID to link to the alarm device
-        self._attr_unique_id = f"{alarm.uuid}-test-mode"
+        self._last_state_change: datetime | None = None  # Track when state was last changed
+        # Use alarm device ID for unique ID to link to the alarm device
+        self._attr_unique_id = f"{alarm.id}-test-mode"
         self._attr_available = True
         # Always enable polling for test mode since it can be changed externally
         # and there's no event callback for test mode changes
@@ -355,7 +359,7 @@ class AbodeTestModeSwitch(SwitchEntity):
         """Refresh test mode status from Abode."""
         try:
             self._is_on = await self.hass.async_add_executor_job(
-                self._data.abode.get_test_mode
+                self._data.get_test_mode
             )
             self.async_write_ha_state()
         except AbodeException as ex:
@@ -363,9 +367,16 @@ class AbodeTestModeSwitch(SwitchEntity):
 
     def update(self) -> None:
         """Update test mode status."""
+        # Skip polling for 5 seconds after a state change to let API catch up
+        if self._last_state_change is not None:
+            time_since_change = datetime.now() - self._last_state_change
+            if time_since_change < timedelta(seconds=5):
+                LOGGER.debug("Skipping test mode poll (waiting for API to catch up)")
+                return
+
         try:
             previous_state = self._is_on
-            self._is_on = self._data.abode.get_test_mode()
+            self._is_on = self._data.get_test_mode()
 
             # If test mode was enabled by user but is now off externally (e.g., 30-min timeout),
             # stop polling to save resources
@@ -379,11 +390,12 @@ class AbodeTestModeSwitch(SwitchEntity):
     def turn_on(self, **kwargs: Any) -> None:
         """Enable test mode."""
         try:
-            self._data.abode.set_test_mode(True)
+            self._data.set_test_mode(True)
             LOGGER.info("Test mode enabled")
             self._user_enabled = True  # User explicitly enabled test mode
-            # Refresh state immediately after toggling
-            self._is_on = self._data.abode.get_test_mode()
+            # Trust the state we just set (API may need time to process)
+            self._is_on = True
+            self._last_state_change = datetime.now()
             self.schedule_update_ha_state()
         except AbodeException as ex:
             LOGGER.error("Failed to enable test mode: %s", ex)
@@ -391,11 +403,12 @@ class AbodeTestModeSwitch(SwitchEntity):
     def turn_off(self, **kwargs: Any) -> None:
         """Disable test mode."""
         try:
-            self._data.abode.set_test_mode(False)
+            self._data.set_test_mode(False)
             LOGGER.info("Test mode disabled")
             self._user_enabled = False  # User explicitly disabled test mode
-            # Refresh state immediately after toggling
-            self._is_on = self._data.abode.get_test_mode()
+            # Trust the state we just set (API may need time to process)
+            self._is_on = False
+            self._last_state_change = datetime.now()
             self.schedule_update_ha_state()
         except AbodeException as ex:
             LOGGER.error("Failed to disable test mode: %s", ex)

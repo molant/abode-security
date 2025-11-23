@@ -16,7 +16,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import AbodeSystem
+from .models import AbodeSystem
 from .const import DOMAIN, LOGGER
 from .entity import AbodeDevice
 
@@ -27,7 +27,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Abode alarm control panel device."""
-    data: AbodeSystem = hass.data[DOMAIN]
+    data: AbodeSystem = entry.runtime_data
     async_add_entities(
         [AbodeAlarm(data, await hass.async_add_executor_job(data.abode.get_alarm))]
     )
@@ -78,7 +78,7 @@ class AbodeAlarm(AbodeDevice, AlarmControlPanelEntity):
     def acknowledge_timeline_event(self, timeline_id: str) -> None:
         """Acknowledge a timeline alarm event."""
         try:
-            self.hass.data[DOMAIN].abode.acknowledge_timeline_event(timeline_id)
+            self._abode_system.abode.acknowledge_timeline_event(timeline_id)
             LOGGER.info("Acknowledged timeline event: %s", timeline_id)
         except AbodeException as ex:
             LOGGER.error("Failed to acknowledge timeline event: %s", ex)
@@ -86,7 +86,7 @@ class AbodeAlarm(AbodeDevice, AlarmControlPanelEntity):
     def dismiss_timeline_event(self, timeline_id: str) -> None:
         """Dismiss a timeline alarm event."""
         try:
-            self.hass.data[DOMAIN].abode.dismiss_timeline_event(timeline_id)
+            self._abode_system.abode.dismiss_timeline_event(timeline_id)
             LOGGER.info("Dismissed timeline event: %s", timeline_id)
         except AbodeException as ex:
             LOGGER.error("Failed to dismiss timeline event: %s", ex)
