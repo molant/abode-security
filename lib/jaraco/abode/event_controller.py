@@ -149,6 +149,25 @@ class EventController:
 
         return True
 
+    def remove_event_callback(self, event_groups, callback):
+        """Unregister callback for a group of timeline events."""
+        if not event_groups:
+            return False
+
+        for event_group in always_iterable(event_groups):
+            if event_group not in TIMELINE.Groups.ALL:
+                raise jaraco.abode.Exception(ERROR.EVENT_GROUP_INVALID)
+
+            log.debug("Unsubscribing from event group: %s", event_group)
+
+            try:
+                self._event_callbacks[event_group].remove(callback)
+            except ValueError:
+                # Callback not found in list, which is fine
+                pass
+
+        return True
+
     def add_timeline_callback(self, timeline_events, callback):
         """Register a callback for a specific timeline event."""
         if not timeline_events:

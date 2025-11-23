@@ -405,12 +405,19 @@ class Client:
         response = self.send_request("get", urls.CMS_SETTINGS)
 
         log.debug("Get Test Mode URL (get): %s", urls.CMS_SETTINGS)
-        log.debug("Get Test Mode Response: %s", response.text)
+        log.debug("Get Test Mode Response (raw): %s", response.text)
 
         response_object = response.json()
+        log.debug("Get Test Mode Response (parsed): %s", response_object)
 
         # Test mode status is in the response directly
         test_mode_active = response_object.get('testModeActive', False)
+
+        # Log available keys in response for debugging
+        log.debug("Response keys: %s", list(response_object.keys()) if isinstance(response_object, dict) else "not a dict")
+        log.debug("testModeActive field value: %s (from key: %s)",
+                  test_mode_active,
+                  'testModeActive' if 'testModeActive' in response_object else 'NOT FOUND (using default False)')
 
         log.info('Test mode is currently: %s', 'enabled' if test_mode_active else 'disabled')
 
@@ -432,19 +439,23 @@ class Client:
         if not isinstance(enabled, bool):
             raise jaraco.abode.Exception(ERROR.INVALID_TEST_MODE_VALUE)
 
+        log.debug('Set Test Mode Request - enabled=%s', enabled)
         response = self.send_request(
             'post', urls.CMS_SETTINGS, data={'testModeActive': enabled}
         )
 
         log.debug('Set Test Mode URL (post): %s', urls.CMS_SETTINGS)
-        log.debug('Set Test Mode Response: %s', response.text)
+        log.debug('Set Test Mode Response (raw): %s', response.text)
 
         response_object = response.json()
+        log.debug('Set Test Mode Response (parsed): %s', response_object)
 
         if 'testModeActive' not in response_object:
+            log.error('testModeActive field missing from response: %s', response_object)
             raise jaraco.abode.Exception(ERROR.SET_TEST_MODE_RESPONSE)
 
         if response_object.get('testModeActive') != enabled:
+            log.error('Set test mode failed - expected %s, got %s', enabled, response_object.get('testModeActive'))
             raise jaraco.abode.Exception(ERROR.SET_TEST_MODE_RESPONSE)
 
         log.info('Test mode set to: %s', 'enabled' if enabled else 'disabled')
@@ -472,7 +483,10 @@ class Client:
         headers['ABODE-API-KEY'] = self._token
 
         try:
+            log.debug("API Request - method=%s, path=%s, data=%s", method, path, data)
             response = getattr(self._session, method)(path, headers=headers, json=data)
+
+            log.debug("API Response - status=%s", response.status_code if response else None)
 
             if response and response.status_code < 400:
                 return response

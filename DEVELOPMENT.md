@@ -4,9 +4,9 @@
 
 - **Current Phase:** Phase 2 - Quality Improvements (COMPLETE) ✅
 - **Last Updated:** 2025-11-23
-- **Currently Working On:** Phase 2 completion
+- **Current Focus:** Test mode initialization and polling improvements
 - **Next Steps:**
-  - Test integration in Home Assistant environment
+  - Validate test mode initial sync in Docker environment
   - Phase 3: Advanced features (configuration options, library async conversion, etc.)
 
 ## Architecture Decisions
@@ -187,6 +187,41 @@ When vendoring jaraco.abode:
 4. Plan: Make async and add type hints (Phase 2+)
 5. Document any breaking changes or modifications in DEVELOPMENT.md
 
+## Test Mode Initialization Improvements (2025-11-23)
+
+### Problem
+Test mode switch was not pulling the current status when the integration was loaded. If test mode was enabled in Abode, the switch would show as off until the first polling cycle completed (~30-60 seconds).
+
+### Solution
+Implemented initial status synchronization in `async_added_to_hass()`:
+1. Added `_refresh_test_mode_status()` method that fetches test mode status asynchronously
+2. Method called immediately when entity is added to Home Assistant
+3. Enhanced wrapper methods in AbodeSystem to remove hasattr checks (simpler error handling)
+4. Added debug logging to trace initialization and polling
+5. Smart polling with 5-second grace period after user state changes
+6. Polling continues to detect external state changes (e.g., 30-minute timeout)
+
+### Key Changes
+- **switch.py:**
+  - `async_added_to_hass()` now calls `_refresh_test_mode_status()` for initial sync
+  - Enhanced logging for initialization and state changes
+  - Improved error handling in update() method
+
+- **models.py:**
+  - Simplified wrapper methods to use direct try/except instead of hasattr checks
+  - Better error handling with specific AttributeError handling
+
+- **tests/test_switch.py:**
+  - Added tests for initial status sync when enabled
+  - Added tests for initial status sync when disabled
+
+### Testing
+The implementation now properly:
+- Fetches initial test mode status when integration loads/reloads
+- Shows correct state in UI immediately (not after first poll)
+- Continues polling to detect external changes
+- Handles API errors gracefully with fallback to False
+
 ## Session End Notes
 
 Initial setup complete. The integration is now:
@@ -194,5 +229,6 @@ Initial setup complete. The integration is now:
 - Domain correctly configured as "abode_security"
 - All source files copied from HA core
 - Ready for library vendoring and import updates
+- Test mode initialization properly synchronized
 
-Next major task is vendoring jaraco.abode and updating imports throughout the codebase.
+Next major task is phase 3 features and async improvements.

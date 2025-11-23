@@ -168,6 +168,30 @@ async def test_test_mode_switch_attributes(hass: HomeAssistant) -> None:
     assert state is not None
 
 
+async def test_test_mode_switch_initial_status_on(hass: HomeAssistant) -> None:
+    """Test that test mode switch pulls initial status when test mode is enabled."""
+    with patch("jaraco.abode.Abode.get_test_mode") as mock_get:
+        mock_get.return_value = True
+        await setup_platform(hass, SWITCH_DOMAIN)
+        await hass.async_block_till_done()
+
+        state = hass.states.get(TEST_MODE_ID)
+        assert state is not None
+        assert state.state == STATE_ON
+
+
+async def test_test_mode_switch_initial_status_off(hass: HomeAssistant) -> None:
+    """Test that test mode switch pulls initial status when test mode is disabled."""
+    with patch("jaraco.abode.Abode.get_test_mode") as mock_get:
+        mock_get.return_value = False
+        await setup_platform(hass, SWITCH_DOMAIN)
+        await hass.async_block_till_done()
+
+        state = hass.states.get(TEST_MODE_ID)
+        assert state is not None
+        assert state.state == STATE_OFF
+
+
 async def test_test_mode_switch_turn_on(hass: HomeAssistant) -> None:
     """Test the test mode switch can be turned on."""
     await setup_platform(hass, SWITCH_DOMAIN)

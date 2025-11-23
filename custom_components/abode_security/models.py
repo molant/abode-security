@@ -25,16 +25,23 @@ class AbodeSystem:
     def get_test_mode(self) -> bool:
         """Get test mode status with fallback."""
         try:
-            if hasattr(self.abode, "get_test_mode"):
-                return self.abode.get_test_mode()
+            result = self.abode.get_test_mode()
+            LOGGER.debug("get_test_mode() returned: %s (type: %s)", result, type(result))
+            return result
+        except AttributeError as ex:
+            LOGGER.warning("get_test_mode method not available in abode client: %s", ex)
+            return False
         except Exception as ex:
-            LOGGER.debug("Failed to get test mode: %s", ex)
-        return False
+            LOGGER.warning("Failed to get test mode: %s", ex)
+            import traceback
+            LOGGER.debug("Traceback: %s", traceback.format_exc())
+            return False
 
     def set_test_mode(self, enabled: bool) -> None:
         """Set test mode with fallback."""
         try:
-            if hasattr(self.abode, "set_test_mode"):
-                self.abode.set_test_mode(enabled)
+            self.abode.set_test_mode(enabled)
+        except AttributeError:
+            LOGGER.debug("set_test_mode method not available in abode client")
         except Exception as ex:
             LOGGER.debug("Failed to set test mode: %s", ex)

@@ -214,18 +214,22 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         if TimelineGroups is None:
             return
 
-        # Remove event callbacks
-        await self.hass.async_add_executor_job(
-            self._data.abode.events.remove_event_callback,
-            TimelineGroups.ALARM,
-            self._alarm_event_callback,
-        )
+        # Remove event callbacks (if method exists)
+        if hasattr(self._data.abode.events, 'remove_event_callback'):
+            try:
+                await self.hass.async_add_executor_job(
+                    self._data.abode.events.remove_event_callback,
+                    TimelineGroups.ALARM,
+                    self._alarm_event_callback,
+                )
 
-        await self.hass.async_add_executor_job(
-            self._data.abode.events.remove_event_callback,
-            TimelineGroups.ALARM_END,
-            self._alarm_end_callback,
-        )
+                await self.hass.async_add_executor_job(
+                    self._data.abode.events.remove_event_callback,
+                    TimelineGroups.ALARM_END,
+                    self._alarm_end_callback,
+                )
+            except Exception as ex:
+                LOGGER.debug("Failed to remove event callbacks: %s", ex)
 
     def _alarm_event_callback(self, event: dict[str, Any]) -> None:
         """Handle alarm trigger events from timeline."""
@@ -336,9 +340,10 @@ class AbodeTestModeSwitch(SwitchEntity):
         # Use alarm device ID for unique ID to link to the alarm device
         self._attr_unique_id = f"{alarm.id}-test-mode"
         self._attr_available = True
-        # Always enable polling for test mode since it can be changed externally
-        # and there's no event callback for test mode changes
-        self._attr_should_poll = True
+        # Start with polling disabled - will be enabled after first successful fetch
+        # to ensure async_added_to_hass can set initial status before polling starts
+        self._attr_should_poll = False
+        self._initial_sync_done = False
 
     @property
     def device_info(self) -> dict[str, Any]:
@@ -352,6 +357,7 @@ class AbodeTestModeSwitch(SwitchEntity):
 
     async def async_added_to_hass(self) -> None:
         """Update test mode status on first add."""
+        LOGGER.info("Test mode switch added to Home Assistant, fetching initial status")
         await super().async_added_to_hass()
         await self._refresh_test_mode_status()
 
@@ -361,9 +367,22 @@ class AbodeTestModeSwitch(SwitchEntity):
             self._is_on = await self.hass.async_add_executor_job(
                 self._data.get_test_mode
             )
+            LOGGER.info("Initial test mode status fetched: %s", self._is_on)
             self.async_write_ha_state()
+
+            # Enable polling after first successful fetch
+            if not self._initial_sync_done:
+                LOGGER.debug("Enabling polling after initial sync")
+                self._attr_should_poll = True
+                self._initial_sync_done = True
         except AbodeException as ex:
-            LOGGER.error("Failed to get test mode status: %s", ex)
+            LOGGER.error("Failed to get test mode status (AbodeException): %s", ex)
+            import traceback
+            LOGGER.debug("Traceback: %s", traceback.format_exc())
+        except Exception as ex:
+            LOGGER.error("Unexpected error getting test mode status: %s", ex)
+            import traceback
+            LOGGER.debug("Traceback: %s", traceback.format_exc())
 
     def update(self) -> None:
         """Update test mode status."""
@@ -378,6 +397,11 @@ class AbodeTestModeSwitch(SwitchEntity):
             previous_state = self._is_on
             self._is_on = self._data.get_test_mode()
 
+            LOGGER.debug("Polling test mode status: was %s, now %s", previous_state, self._is_on)
+
+            if previous_state != self._is_on:
+                LOGGER.info("Test mode status changed: %s -> %s", previous_state, self._is_on)
+
             # If test mode was enabled by user but is now off externally (e.g., 30-min timeout),
             # stop polling to save resources
             if self._user_enabled and previous_state and not self._is_on:
@@ -386,6 +410,8 @@ class AbodeTestModeSwitch(SwitchEntity):
                 self._attr_should_poll = False
         except AbodeException as ex:
             LOGGER.error("Failed to update test mode status: %s", ex)
+        except Exception as ex:
+            LOGGER.error("Unexpected error updating test mode status: %s", ex)
 
     def turn_on(self, **kwargs: Any) -> None:
         """Enable test mode."""
