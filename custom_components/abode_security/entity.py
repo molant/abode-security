@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from . import _vendor  # noqa: F401
 
-from jaraco.abode.automation import Automation as AbodeAuto
-from jaraco.abode.devices.base import Device as AbodeDev
+from abode.automation import Automation as AbodeAuto
+from abode.devices.base import Device as AbodeDev
 
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity

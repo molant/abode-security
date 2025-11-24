@@ -3,7 +3,7 @@
 from http import HTTPStatus
 from unittest.mock import patch
 
-from jaraco.abode.exceptions import (
+from abode.exceptions import (
     AuthenticationException as AbodeAuthenticationException,
     Exception as AbodeException,
 )
@@ -22,7 +22,7 @@ async def test_change_settings(hass: HomeAssistant) -> None:
     """Test change_setting service."""
     await setup_platform(hass, ALARM_DOMAIN)
 
-    with patch("jaraco.abode.client.Client.set_setting") as mock_set_setting:
+    with patch("abode.client.Client.set_setting") as mock_set_setting:
         await hass.services.async_call(
             DOMAIN,
             SERVICE_SETTINGS,
@@ -53,8 +53,8 @@ async def test_unload_entry(hass: HomeAssistant) -> None:
     mock_entry = await setup_platform(hass, ALARM_DOMAIN)
 
     with (
-        patch("jaraco.abode.client.Client.logout") as mock_logout,
-        patch("jaraco.abode.event_controller.EventController.stop") as mock_events_stop,
+        patch("abode.client.Client.logout") as mock_logout,
+        patch("abode.event_controller.EventController.stop") as mock_events_stop,
     ):
         assert await hass.config_entries.async_unload(mock_entry.entry_id)
     mock_logout.assert_called_once()

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from . import _vendor  # noqa: F401
 
-from jaraco.abode.devices.alarm import Alarm
-from jaraco.abode.exceptions import Exception as AbodeException
+from abode.devices.alarm import Alarm
+from abode.exceptions import Exception as AbodeException
 
 from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelEntity,

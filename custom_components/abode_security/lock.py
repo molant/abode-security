@@ -4,7 +4,7 @@ from typing import Any
 
 from . import _vendor  # noqa: F401
 
-from jaraco.abode.devices.lock import Lock
+from abode.devices.lock import Lock
 
 from homeassistant.components.lock import LockEntity
 from homeassistant.config_entries import ConfigEntry

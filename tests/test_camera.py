@@ -33,7 +33,7 @@ async def test_capture_image(hass: HomeAssistant) -> None:
     """Test the camera capture image service."""
     await setup_platform(hass, CAMERA_DOMAIN)
 
-    with patch("jaraco.abode.devices.camera.Camera.capture") as mock_capture:
+    with patch("abode.devices.camera.Camera.capture") as mock_capture:
         await hass.services.async_call(
             DOMAIN,
             "capture_image",
@@ -48,7 +48,7 @@ async def test_camera_on(hass: HomeAssistant) -> None:
     """Test the camera turn on service."""
     await setup_platform(hass, CAMERA_DOMAIN)
 
-    with patch("jaraco.abode.devices.camera.Camera.privacy_mode") as mock_capture:
+    with patch("abode.devices.camera.Camera.privacy_mode") as mock_capture:
         await hass.services.async_call(
             CAMERA_DOMAIN,
             "turn_on",
@@ -63,7 +63,7 @@ async def test_camera_off(hass: HomeAssistant) -> None:
     """Test the camera turn off service."""
     await setup_platform(hass, CAMERA_DOMAIN)
 
-    with patch("jaraco.abode.devices.camera.Camera.privacy_mode") as mock_capture:
+    with patch("abode.devices.camera.Camera.privacy_mode") as mock_capture:
         await hass.services.async_call(
             CAMERA_DOMAIN,
             "turn_off",

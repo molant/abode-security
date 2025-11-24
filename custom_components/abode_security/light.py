@@ -7,7 +7,7 @@ from typing import Any
 
 from . import _vendor  # noqa: F401
 
-from jaraco.abode.devices.light import Light
+from abode.devices.light import Light
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,

@@ -6,7 +6,7 @@ from typing import cast
 
 from . import _vendor  # noqa: F401
 
-from jaraco.abode.devices.binary_sensor import BinarySensor
+from abode.devices.binary_sensor import BinarySensor
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,

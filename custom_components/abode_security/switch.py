@@ -7,9 +7,9 @@ from typing import Any, cast
 
 from . import _vendor  # noqa: F401
 
-from jaraco.abode.devices.alarm import Alarm
-from jaraco.abode.devices.switch import Switch
-from jaraco.abode.exceptions import Exception as AbodeException
+from abode.devices.alarm import Alarm
+from abode.devices.switch import Switch
+from abode.exceptions import Exception as AbodeException
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -25,7 +25,7 @@ from .entity import AbodeAutomation, AbodeDevice
 PARALLEL_UPDATES = 1
 
 try:
-    from jaraco.abode.helpers.timeline import Groups as TimelineGroups
+    from abode.helpers.timeline import Groups as TimelineGroups
 except ImportError:
     TimelineGroups = None
 
@@ -35,7 +35,7 @@ DEVICE_TYPES = ["switch", "valve"]
 MANUAL_ALARM_TYPES = ["PANIC", "SILENT_PANIC", "MEDICAL", "CO", "SMOKE_CO", "SMOKE", "BURGLAR"]
 
 # Map alarm types to their event codes
-# These codes are from jaraco.abode.helpers.events.csv
+# These codes are from abode.helpers.events.csv
 ALARM_TYPE_EVENT_CODES = {
     "PANIC": ["1120"],  # Panic Alert
     "SILENT_PANIC": ["1122"],  # Silent Panic Alert

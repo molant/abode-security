@@ -10,7 +10,7 @@ from homeassistant.core import CALLBACK_TYPE
 from .const import LOGGER
 
 if TYPE_CHECKING:
-    from jaraco.abode.client import Client as AbodeClient
+    from abode.client import Client as AbodeClient
 
 
 @dataclass

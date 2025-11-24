@@ -4,7 +4,7 @@ from typing import Any
 
 from . import _vendor  # noqa: F401
 
-from jaraco.abode.devices.cover import Cover
+from abode.devices.cover import Cover
 
 from homeassistant.components.cover import CoverEntity
 from homeassistant.config_entries import ConfigEntry

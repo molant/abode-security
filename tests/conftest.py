@@ -3,7 +3,7 @@
 from collections.abc import Generator
 from unittest.mock import AsyncMock, patch
 
-from jaraco.abode.helpers import urls as URL
+from abode.helpers import urls as URL
 import pytest
 from requests_mock import Mocker
 

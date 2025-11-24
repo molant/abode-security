@@ -7,13 +7,13 @@ from pathlib import Path
 
 from . import _vendor  # noqa: F401
 
-from jaraco.abode.client import Client as Abode
-import jaraco.abode.config
-from jaraco.abode.exceptions import (
+import abode  # Import the whole module for abode.config.paths reference
+from abode.client import Client as Abode
+from abode.exceptions import (
     AuthenticationException as AbodeAuthenticationException,
     Exception as AbodeException,
 )
-from jaraco.abode.helpers.timeline import Groups as GROUPS
+from abode.helpers.timeline import Groups as GROUPS
 from requests.exceptions import ConnectTimeout, HTTPError
 
 from homeassistant.config_entries import ConfigEntry
@@ -32,7 +32,6 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 from .const import CONF_POLLING, DOMAIN, LOGGER
-from .models import AbodeSystem
 from .services import async_setup_services
 
 ATTR_DEVICE_NAME = "device_name"
@@ -67,12 +66,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Abode integration from a config entry."""
+    from .models import AbodeSystem  # Avoid circular import
+
     username = entry.data[CONF_USERNAME]
     password = entry.data[CONF_PASSWORD]
     polling = entry.data[CONF_POLLING]
 
     # Configure abode library to use config directory for storing data
-    jaraco.abode.config.paths.override(user_data=Path(hass.config.path("Abode")))
+    abode.config.paths.override(user_data=Path(hass.config.path("Abode")))
 
     # For previous config entries where unique_id is None
     if entry.unique_id is None:
@@ -81,7 +82,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     try:
-        abode = await hass.async_add_executor_job(
+        abode_client = await hass.async_add_executor_job(
             Abode, username, password, True, True, True
         )
 
@@ -91,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except (AbodeException, ConnectTimeout, HTTPError) as ex:
         raise ConfigEntryNotReady(f"Unable to connect to Abode: {ex}") from ex
 
-    entry.runtime_data = AbodeSystem(abode, polling)
+    entry.runtime_data = AbodeSystem(abode_client, polling)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -103,6 +104,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    from .models import AbodeSystem  # Avoid circular import
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     abode_system: AbodeSystem = entry.runtime_data
@@ -116,6 +119,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def setup_hass_events(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Home Assistant start and stop callbacks."""
+    from .models import AbodeSystem  # Avoid circular import
+
     abode_system: AbodeSystem = entry.runtime_data
 
     def logout(event: Event) -> None:
@@ -136,6 +141,8 @@ async def setup_hass_events(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 def setup_abode_events(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Event callbacks."""
+    from .models import AbodeSystem  # Avoid circular import
+
     abode_system: AbodeSystem = entry.runtime_data
 
     def event_callback(event: str, event_json: dict[str, str]) -> None:

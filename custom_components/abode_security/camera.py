@@ -7,9 +7,9 @@ from typing import Any, cast
 
 from . import _vendor  # noqa: F401
 
-from jaraco.abode.devices.base import Device
-from jaraco.abode.devices.camera import Camera as AbodeCam
-from jaraco.abode.helpers import timeline
+from abode.devices.base import Device
+from abode.devices.camera import Camera as AbodeCam
+from abode.helpers import timeline
 import requests
 from requests.models import Response
 

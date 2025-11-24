@@ -45,7 +45,7 @@ async def test_lock(hass: HomeAssistant) -> None:
     """Test the lock can be locked."""
     await setup_platform(hass, LOCK_DOMAIN)
 
-    with patch("jaraco.abode.devices.lock.Lock.lock") as mock_lock:
+    with patch("abode.devices.lock.Lock.lock") as mock_lock:
         await hass.services.async_call(
             LOCK_DOMAIN, SERVICE_LOCK, {ATTR_ENTITY_ID: DEVICE_ID}, blocking=True
         )
@@ -57,7 +57,7 @@ async def test_unlock(hass: HomeAssistant) -> None:
     """Test the lock can be unlocked."""
     await setup_platform(hass, LOCK_DOMAIN)
 
-    with patch("jaraco.abode.devices.lock.Lock.unlock") as mock_unlock:
+    with patch("abode.devices.lock.Lock.unlock") as mock_unlock:
         await hass.services.async_call(
             LOCK_DOMAIN, SERVICE_UNLOCK, {ATTR_ENTITY_ID: DEVICE_ID}, blocking=True
         )

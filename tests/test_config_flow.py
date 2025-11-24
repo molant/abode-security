@@ -3,10 +3,10 @@
 from http import HTTPStatus
 from unittest.mock import patch
 
-from jaraco.abode.exceptions import (
+from abode.exceptions import (
     AuthenticationException as AbodeAuthenticationException,
 )
-from jaraco.abode.helpers.errors import MFA_CODE_REQUIRED
+from abode.helpers.errors import MFA_CODE_REQUIRED
 import pytest
 from requests.exceptions import ConnectTimeout
 

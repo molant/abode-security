@@ -8,7 +8,7 @@ from typing import cast
 
 from . import _vendor  # noqa: F401
 
-from jaraco.abode.devices.sensor import Sensor
+from abode.devices.sensor import Sensor
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,

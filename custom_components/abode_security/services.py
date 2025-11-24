@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from . import _vendor  # noqa: F401
 
-from jaraco.abode.exceptions import Exception as AbodeException
+from abode.exceptions import Exception as AbodeException
 import voluptuous as vol
 
 from homeassistant.const import ATTR_ENTITY_ID

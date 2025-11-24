@@ -8,12 +8,12 @@ from typing import Any, cast
 
 from . import _vendor  # noqa: F401
 
-from jaraco.abode.client import Client as Abode
-from jaraco.abode.exceptions import (
+from abode.client import Client as Abode
+from abode.exceptions import (
     AuthenticationException as AbodeAuthenticationException,
     Exception as AbodeException,
 )
-from jaraco.abode.helpers.errors import MFA_CODE_REQUIRED
+from abode.helpers.errors import MFA_CODE_REQUIRED
 from requests.exceptions import ConnectTimeout, HTTPError
 import voluptuous as vol
 
