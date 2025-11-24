@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 from . import _vendor  # noqa: F401
 
@@ -51,6 +51,39 @@ DISMISS_ALARM_SCHEMA = vol.Schema({vol.Required(ATTR_TIMELINE_ID): cv.string})
 ENABLE_TEST_MODE_SCHEMA = vol.Schema({})
 
 DISABLE_TEST_MODE_SCHEMA = vol.Schema({})
+
+
+def _create_service_handler(
+    method_name: str,
+    operation_desc: str,
+    *arg_extractors: tuple[str, Callable[[ServiceCall], Any]],
+) -> Callable:
+    """Factory for creating service handlers with consistent error handling.
+
+    Args:
+        method_name: Name of method on abode_system.abode
+        operation_desc: Human-readable description for logging
+        arg_extractors: Tuples of (arg_name, extractor_func) for service data
+
+    Returns:
+        Service handler function ready to register
+    """
+
+    async def handler(call: ServiceCall) -> None:
+        abode_system = _get_abode_system(call.hass)
+        if not abode_system:
+            LOGGER.error("Abode integration not configured")
+            return
+
+        try:
+            method = getattr(abode_system.abode, method_name)
+            args = [extractor(call) for _, extractor in arg_extractors]
+            await call.hass.async_add_executor_job(method, *args)
+            LOGGER.debug(f"Successfully {operation_desc}")
+        except AbodeException as ex:
+            LOGGER.error(f"Failed to {operation_desc}: %s", ex)
+
+    return handler
 
 
 def _get_abode_system(hass: HomeAssistant) -> AbodeSystem | None:
@@ -182,9 +215,7 @@ async def _enable_test_mode(call: ServiceCall) -> None:
         return
 
     try:
-        await call.hass.async_add_executor_job(
-            abode_system.set_test_mode, True
-        )
+        await call.hass.async_add_executor_job(abode_system.set_test_mode, True)
         LOGGER.info("Test mode enabled")
     except AbodeException as ex:
         LOGGER.error("Failed to enable test mode: %s", ex)
@@ -198,9 +229,7 @@ async def _disable_test_mode(call: ServiceCall) -> None:
         return
 
     try:
-        await call.hass.async_add_executor_job(
-            abode_system.set_test_mode, False
-        )
+        await call.hass.async_add_executor_job(abode_system.set_test_mode, False)
         LOGGER.info("Test mode disabled")
     except AbodeException as ex:
         LOGGER.error("Failed to disable test mode: %s", ex)
