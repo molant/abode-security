@@ -5,31 +5,29 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any, cast
 
-from . import _vendor  # noqa: F401
-
+import requests
 from abode.devices.base import Device
 from abode.devices.camera import Camera as AbodeCam
 from abode.helpers import timeline
-import requests
-from requests.models import Response
-
 from homeassistant.components.camera import Camera
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import Throttle
+from requests.models import Response
 
-from .models import AbodeSystem
-from .const import DOMAIN, LOGGER
+from . import _vendor  # noqa: F401
+from .const import LOGGER
 from .entity import AbodeDevice
+from .models import AbodeSystem
 
 PARALLEL_UPDATES = 1
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=90)
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
@@ -94,7 +92,7 @@ class AbodeCamera(AbodeDevice, Camera):
             self._response = None
 
     def camera_image(
-        self, width: int | None = None, height: int | None = None
+        self, _width: int | None = None, _height: int | None = None
     ) -> bytes | None:
         """Get a camera image."""
         self.refresh_image()

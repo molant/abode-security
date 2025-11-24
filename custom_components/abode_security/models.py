@@ -8,12 +8,11 @@ from typing import TYPE_CHECKING
 from homeassistant.core import CALLBACK_TYPE
 
 from .const import (
-    LOGGER,
-    DEFAULT_POLLING_INTERVAL,
     DEFAULT_ENABLE_EVENTS,
+    DEFAULT_POLLING_INTERVAL,
     DEFAULT_RETRY_COUNT,
+    LOGGER,
 )
-from .decorators import handle_abode_errors
 
 if TYPE_CHECKING:
     from abode.client import Client as AbodeClient

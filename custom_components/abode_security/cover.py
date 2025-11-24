@@ -4,24 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import _vendor  # noqa: F401
-
 from abode.devices.cover import Cover
-
 from homeassistant.components.cover import CoverEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .models import AbodeSystem
-from .const import DOMAIN
+from . import _vendor  # noqa: F401
 from .entity import AbodeDevice
+from .models import AbodeSystem
 
 PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
@@ -45,10 +42,10 @@ class AbodeCover(AbodeDevice, CoverEntity):
         """Return true if cover is closed, else False."""
         return not self._device.is_open
 
-    def close_cover(self, **kwargs: Any) -> None:
+    def close_cover(self, **_kwargs: Any) -> None:
         """Issue close command to cover."""
         self._device.close_cover()
 
-    def open_cover(self, **kwargs: Any) -> None:
+    def open_cover(self, **_kwargs: Any) -> None:
         """Issue open command to cover."""
         self._device.open_cover()

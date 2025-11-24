@@ -5,10 +5,7 @@ from __future__ import annotations
 from math import ceil
 from typing import Any
 
-from . import _vendor  # noqa: F401
-
 from abode.devices.light import Light
-
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP_KELVIN,
@@ -22,15 +19,15 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .models import AbodeSystem
-from .const import DOMAIN
+from . import _vendor  # noqa: F401
 from .entity import AbodeDevice
+from .models import AbodeSystem
 
 PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
@@ -69,7 +66,7 @@ class AbodeLight(AbodeDevice, LightEntity):
 
         self._device.switch_on()
 
-    def turn_off(self, **kwargs: Any) -> None:
+    def turn_off(self, **_kwargs: Any) -> None:
         """Turn off the light."""
         self._device.switch_off()
 

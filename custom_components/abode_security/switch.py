@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
-
-from . import _vendor  # noqa: F401
 
 from abode.devices.alarm import Alarm
 from abode.devices.switch import Switch
 from abode.exceptions import Exception as AbodeException
-
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -19,10 +16,11 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from . import _vendor  # noqa: F401
 from .const import DOMAIN, LOGGER
 from .decorators import handle_abode_errors
-from .models import AbodeSystem
 from .entity import AbodeAutomation, AbodeDevice
+from .models import AbodeSystem
 
 PARALLEL_UPDATES = 1
 
@@ -102,13 +100,13 @@ class AbodeSwitch(AbodeDevice, SwitchEntity):
     _attr_name = None
 
     @handle_abode_errors("turn on switch device")
-    def turn_on(self, **kwargs: Any) -> None:
+    def turn_on(self, **_kwargs: Any) -> None:
         """Turn on the device."""
         self._device.switch_on()
         LOGGER.info("Switch device turned on")
 
     @handle_abode_errors("turn off switch device")
-    def turn_off(self, **kwargs: Any) -> None:
+    def turn_off(self, **_kwargs: Any) -> None:
         """Turn off the device."""
         self._device.switch_off()
         LOGGER.info("Switch device turned off")
@@ -132,14 +130,14 @@ class AbodeAutomationSwitch(AbodeAutomation, SwitchEntity):
         self.async_on_remove(async_dispatcher_connect(self.hass, signal, self.trigger))
 
     @handle_abode_errors("enable automation")
-    def turn_on(self, **kwargs: Any) -> None:
+    def turn_on(self, **_kwargs: Any) -> None:
         """Enable the automation."""
         self._automation.enable(True)
         LOGGER.info("Automation enabled")
         self.schedule_update_ha_state()
 
     @handle_abode_errors("disable automation")
-    def turn_off(self, **kwargs: Any) -> None:
+    def turn_off(self, **_kwargs: Any) -> None:
         """Disable the automation."""
         self._automation.enable(False)
         LOGGER.info("Automation disabled")
@@ -328,7 +326,7 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         self.schedule_update_ha_state()
 
     @handle_abode_errors("trigger manual alarm")
-    def turn_on(self, **kwargs: Any) -> None:
+    def turn_on(self, **_kwargs: Any) -> None:
         """Trigger the manual alarm."""
         if self._is_on:
             LOGGER.debug("Alarm %s already triggered, ignoring duplicate trigger", self._alarm_type)
@@ -350,7 +348,7 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         self.schedule_update_ha_state()
 
     @handle_abode_errors("dismiss timeline event")
-    def turn_off(self, **kwargs: Any) -> None:
+    def turn_off(self, **_kwargs: Any) -> None:
         """Dismiss the manual alarm (if timeline event ID is available)."""
         if self._timeline_id:
             self._data.abode.dismiss_timeline_event(self._timeline_id)
@@ -432,7 +430,7 @@ class AbodeTestModeSwitch(SwitchEntity):
         """Update test mode status."""
         # Skip polling for 5 seconds after a state change to let API catch up
         if self._last_state_change is not None:
-            time_since_change = datetime.now() - self._last_state_change
+            time_since_change = datetime.now(UTC) - self._last_state_change
             if time_since_change < timedelta(seconds=5):
                 LOGGER.debug("Skipping test mode poll (waiting for API to catch up)")
                 return
@@ -458,25 +456,25 @@ class AbodeTestModeSwitch(SwitchEntity):
             LOGGER.error("Unexpected error updating test mode status: %s", ex)
 
     @handle_abode_errors("enable test mode")
-    def turn_on(self, **kwargs: Any) -> None:
+    def turn_on(self, **_kwargs: Any) -> None:
         """Enable test mode."""
         self._data.set_test_mode(True)
         LOGGER.info("Test mode enabled")
         self._user_enabled = True  # User explicitly enabled test mode
         # Trust the state we just set (API may need time to process)
         self._is_on = True
-        self._last_state_change = datetime.now()
+        self._last_state_change = datetime.now(UTC)
         self.schedule_update_ha_state()
 
     @handle_abode_errors("disable test mode")
-    def turn_off(self, **kwargs: Any) -> None:
+    def turn_off(self, **_kwargs: Any) -> None:
         """Disable test mode."""
         self._data.set_test_mode(False)
         LOGGER.info("Test mode disabled")
         self._user_enabled = False  # User explicitly disabled test mode
         # Trust the state we just set (API may need time to process)
         self._is_on = False
-        self._last_state_change = datetime.now()
+        self._last_state_change = datetime.now(UTC)
         self.schedule_update_ha_state()
 
     @property

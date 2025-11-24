@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from . import _vendor  # noqa: F401
-
 from abode.devices.alarm import Alarm
-
 from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelEntity,
     AlarmControlPanelEntityFeature,
@@ -15,10 +12,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .models import AbodeSystem
-from .const import DOMAIN, LOGGER
+from . import _vendor  # noqa: F401
+from .const import LOGGER
 from .decorators import handle_abode_errors
 from .entity import AbodeDevice
+from .models import AbodeSystem
 
 
 async def async_setup_entry(
@@ -56,19 +54,19 @@ class AbodeAlarm(AbodeDevice, AlarmControlPanelEntity):
         return None
 
     @handle_abode_errors("disarm alarm")
-    def alarm_disarm(self, code: str | None = None) -> None:
+    def alarm_disarm(self, _code: str | None = None) -> None:
         """Send disarm command."""
         self._device.set_standby()
         LOGGER.info("Alarm disarmed")
 
     @handle_abode_errors("arm alarm in home mode")
-    def alarm_arm_home(self, code: str | None = None) -> None:
+    def alarm_arm_home(self, _code: str | None = None) -> None:
         """Send arm home command."""
         self._device.set_home()
         LOGGER.info("Alarm armed in home mode")
 
     @handle_abode_errors("arm alarm in away mode")
-    def alarm_arm_away(self, code: str | None = None) -> None:
+    def alarm_arm_away(self, _code: str | None = None) -> None:
         """Send arm away command."""
         self._device.set_away()
         LOGGER.info("Alarm armed in away mode")

@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
-from . import _vendor  # noqa: F401
-
-from abode.exceptions import Exception as AbodeException
 import voluptuous as vol
-
+from abode.exceptions import Exception as AbodeException
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import dispatcher_send
 
+from . import _vendor  # noqa: F401
 from .const import DOMAIN, LOGGER
 
 if TYPE_CHECKING:
@@ -225,7 +224,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
         _create_service_handler(
             "set_test_mode",
             "enable test mode",
-            ("enabled", lambda call: True),
+            ("enabled", lambda _call: True),
             target="system",
         ),
         schema=ENABLE_TEST_MODE_SCHEMA,
@@ -237,7 +236,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
         _create_service_handler(
             "set_test_mode",
             "disable test mode",
-            ("enabled", lambda call: False),
+            ("enabled", lambda _call: False),
             target="system",
         ),
         schema=DISABLE_TEST_MODE_SCHEMA,

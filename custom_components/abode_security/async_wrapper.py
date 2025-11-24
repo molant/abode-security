@@ -6,7 +6,6 @@ This eliminates the need for executor jobs for blocking I/O operations.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any, TypeVar
 
 from homeassistant.core import HomeAssistant

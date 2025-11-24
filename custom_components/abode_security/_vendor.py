@@ -15,7 +15,6 @@ if _VENDOR_PATH_STR not in sys.path:
     sys.path.insert(0, _VENDOR_PATH_STR)
 
 # Clear any cached imports of abode to force reload from our vendored path
-import importlib
 for mod_name in list(sys.modules.keys()):
     if mod_name.startswith('abode'):
         del sys.modules[mod_name]

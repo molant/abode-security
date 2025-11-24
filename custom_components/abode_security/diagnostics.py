@@ -8,16 +8,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .models import AbodeSystem
-from .const import (
-    DOMAIN,
-    CONF_POLLING_INTERVAL,
-    CONF_ENABLE_EVENTS,
-    CONF_RETRY_COUNT,
-)
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: ConfigEntry
+    _hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
     abode_system: AbodeSystem = entry.runtime_data

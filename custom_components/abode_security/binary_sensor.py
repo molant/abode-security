@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from . import _vendor  # noqa: F401
-
 from abode.devices.binary_sensor import BinarySensor
-
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
@@ -17,15 +14,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util.enum import try_parse_enum
 
-from .models import AbodeSystem
-from .const import DOMAIN
+from . import _vendor  # noqa: F401
 from .entity import AbodeDevice
+from .models import AbodeSystem
 
 PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:

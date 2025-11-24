@@ -4,24 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import _vendor  # noqa: F401
-
 from abode.devices.lock import Lock
-
 from homeassistant.components.lock import LockEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .models import AbodeSystem
-from .const import DOMAIN
+from . import _vendor  # noqa: F401
 from .entity import AbodeDevice
+from .models import AbodeSystem
 
 PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
@@ -40,11 +37,11 @@ class AbodeLock(AbodeDevice, LockEntity):
     _device: Lock
     _attr_name = None
 
-    def lock(self, **kwargs: Any) -> None:
+    def lock(self, **_kwargs: Any) -> None:
         """Lock the device."""
         self._device.lock()
 
-    def unlock(self, **kwargs: Any) -> None:
+    def unlock(self, **_kwargs: Any) -> None:
         """Unlock the device."""
         self._device.unlock()
 

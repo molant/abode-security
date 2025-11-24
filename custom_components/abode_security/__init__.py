@@ -5,17 +5,15 @@ from __future__ import annotations
 from functools import partial
 from pathlib import Path
 
-from . import _vendor  # noqa: F401
-
 import abode  # Import the whole module for abode.config.paths reference
 from abode.client import Client as Abode
 from abode.exceptions import (
     AuthenticationException as AbodeAuthenticationException,
+)
+from abode.exceptions import (
     Exception as AbodeException,
 )
-from abode.helpers.timeline import Groups as GROUPS
-from requests.exceptions import ConnectTimeout, HTTPError
-
+from abode.helpers.timeline import Groups as GROUPS  # noqa: N814
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_DATE,
@@ -30,14 +28,16 @@ from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
+from requests.exceptions import ConnectTimeout, HTTPError
 
+from . import _vendor  # noqa: F401
 from .const import (
+    CONF_ENABLE_EVENTS,
     CONF_POLLING,
     CONF_POLLING_INTERVAL,
-    CONF_ENABLE_EVENTS,
     CONF_RETRY_COUNT,
-    DEFAULT_POLLING_INTERVAL,
     DEFAULT_ENABLE_EVENTS,
+    DEFAULT_POLLING_INTERVAL,
     DEFAULT_RETRY_COUNT,
     DOMAIN,
     LOGGER,
@@ -68,7 +68,7 @@ PLATFORMS = [
 ]
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+async def async_setup(hass: HomeAssistant, _config: ConfigType) -> bool:
     """Set up the Abode component."""
     async_setup_services(hass)
     return True
@@ -142,7 +142,7 @@ async def setup_hass_events(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     abode_system: AbodeSystem = entry.runtime_data
 
-    def logout(event: Event) -> None:
+    def logout(_event: Event) -> None:
         """Logout of Abode."""
         if not abode_system.polling:
             abode_system.abode.events.stop()

@@ -6,10 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import cast
 
-from . import _vendor  # noqa: F401
-
 from abode.devices.sensor import Sensor
-
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -20,9 +17,9 @@ from homeassistant.const import LIGHT_LUX, PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .models import AbodeSystem
-from .const import DOMAIN
+from . import _vendor  # noqa: F401
 from .entity import AbodeDevice
+from .models import AbodeSystem
 
 PARALLEL_UPDATES = 1
 
@@ -65,7 +62,7 @@ SENSOR_TYPES: tuple[AbodeSensorDescription, ...] = (
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
