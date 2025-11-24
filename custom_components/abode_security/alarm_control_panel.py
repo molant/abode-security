@@ -5,7 +5,6 @@ from __future__ import annotations
 from . import _vendor  # noqa: F401
 
 from abode.devices.alarm import Alarm
-from abode.exceptions import Exception as AbodeException
 
 from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelEntity,
@@ -18,6 +17,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .models import AbodeSystem
 from .const import DOMAIN, LOGGER
+from .decorators import handle_abode_errors
 from .entity import AbodeDevice
 
 
@@ -67,29 +67,23 @@ class AbodeAlarm(AbodeDevice, AlarmControlPanelEntity):
         """Send arm away command."""
         self._device.set_away()
 
+    @handle_abode_errors("trigger manual alarm")
     def trigger_manual_alarm(self, alarm_type: str) -> None:
         """Trigger a manual alarm."""
-        try:
-            self._device.trigger_manual_alarm(alarm_type)
-            LOGGER.info("Triggered manual alarm of type: %s", alarm_type)
-        except AbodeException as ex:
-            LOGGER.error("Failed to trigger manual alarm: %s", ex)
+        self._device.trigger_manual_alarm(alarm_type)
+        LOGGER.info("Triggered manual alarm of type: %s", alarm_type)
 
+    @handle_abode_errors("acknowledge timeline event")
     def acknowledge_timeline_event(self, timeline_id: str) -> None:
         """Acknowledge a timeline alarm event."""
-        try:
-            self._abode_system.abode.acknowledge_timeline_event(timeline_id)
-            LOGGER.info("Acknowledged timeline event: %s", timeline_id)
-        except AbodeException as ex:
-            LOGGER.error("Failed to acknowledge timeline event: %s", ex)
+        self._abode_system.abode.acknowledge_timeline_event(timeline_id)
+        LOGGER.info("Acknowledged timeline event: %s", timeline_id)
 
+    @handle_abode_errors("dismiss timeline event")
     def dismiss_timeline_event(self, timeline_id: str) -> None:
         """Dismiss a timeline alarm event."""
-        try:
-            self._abode_system.abode.dismiss_timeline_event(timeline_id)
-            LOGGER.info("Dismissed timeline event: %s", timeline_id)
-        except AbodeException as ex:
-            LOGGER.error("Failed to dismiss timeline event: %s", ex)
+        self._abode_system.abode.dismiss_timeline_event(timeline_id)
+        LOGGER.info("Dismissed timeline event: %s", timeline_id)
 
     @property
     def extra_state_attributes(self) -> dict[str, str]:

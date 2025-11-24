@@ -9,7 +9,6 @@ from . import _vendor  # noqa: F401
 
 from abode.devices.alarm import Alarm
 from abode.devices.switch import Switch
-from abode.exceptions import Exception as AbodeException
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -19,6 +18,7 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN, LOGGER
+from .decorators import handle_abode_errors
 from .models import AbodeSystem
 from .entity import AbodeAutomation, AbodeDevice
 
@@ -45,6 +45,20 @@ ALARM_TYPE_EVENT_CODES = {
     "SMOKE": ["1111"],  # Smoke Detected
     "BURGLAR": ["1133"],  # Burglar Alarm Triggered
 }
+
+
+def _map_event_code_to_alarm_type(event_code: str, alarm_type: str) -> bool:
+    """Check if event code matches the alarm type.
+
+    Args:
+        event_code: Numeric event code from Abode API
+        alarm_type: The alarm type to check against
+
+    Returns:
+        True if the event code matches this alarm type
+    """
+    expected_codes = ALARM_TYPE_EVENT_CODES.get(alarm_type, [])
+    return event_code in expected_codes
 
 
 async def async_setup_entry(
@@ -185,6 +199,42 @@ class AbodeManualAlarmSwitch(SwitchEntity):
             "name": self._device.name,
         }
 
+    async def _subscribe_to_events(
+        self,
+        event_group: Any,
+        callback: Any,
+    ) -> None:
+        """Subscribe to Abode timeline events."""
+        try:
+            await self.hass.async_add_executor_job(
+                self._data.abode.events.add_event_callback,
+                event_group,
+                callback,
+            )
+            LOGGER.debug(f"Subscribed to {event_group} events")
+        except Exception as ex:
+            LOGGER.warning(f"Could not subscribe to {event_group} events: %s", ex)
+
+    async def _unsubscribe_from_events(
+        self,
+        event_group: Any,
+        callback: Any,
+    ) -> None:
+        """Unsubscribe from Abode timeline events."""
+        if not hasattr(self._data.abode.events, "remove_event_callback"):
+            LOGGER.debug("remove_event_callback not available, skipping unsubscribe")
+            return
+
+        try:
+            await self.hass.async_add_executor_job(
+                self._data.abode.events.remove_event_callback,
+                event_group,
+                callback,
+            )
+            LOGGER.debug(f"Unsubscribed from {event_group} events")
+        except Exception as ex:
+            LOGGER.warning(f"Could not unsubscribe from {event_group} events: %s", ex)
+
     async def async_added_to_hass(self) -> None:
         """Subscribe to timeline events when added to Home Assistant."""
         await super().async_added_to_hass()
@@ -194,18 +244,10 @@ class AbodeManualAlarmSwitch(SwitchEntity):
             return
 
         # Subscribe to alarm trigger events
-        await self.hass.async_add_executor_job(
-            self._data.abode.events.add_event_callback,
-            TimelineGroups.ALARM,
-            self._alarm_event_callback,
-        )
+        await self._subscribe_to_events(TimelineGroups.ALARM, self._alarm_event_callback)
 
         # Subscribe to alarm end/dismiss events
-        await self.hass.async_add_executor_job(
-            self._data.abode.events.add_event_callback,
-            TimelineGroups.ALARM_END,
-            self._alarm_end_callback,
-        )
+        await self._subscribe_to_events(TimelineGroups.ALARM_END, self._alarm_end_callback)
 
     async def async_will_remove_from_hass(self) -> None:
         """Clean up event subscriptions when removed."""
@@ -214,22 +256,9 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         if TimelineGroups is None:
             return
 
-        # Remove event callbacks (if method exists)
-        if hasattr(self._data.abode.events, 'remove_event_callback'):
-            try:
-                await self.hass.async_add_executor_job(
-                    self._data.abode.events.remove_event_callback,
-                    TimelineGroups.ALARM,
-                    self._alarm_event_callback,
-                )
-
-                await self.hass.async_add_executor_job(
-                    self._data.abode.events.remove_event_callback,
-                    TimelineGroups.ALARM_END,
-                    self._alarm_end_callback,
-                )
-            except Exception as ex:
-                LOGGER.debug("Failed to remove event callbacks: %s", ex)
+        # Remove event callbacks
+        await self._unsubscribe_from_events(TimelineGroups.ALARM, self._alarm_event_callback)
+        await self._unsubscribe_from_events(TimelineGroups.ALARM_END, self._alarm_end_callback)
 
     def _alarm_event_callback(self, event: dict[str, Any]) -> None:
         """Handle alarm trigger events from timeline."""
@@ -239,8 +268,7 @@ class AbodeManualAlarmSwitch(SwitchEntity):
 
         # Only update if event matches this alarm type
         event_code = event.get('event_code', '')
-        expected_codes = ALARM_TYPE_EVENT_CODES.get(self._alarm_type, [])
-        if event_code not in expected_codes:
+        if not _map_event_code_to_alarm_type(event_code, self._alarm_type):
             return
 
         # Update state when alarm is triggered
@@ -279,39 +307,35 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         )
         self.schedule_update_ha_state()
 
+    @handle_abode_errors("trigger manual alarm")
     def turn_on(self, **kwargs: Any) -> None:
         """Trigger the manual alarm."""
         if self._is_on:
             LOGGER.debug("Alarm %s already triggered, ignoring duplicate trigger", self._alarm_type)
             return
 
-        try:
-            response = self._device.trigger_manual_alarm(self._alarm_type)
-            # Safely extract event_id from response, handling non-dict responses
-            if isinstance(response, dict):
-                self._timeline_id = response.get('event_id')
-            else:
-                self._timeline_id = None
+        response = self._device.trigger_manual_alarm(self._alarm_type)
+        # Safely extract event_id from response, handling non-dict responses
+        if isinstance(response, dict):
+            self._timeline_id = response.get('event_id')
+        else:
+            self._timeline_id = None
 
-            LOGGER.info(
-                "Triggered manual alarm of type: %s (event_id: %s)",
-                self._alarm_type,
-                self._timeline_id,
-            )
-            self._is_on = True
-            self.schedule_update_ha_state()
-        except AbodeException as ex:
-            LOGGER.error("Failed to trigger manual alarm: %s", ex)
+        LOGGER.info(
+            "Triggered manual alarm of type: %s (event_id: %s)",
+            self._alarm_type,
+            self._timeline_id,
+        )
+        self._is_on = True
+        self.schedule_update_ha_state()
 
+    @handle_abode_errors("dismiss timeline event")
     def turn_off(self, **kwargs: Any) -> None:
         """Dismiss the manual alarm (if timeline event ID is available)."""
         if self._timeline_id:
-            try:
-                self._data.abode.dismiss_timeline_event(self._timeline_id)
-                LOGGER.info("Dismissed timeline event: %s", self._timeline_id)
-                self._timeline_id = None
-            except AbodeException as ex:
-                LOGGER.error("Failed to dismiss timeline event: %s", ex)
+            self._data.abode.dismiss_timeline_event(self._timeline_id)
+            LOGGER.info("Dismissed timeline event: %s", self._timeline_id)
+            self._timeline_id = None
 
         self._is_on = False
         self.schedule_update_ha_state()
@@ -413,31 +437,27 @@ class AbodeTestModeSwitch(SwitchEntity):
         except Exception as ex:
             LOGGER.error("Unexpected error updating test mode status: %s", ex)
 
+    @handle_abode_errors("enable test mode")
     def turn_on(self, **kwargs: Any) -> None:
         """Enable test mode."""
-        try:
-            self._data.set_test_mode(True)
-            LOGGER.info("Test mode enabled")
-            self._user_enabled = True  # User explicitly enabled test mode
-            # Trust the state we just set (API may need time to process)
-            self._is_on = True
-            self._last_state_change = datetime.now()
-            self.schedule_update_ha_state()
-        except AbodeException as ex:
-            LOGGER.error("Failed to enable test mode: %s", ex)
+        self._data.set_test_mode(True)
+        LOGGER.info("Test mode enabled")
+        self._user_enabled = True  # User explicitly enabled test mode
+        # Trust the state we just set (API may need time to process)
+        self._is_on = True
+        self._last_state_change = datetime.now()
+        self.schedule_update_ha_state()
 
+    @handle_abode_errors("disable test mode")
     def turn_off(self, **kwargs: Any) -> None:
         """Disable test mode."""
-        try:
-            self._data.set_test_mode(False)
-            LOGGER.info("Test mode disabled")
-            self._user_enabled = False  # User explicitly disabled test mode
-            # Trust the state we just set (API may need time to process)
-            self._is_on = False
-            self._last_state_change = datetime.now()
-            self.schedule_update_ha_state()
-        except AbodeException as ex:
-            LOGGER.error("Failed to disable test mode: %s", ex)
+        self._data.set_test_mode(False)
+        LOGGER.info("Test mode disabled")
+        self._user_enabled = False  # User explicitly disabled test mode
+        # Trust the state we just set (API may need time to process)
+        self._is_on = False
+        self._last_state_change = datetime.now()
+        self.schedule_update_ha_state()
 
     @property
     def is_on(self) -> bool:
