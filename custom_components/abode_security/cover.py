@@ -1,5 +1,7 @@
 """Support for Abode Security System covers."""
 
+from __future__ import annotations
+
 from typing import Any
 
 from . import _vendor  # noqa: F401

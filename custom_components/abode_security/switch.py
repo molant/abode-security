@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any, cast
 
@@ -212,8 +213,8 @@ class AbodeManualAlarmSwitch(SwitchEntity):
 
     async def _subscribe_to_events(
         self,
-        event_group: Any,
-        callback: Any,
+        event_group: str,
+        callback: Callable[[dict[str, Any]], None],
     ) -> None:
         """Subscribe to Abode timeline events."""
         try:
@@ -228,8 +229,8 @@ class AbodeManualAlarmSwitch(SwitchEntity):
 
     async def _unsubscribe_from_events(
         self,
-        event_group: Any,
-        callback: Any,
+        event_group: str,
+        callback: Callable[[dict[str, Any]], None],
     ) -> None:
         """Unsubscribe from Abode timeline events."""
         if not hasattr(self._data.abode.events, "remove_event_callback"):
@@ -272,7 +273,11 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         await self._unsubscribe_from_events(TimelineGroups.ALARM_END, self._alarm_end_callback)
 
     def _alarm_event_callback(self, event: dict[str, Any]) -> None:
-        """Handle alarm trigger events from timeline."""
+        """Handle alarm trigger events from timeline.
+
+        Args:
+            event: Timeline event dictionary containing alarm information
+        """
         # Check if this is an actual alarm event
         if event.get('is_alarm') != '1':
             return
@@ -294,7 +299,11 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         self.schedule_update_ha_state()
 
     def _alarm_end_callback(self, event: dict[str, Any]) -> None:
-        """Handle alarm end/dismiss events from timeline."""
+        """Handle alarm end/dismiss events from timeline.
+
+        Args:
+            event: Timeline event dictionary indicating alarm dismissal
+        """
         # Log for debugging
         LOGGER.debug(
             "Alarm end callback fired - alarm_type: %s, event_code: %s, is_alarm: %s, event_id: %s",
