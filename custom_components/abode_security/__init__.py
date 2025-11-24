@@ -31,7 +31,17 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_POLLING, DOMAIN, LOGGER
+from .const import (
+    CONF_POLLING,
+    CONF_POLLING_INTERVAL,
+    CONF_ENABLE_EVENTS,
+    CONF_RETRY_COUNT,
+    DEFAULT_POLLING_INTERVAL,
+    DEFAULT_ENABLE_EVENTS,
+    DEFAULT_RETRY_COUNT,
+    DOMAIN,
+    LOGGER,
+)
 from .services import async_setup_services
 
 ATTR_DEVICE_NAME = "device_name"
@@ -71,6 +81,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     username = entry.data[CONF_USERNAME]
     password = entry.data[CONF_PASSWORD]
     polling = entry.data[CONF_POLLING]
+    polling_interval = entry.data.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL)
+    enable_events = entry.data.get(CONF_ENABLE_EVENTS, DEFAULT_ENABLE_EVENTS)
+    retry_count = entry.data.get(CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT)
 
     # Configure abode library to use config directory for storing data
     abode.config.paths.override(user_data=Path(hass.config.path("Abode")))
@@ -92,7 +105,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except (AbodeException, ConnectTimeout, HTTPError) as ex:
         raise ConfigEntryNotReady(f"Unable to connect to Abode: {ex}") from ex
 
-    entry.runtime_data = AbodeSystem(abode_client, polling)
+    entry.runtime_data = AbodeSystem(
+        abode_client,
+        polling,
+        polling_interval=polling_interval,
+        enable_events=enable_events,
+        retry_count=retry_count,
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

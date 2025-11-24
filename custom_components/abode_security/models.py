@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING
 
 from homeassistant.core import CALLBACK_TYPE
 
-from .const import LOGGER
+from .const import (
+    LOGGER,
+    DEFAULT_POLLING_INTERVAL,
+    DEFAULT_ENABLE_EVENTS,
+    DEFAULT_RETRY_COUNT,
+)
 from .decorators import handle_abode_errors
 
 if TYPE_CHECKING:
@@ -22,6 +27,9 @@ class AbodeSystem:
     polling: bool
     entity_ids: set[str | None] = field(default_factory=set)
     logout_listener: CALLBACK_TYPE | None = None
+    polling_interval: int = DEFAULT_POLLING_INTERVAL
+    enable_events: bool = DEFAULT_ENABLE_EVENTS
+    retry_count: int = DEFAULT_RETRY_COUNT
 
     def get_test_mode(self) -> bool:
         """Get test mode status with fallback."""
