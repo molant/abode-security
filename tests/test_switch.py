@@ -277,3 +277,56 @@ async def test_dismiss_alarm_service(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
         mock.assert_called_once_with("12345")
+
+
+async def test_abode_switch_error_handling(hass: HomeAssistant) -> None:
+    """Test that AbodeSwitch handles errors gracefully."""
+    await setup_platform(hass, SWITCH_DOMAIN)
+
+    with patch("abode.devices.switch.Switch.switch_on") as mock_switch_on:
+        mock_switch_on.side_effect = Exception("API Error")
+        await hass.services.async_call(
+            SWITCH_DOMAIN, SERVICE_TURN_ON, {ATTR_ENTITY_ID: DEVICE_ID}, blocking=True
+        )
+        await hass.async_block_till_done()
+
+        # Entity should still exist despite error
+        state = hass.states.get(DEVICE_ID)
+        assert state is not None
+
+
+async def test_automation_switch_error_handling(hass: HomeAssistant) -> None:
+    """Test that AbodeAutomationSwitch turn_on handles errors gracefully."""
+    with patch("abode.automation.Automation.enable") as mock_enable:
+        mock_enable.side_effect = Exception("API Error")
+        await setup_platform(hass, SWITCH_DOMAIN)
+
+        await hass.services.async_call(
+            SWITCH_DOMAIN,
+            SERVICE_TURN_ON,
+            {ATTR_ENTITY_ID: AUTOMATION_ID},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+        # Entity should still exist despite error
+        state = hass.states.get(AUTOMATION_ID)
+        assert state is not None
+
+
+async def test_automation_trigger_error_handling(hass: HomeAssistant) -> None:
+    """Test that automation trigger handles errors gracefully."""
+    await setup_platform(hass, SWITCH_DOMAIN)
+
+    with patch("abode.automation.Automation.trigger") as mock_trigger:
+        mock_trigger.side_effect = Exception("API Error")
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_TRIGGER_AUTOMATION,
+            {ATTR_ENTITY_ID: AUTOMATION_ID},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+        # Service call should complete without raising
+        # (error handling in decorator will catch and log)

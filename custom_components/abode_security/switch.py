@@ -9,6 +9,7 @@ from . import _vendor  # noqa: F401
 
 from abode.devices.alarm import Alarm
 from abode.devices.switch import Switch
+from abode.exceptions import Exception as AbodeException
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -99,13 +100,17 @@ class AbodeSwitch(AbodeDevice, SwitchEntity):
     _device: Switch
     _attr_name = None
 
+    @handle_abode_errors("turn on switch device")
     def turn_on(self, **kwargs: Any) -> None:
         """Turn on the device."""
         self._device.switch_on()
+        LOGGER.info("Switch device turned on")
 
+    @handle_abode_errors("turn off switch device")
     def turn_off(self, **kwargs: Any) -> None:
         """Turn off the device."""
         self._device.switch_off()
+        LOGGER.info("Switch device turned off")
 
     @property
     def is_on(self) -> bool:
@@ -125,19 +130,25 @@ class AbodeAutomationSwitch(AbodeAutomation, SwitchEntity):
         signal = f"abode_trigger_automation_{self.entity_id}"
         self.async_on_remove(async_dispatcher_connect(self.hass, signal, self.trigger))
 
+    @handle_abode_errors("enable automation")
     def turn_on(self, **kwargs: Any) -> None:
         """Enable the automation."""
-        if self._automation.enable(True):
-            self.schedule_update_ha_state()
+        self._automation.enable(True)
+        LOGGER.info("Automation enabled")
+        self.schedule_update_ha_state()
 
+    @handle_abode_errors("disable automation")
     def turn_off(self, **kwargs: Any) -> None:
         """Disable the automation."""
-        if self._automation.enable(False):
-            self.schedule_update_ha_state()
+        self._automation.enable(False)
+        LOGGER.info("Automation disabled")
+        self.schedule_update_ha_state()
 
+    @handle_abode_errors("trigger automation")
     def trigger(self) -> None:
         """Trigger the automation."""
         self._automation.trigger()
+        LOGGER.info("Automation triggered")
 
     @property
     def is_on(self) -> bool:
