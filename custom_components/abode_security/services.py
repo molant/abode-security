@@ -57,13 +57,15 @@ def _create_service_handler(
     method_name: str,
     operation_desc: str,
     *arg_extractors: tuple[str, Callable[[ServiceCall], Any]],
+    target: str = "abode",
 ) -> Callable:
     """Factory for creating service handlers with consistent error handling.
 
     Args:
-        method_name: Name of method on abode_system.abode
+        method_name: Name of method on target object
         operation_desc: Human-readable description for logging
         arg_extractors: Tuples of (arg_name, extractor_func) for service data
+        target: "abode" for abode_system.abode or "system" for abode_system itself
 
     Returns:
         Service handler function ready to register
@@ -76,7 +78,8 @@ def _create_service_handler(
             return
 
         try:
-            method = getattr(abode_system.abode, method_name)
+            obj = abode_system.abode if target == "abode" else abode_system
+            method = getattr(obj, method_name)
             args = [extractor(call) for _, extractor in arg_extractors]
             await call.hass.async_add_executor_job(method, *args)
             LOGGER.debug(f"Successfully {operation_desc}")
@@ -150,8 +153,8 @@ def _trigger_automation(call: ServiceCall) -> None:
         dispatcher_send(call.hass, signal)
 
 
-async def _trigger_alarm(call: ServiceCall) -> None:
-    """Trigger a manual alarm."""
+async def _trigger_alarm_handler(call: ServiceCall) -> None:
+    """Trigger a manual alarm (special handler for multi-step operation)."""
     alarm_type = call.data[ATTR_ALARM_TYPE]
 
     abode_system = _get_abode_system(call.hass)
@@ -169,70 +172,6 @@ async def _trigger_alarm(call: ServiceCall) -> None:
         LOGGER.info("Triggered manual alarm of type: %s", alarm_type)
     except AbodeException as ex:
         LOGGER.error("Failed to trigger manual alarm: %s", ex)
-
-
-async def _acknowledge_alarm(call: ServiceCall) -> None:
-    """Acknowledge a timeline alarm event."""
-    timeline_id = call.data[ATTR_TIMELINE_ID]
-
-    abode_system = _get_abode_system(call.hass)
-    if not abode_system:
-        LOGGER.error("Abode integration not configured")
-        return
-
-    try:
-        await call.hass.async_add_executor_job(
-            abode_system.abode.acknowledge_timeline_event, timeline_id
-        )
-        LOGGER.info("Acknowledged timeline event: %s", timeline_id)
-    except AbodeException as ex:
-        LOGGER.error("Failed to acknowledge timeline event: %s", ex)
-
-
-async def _dismiss_alarm(call: ServiceCall) -> None:
-    """Dismiss a timeline alarm event."""
-    timeline_id = call.data[ATTR_TIMELINE_ID]
-
-    abode_system = _get_abode_system(call.hass)
-    if not abode_system:
-        LOGGER.error("Abode integration not configured")
-        return
-
-    try:
-        await call.hass.async_add_executor_job(
-            abode_system.abode.dismiss_timeline_event, timeline_id
-        )
-        LOGGER.info("Dismissed timeline event: %s", timeline_id)
-    except AbodeException as ex:
-        LOGGER.error("Failed to dismiss timeline event: %s", ex)
-
-
-async def _enable_test_mode(call: ServiceCall) -> None:
-    """Enable test mode."""
-    abode_system = _get_abode_system(call.hass)
-    if not abode_system:
-        LOGGER.error("Abode integration not configured")
-        return
-
-    try:
-        await call.hass.async_add_executor_job(abode_system.set_test_mode, True)
-        LOGGER.info("Test mode enabled")
-    except AbodeException as ex:
-        LOGGER.error("Failed to enable test mode: %s", ex)
-
-
-async def _disable_test_mode(call: ServiceCall) -> None:
-    """Disable test mode."""
-    abode_system = _get_abode_system(call.hass)
-    if not abode_system:
-        LOGGER.error("Abode integration not configured")
-        return
-
-    try:
-        await call.hass.async_add_executor_job(abode_system.set_test_mode, False)
-        LOGGER.info("Test mode disabled")
-    except AbodeException as ex:
-        LOGGER.error("Failed to disable test mode: %s", ex)
 
 
 @callback
@@ -255,24 +194,51 @@ def async_setup_services(hass: HomeAssistant) -> None:
     )
 
     hass.services.async_register(
-        DOMAIN, SERVICE_TRIGGER_ALARM, _trigger_alarm, schema=TRIGGER_ALARM_SCHEMA
+        DOMAIN, SERVICE_TRIGGER_ALARM, _trigger_alarm_handler, schema=TRIGGER_ALARM_SCHEMA
     )
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_ACKNOWLEDGE_ALARM,
-        _acknowledge_alarm,
+        _create_service_handler(
+            "acknowledge_timeline_event",
+            "acknowledge timeline event",
+            ("timeline_id", lambda call: call.data[ATTR_TIMELINE_ID]),
+        ),
         schema=ACKNOWLEDGE_ALARM_SCHEMA,
     )
 
     hass.services.async_register(
-        DOMAIN, SERVICE_DISMISS_ALARM, _dismiss_alarm, schema=DISMISS_ALARM_SCHEMA
+        DOMAIN,
+        SERVICE_DISMISS_ALARM,
+        _create_service_handler(
+            "dismiss_timeline_event",
+            "dismiss timeline event",
+            ("timeline_id", lambda call: call.data[ATTR_TIMELINE_ID]),
+        ),
+        schema=DISMISS_ALARM_SCHEMA,
     )
 
     hass.services.async_register(
-        DOMAIN, SERVICE_ENABLE_TEST_MODE, _enable_test_mode, schema=ENABLE_TEST_MODE_SCHEMA
+        DOMAIN,
+        SERVICE_ENABLE_TEST_MODE,
+        _create_service_handler(
+            "set_test_mode",
+            "enable test mode",
+            ("enabled", lambda call: True),
+            target="system",
+        ),
+        schema=ENABLE_TEST_MODE_SCHEMA,
     )
 
     hass.services.async_register(
-        DOMAIN, SERVICE_DISABLE_TEST_MODE, _disable_test_mode, schema=DISABLE_TEST_MODE_SCHEMA
+        DOMAIN,
+        SERVICE_DISABLE_TEST_MODE,
+        _create_service_handler(
+            "set_test_mode",
+            "disable test mode",
+            ("enabled", lambda call: False),
+            target="system",
+        ),
+        schema=DISABLE_TEST_MODE_SCHEMA,
     )

@@ -55,17 +55,23 @@ class AbodeAlarm(AbodeDevice, AlarmControlPanelEntity):
             return AlarmControlPanelState.ARMED_HOME
         return None
 
+    @handle_abode_errors("disarm alarm")
     def alarm_disarm(self, code: str | None = None) -> None:
         """Send disarm command."""
         self._device.set_standby()
+        LOGGER.info("Alarm disarmed")
 
+    @handle_abode_errors("arm alarm in home mode")
     def alarm_arm_home(self, code: str | None = None) -> None:
         """Send arm home command."""
         self._device.set_home()
+        LOGGER.info("Alarm armed in home mode")
 
+    @handle_abode_errors("arm alarm in away mode")
     def alarm_arm_away(self, code: str | None = None) -> None:
         """Send arm away command."""
         self._device.set_away()
+        LOGGER.info("Alarm armed in away mode")
 
     @handle_abode_errors("trigger manual alarm")
     def trigger_manual_alarm(self, alarm_type: str) -> None:
