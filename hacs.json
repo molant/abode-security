@@ -2,5 +2,7 @@
   "name": "Abode Security",
   "homeassistant": "2024.1.0",
   "render_readme": true,
-  "iot_class": "cloud_push"
+  "iot_class": "cloud_push",
+  "documentation": "https://github.com/molant/abode-security",
+  "issues": "https://github.com/molant/abode-security/issues"
 }

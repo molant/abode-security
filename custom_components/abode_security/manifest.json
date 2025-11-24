@@ -1,10 +1,10 @@
 {
   "domain": "abode_security",
   "name": "Abode Security",
-  "codeowners": ["@yourusername"],
+  "codeowners": ["@molant"],
   "config_flow": true,
-  "diagnostics": true,
-  "documentation": "https://github.com/yourusername/abode-security",
+  "documentation": "https://github.com/molant/abode-security",
+  "issue_tracker": "https://github.com/molant/abode-security/issues",
   "homekit": {
     "models": ["Abode", "Iota"]
   },
@@ -12,5 +12,7 @@
   "loggers": ["jaraco.abode", "lomond"],
   "requirements": ["jaraco.abode==6.2.1"],
   "single_config_entry": true,
-  "version": "0.1.0"
+  "version": "1.0.0",
+  "minimum_home_assistant_version": "2024.1.0",
+  "diagnostics": true
 }
