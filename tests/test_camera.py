@@ -2,11 +2,13 @@
 
 from unittest.mock import patch
 
-from custom_components.abode_security.const import DOMAIN
-from homeassistant.components.camera import DOMAIN as CAMERA_DOMAIN, CameraState
+from homeassistant.components.camera import DOMAIN as CAMERA_DOMAIN
+from homeassistant.components.camera import CameraState
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+
+from custom_components.abode_security.const import DOMAIN
 
 from .common import setup_platform
 

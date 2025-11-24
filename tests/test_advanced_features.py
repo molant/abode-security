@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime
+from unittest.mock import MagicMock
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -11,15 +11,13 @@ from homeassistant.core import HomeAssistant
 from custom_components.abode_security.const import (
     CONF_ENABLE_EVENTS,
     CONF_POLLING_INTERVAL,
-    DEFAULT_ENABLE_EVENTS,
-    DEFAULT_POLLING_INTERVAL,
     EVENT_TYPES,
 )
 from custom_components.abode_security.models import (
+    POLLING_PRESETS,
     AbodeSystem,
     EventFilter,
     PollingStats,
-    POLLING_PRESETS,
     SmartPolling,
 )
 

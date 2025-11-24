@@ -1,9 +1,8 @@
 """Tests for the Abode Security sensor device."""
 
 import pytest
-
-from custom_components.abode_security import ATTR_DEVICE_ID
-from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN, SensorDeviceClass
+from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import (
     ATTR_DEVICE_CLASS,
     ATTR_FRIENDLY_NAME,
@@ -13,6 +12,8 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+
+from custom_components.abode_security import ATTR_DEVICE_ID
 
 from .common import setup_platform
 

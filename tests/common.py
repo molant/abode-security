@@ -2,12 +2,12 @@
 
 from unittest.mock import patch
 
-from custom_components.abode_security import DOMAIN
-from custom_components.abode_security.const import CONF_POLLING
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 
+from custom_components.abode_security import DOMAIN
+from custom_components.abode_security.const import CONF_POLLING
 from tests.common import MockConfigEntry
 
 

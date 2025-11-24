@@ -1,9 +1,9 @@
 """Tests for the Abode Security binary sensor device."""
 
-from custom_components.abode_security import ATTR_DEVICE_ID
-from custom_components.abode_security.const import ATTRIBUTION
 from homeassistant.components.binary_sensor import (
     DOMAIN as BINARY_SENSOR_DOMAIN,
+)
+from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
 )
 from homeassistant.const import (
@@ -14,6 +14,9 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+
+from custom_components.abode_security import ATTR_DEVICE_ID
+from custom_components.abode_security.const import ATTRIBUTION
 
 from .common import setup_platform
 

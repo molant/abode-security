@@ -2,8 +2,8 @@
 
 from unittest.mock import patch
 
-from custom_components.abode_security import ATTR_DEVICE_ID
-from homeassistant.components.cover import DOMAIN as COVER_DOMAIN, CoverState
+from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
+from homeassistant.components.cover import CoverState
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     ATTR_FRIENDLY_NAME,
@@ -12,6 +12,8 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+
+from custom_components.abode_security import ATTR_DEVICE_ID
 
 from .common import setup_platform
 

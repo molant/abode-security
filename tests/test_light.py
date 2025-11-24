@@ -2,15 +2,16 @@
 
 from unittest.mock import patch
 
-from custom_components.abode_security import ATTR_DEVICE_ID
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_MODE,
     ATTR_COLOR_TEMP_KELVIN,
     ATTR_RGB_COLOR,
     ATTR_SUPPORTED_COLOR_MODES,
-    DOMAIN as LIGHT_DOMAIN,
     ColorMode,
+)
+from homeassistant.components.light import (
+    DOMAIN as LIGHT_DOMAIN,
 )
 from homeassistant.const import (
     ATTR_ENTITY_ID,
@@ -22,6 +23,8 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+
+from custom_components.abode_security import ATTR_DEVICE_ID
 
 from .common import setup_platform
 

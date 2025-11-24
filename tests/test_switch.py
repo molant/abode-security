@@ -2,12 +2,6 @@
 
 from unittest.mock import patch
 
-from custom_components.abode_security.services import (
-    SERVICE_ACKNOWLEDGE_ALARM,
-    SERVICE_DISMISS_ALARM,
-    SERVICE_TRIGGER_ALARM,
-    SERVICE_TRIGGER_AUTOMATION,
-)
 from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
 from homeassistant.const import (
     ATTR_ENTITY_ID,
@@ -18,6 +12,13 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+
+from custom_components.abode_security.services import (
+    SERVICE_ACKNOWLEDGE_ALARM,
+    SERVICE_DISMISS_ALARM,
+    SERVICE_TRIGGER_ALARM,
+    SERVICE_TRIGGER_AUTOMATION,
+)
 
 from .common import setup_platform
 from .test_constants import (

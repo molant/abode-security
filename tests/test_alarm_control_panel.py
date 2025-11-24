@@ -2,9 +2,10 @@
 
 from unittest.mock import PropertyMock, patch
 
-from custom_components.abode_security import ATTR_DEVICE_ID
 from homeassistant.components.alarm_control_panel import (
     DOMAIN as ALARM_DOMAIN,
+)
+from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelState,
 )
 from homeassistant.const import (
@@ -17,6 +18,8 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+
+from custom_components.abode_security import ATTR_DEVICE_ID
 
 from .common import setup_platform
 from .test_constants import ALARM_ENTITY_ID, ALARM_UID

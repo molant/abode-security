@@ -1,6 +1,6 @@
 """Tests for entity lifecycle and error handling."""
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 from homeassistant.components.alarm_control_panel import DOMAIN as ALARM_DOMAIN
 from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
@@ -134,8 +134,8 @@ async def test_event_callback_helpers_handle_exceptions(hass: HomeAssistant, moc
 
 async def test_service_handler_factory_error_handling(hass: HomeAssistant, mock_abode) -> None:
     """Test that service handlers created with factory handle errors gracefully."""
-    from custom_components.abode_security.services import SERVICE_ACKNOWLEDGE_ALARM
     from custom_components.abode_security.const import DOMAIN
+    from custom_components.abode_security.services import SERVICE_ACKNOWLEDGE_ALARM
 
     # Make acknowledge_timeline_event raise an error
     mock_abode.acknowledge_timeline_event.side_effect = Exception(
