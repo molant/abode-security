@@ -19,8 +19,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from .common import setup_platform
+from .test_constants import ALARM_ENTITY_ID, ALARM_UID
 
-DEVICE_ID = "alarm_control_panel.abode_alarm"
+# Use constants from test_constants
+DEVICE_ID = ALARM_ENTITY_ID
 
 
 async def test_entity_registry(
@@ -31,7 +33,7 @@ async def test_entity_registry(
 
     entry = entity_registry.async_get(DEVICE_ID)
     # Abode alarm device unique_id is the MAC address
-    assert entry.unique_id == "001122334455"
+    assert entry.unique_id == ALARM_UID
 
 
 async def test_attributes(hass: HomeAssistant) -> None:

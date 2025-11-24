@@ -2,7 +2,6 @@
 
 from unittest.mock import patch
 
-from custom_components.abode_security.const import DOMAIN
 from custom_components.abode_security.services import (
     SERVICE_ACKNOWLEDGE_ALARM,
     SERVICE_DISMISS_ALARM,
@@ -21,13 +20,21 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from .common import setup_platform
+from .test_constants import (
+    AUTOMATION_ENTITY_ID,
+    AUTOMATION_UID,
+    DEVICE_ENTITY_ID,
+    DEVICE_UID,
+    DOMAIN,
+    PANIC_ALARM_ENTITY_ID,
+    TEST_MODE_ENTITY_ID,
+)
 
-AUTOMATION_ID = "switch.test_automation"
-AUTOMATION_UID = "47fae27488f74f55b964a81a066c3a01"
-DEVICE_ID = "switch.test_switch"
-DEVICE_UID = "0012a4d3614cb7e2b8c9abea31d2fb2a"
-PANIC_ALARM_ID = "switch.test_alarm_panic_alarm"
-TEST_MODE_ID = "switch.test_alarm_test_mode"
+# Use new constants from test_constants
+AUTOMATION_ID = AUTOMATION_ENTITY_ID
+DEVICE_ID = DEVICE_ENTITY_ID
+PANIC_ALARM_ID = PANIC_ALARM_ENTITY_ID
+TEST_MODE_ID = TEST_MODE_ENTITY_ID
 
 
 async def test_entity_registry(
