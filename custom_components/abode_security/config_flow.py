@@ -15,12 +15,23 @@ from abode.exceptions import (
     Exception as AbodeException,
 )
 from abode.helpers.errors import MFA_CODE_REQUIRED
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import callback
 from requests.exceptions import ConnectTimeout, HTTPError
 
 from . import _vendor  # noqa: F401
-from .const import CONF_POLLING, DOMAIN, LOGGER
+from .const import (
+    CONF_ENABLE_EVENTS,
+    CONF_POLLING,
+    CONF_POLLING_INTERVAL,
+    CONF_RETRY_COUNT,
+    DEFAULT_ENABLE_EVENTS,
+    DEFAULT_POLLING_INTERVAL,
+    DEFAULT_RETRY_COUNT,
+    DOMAIN,
+    LOGGER,
+)
 
 CONF_MFA = "mfa_code"
 
@@ -164,3 +175,52 @@ class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):
         self._password = user_input[CONF_PASSWORD]
 
         return await self._async_abode_login(step_id="reauth_confirm")
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: ConfigEntry,
+    ) -> AbodeOptionsFlowHandler:
+        """Get the options flow."""
+        return AbodeOptionsFlowHandler(config_entry)
+
+
+class AbodeOptionsFlowHandler(OptionsFlow):
+    """Handle Abode options."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle basic options."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        # Get current config values
+        polling_interval = self.config_entry.options.get(
+            CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL
+        )
+        enable_events = self.config_entry.options.get(
+            CONF_ENABLE_EVENTS, DEFAULT_ENABLE_EVENTS
+        )
+        retry_count = self.config_entry.options.get(
+            CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT
+        )
+
+        options_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_POLLING_INTERVAL, default=polling_interval
+                ): vol.All(vol.Coerce(int), vol.Range(min=15, max=120)),
+                vol.Optional(
+                    CONF_ENABLE_EVENTS, default=enable_events
+                ): bool,
+                vol.Optional(
+                    CONF_RETRY_COUNT, default=retry_count
+                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=options_schema,
+        )
