@@ -10,10 +10,13 @@ from homeassistant.core import CALLBACK_TYPE
 
 from .const import (
     CONF_ENABLE_EVENTS,
+    CONF_EVENT_FILTER,
     CONF_POLLING_INTERVAL,
     DEFAULT_ENABLE_EVENTS,
+    DEFAULT_EVENT_FILTER,
     DEFAULT_POLLING_INTERVAL,
     DEFAULT_RETRY_COUNT,
+    EVENT_TYPES,
     LOGGER,
 )
 
@@ -74,6 +77,40 @@ class PollingStats:
         self.average_duration = 0.0
         self.total_duration = 0.0
         self.last_update = datetime.now(timezone.utc)
+
+
+class EventFilter:
+    """Filter events based on type."""
+
+    def __init__(self, filter_types: list[str] | None = None) -> None:
+        """Initialize event filter."""
+        # If no filter specified, allow all events
+        self.filter_types = filter_types if filter_types else EVENT_TYPES
+        self.filtered_count = 0
+        self.allowed_count = 0
+
+    def should_process(self, event_type: str) -> bool:
+        """Check if event type should be processed."""
+        if event_type not in self.filter_types:
+            self.filtered_count += 1
+            LOGGER.debug("EventFilter: Filtered event type '%s'", event_type)
+            return False
+
+        self.allowed_count += 1
+        return True
+
+    def get_stats(self) -> dict[str, int]:
+        """Get filter statistics."""
+        return {
+            "filtered": self.filtered_count,
+            "allowed": self.allowed_count,
+            "total": self.filtered_count + self.allowed_count,
+        }
+
+    def reset_stats(self) -> None:
+        """Reset statistics."""
+        self.filtered_count = 0
+        self.allowed_count = 0
 
 
 class SmartPolling:
@@ -145,11 +182,16 @@ class AbodeSystem:
     polling_interval: int = DEFAULT_POLLING_INTERVAL
     enable_events: bool = DEFAULT_ENABLE_EVENTS
     retry_count: int = DEFAULT_RETRY_COUNT
+    event_filter_types: list[str] = field(default_factory=lambda: DEFAULT_EVENT_FILTER)
     smart_polling: SmartPolling | None = field(default=None, init=False)
+    event_filter: EventFilter | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
-        """Initialize smart polling after dataclass init."""
+        """Initialize smart polling and event filter after dataclass init."""
         self.smart_polling = SmartPolling(self.polling_interval)
+        self.event_filter = EventFilter(
+            self.event_filter_types if self.event_filter_types else None
+        )
 
     def get_test_mode(self) -> bool:
         """Get test mode status with fallback."""
