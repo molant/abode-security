@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -62,7 +63,7 @@ def _map_event_code_to_alarm_type(event_code: str, alarm_type: str) -> bool:
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
@@ -72,16 +73,16 @@ async def async_setup_entry(
     entities: list[SwitchEntity] = [
         AbodeSwitch(data, device)
         for device_type in DEVICE_TYPES
-        for device in data.abode.get_devices(generic_type=device_type)
+        for device in await data.abode.get_devices(generic_type=device_type)
     ]
 
     entities.extend(
         AbodeAutomationSwitch(data, automation)
-        for automation in data.abode.get_automations()
+        for automation in await data.abode.get_automations()
     )
 
     # Add manual alarm switches
-    alarm = await hass.async_add_executor_job(data.abode.get_alarm)
+    alarm = data.abode.get_alarm()
     entities.extend(
         AbodeManualAlarmSwitch(data, alarm, alarm_type)
         for alarm_type in MANUAL_ALARM_TYPES
@@ -100,15 +101,15 @@ class AbodeSwitch(AbodeDevice, SwitchEntity):
     _attr_name = None
 
     @handle_abode_errors("turn on switch device")
-    def turn_on(self, **_kwargs: Any) -> None:
+    async def async_turn_on(self, **_kwargs: Any) -> None:
         """Turn on the device."""
-        self._device.switch_on()
+        await self._device.switch_on()
         LOGGER.info("Switch device turned on")
 
     @handle_abode_errors("turn off switch device")
-    def turn_off(self, **_kwargs: Any) -> None:
+    async def async_turn_off(self, **_kwargs: Any) -> None:
         """Turn off the device."""
-        self._device.switch_off()
+        await self._device.switch_off()
         LOGGER.info("Switch device turned off")
 
     @property
@@ -127,26 +128,33 @@ class AbodeAutomationSwitch(AbodeAutomation, SwitchEntity):
         await super().async_added_to_hass()
 
         signal = f"abode_trigger_automation_{self.entity_id}"
-        self.async_on_remove(async_dispatcher_connect(self.hass, signal, self.trigger))
+
+        # Create a synchronous wrapper for the async trigger callback
+        # This allows async_dispatcher_connect to properly handle the async method
+        def _trigger_wrapper() -> None:
+            """Wrapper to schedule async trigger as a task."""
+            self.hass.async_create_task(self.trigger())
+
+        self.async_on_remove(async_dispatcher_connect(self.hass, signal, _trigger_wrapper))
 
     @handle_abode_errors("enable automation")
-    def turn_on(self, **_kwargs: Any) -> None:
+    async def async_turn_on(self, **_kwargs: Any) -> None:
         """Enable the automation."""
-        self._automation.enable(True)
+        await self._automation.enable(True)
         LOGGER.info("Automation enabled")
-        self.schedule_update_ha_state()
+        self.async_write_ha_state()
 
     @handle_abode_errors("disable automation")
-    def turn_off(self, **_kwargs: Any) -> None:
+    async def async_turn_off(self, **_kwargs: Any) -> None:
         """Disable the automation."""
-        self._automation.enable(False)
+        await self._automation.enable(False)
         LOGGER.info("Automation disabled")
-        self.schedule_update_ha_state()
+        self.async_write_ha_state()
 
     @handle_abode_errors("trigger automation")
-    def trigger(self) -> None:
+    async def trigger(self) -> None:
         """Trigger the automation."""
-        self._automation.trigger()
+        await self._automation.trigger()
         LOGGER.info("Automation triggered")
 
     @property
@@ -216,12 +224,17 @@ class AbodeManualAlarmSwitch(SwitchEntity):
     ) -> None:
         """Subscribe to Abode timeline events."""
         try:
-            await self.hass.async_add_executor_job(
-                self._data.abode.events.add_event_callback,
-                event_group,
-                callback,
+            await asyncio.wait_for(
+                self.hass.async_add_executor_job(
+                    self._data.abode.events.add_event_callback,
+                    event_group,
+                    callback,
+                ),
+                timeout=10.0,
             )
             LOGGER.debug(f"Subscribed to {event_group} events")
+        except asyncio.TimeoutError:
+            LOGGER.warning(f"Timeout subscribing to {event_group} events")
         except Exception as ex:
             LOGGER.warning(f"Could not subscribe to {event_group} events: %s", ex)
 
@@ -236,12 +249,17 @@ class AbodeManualAlarmSwitch(SwitchEntity):
             return
 
         try:
-            await self.hass.async_add_executor_job(
-                self._data.abode.events.remove_event_callback,
-                event_group,
-                callback,
+            await asyncio.wait_for(
+                self.hass.async_add_executor_job(
+                    self._data.abode.events.remove_event_callback,
+                    event_group,
+                    callback,
+                ),
+                timeout=10.0,
             )
             LOGGER.debug(f"Unsubscribed from {event_group} events")
+        except asyncio.TimeoutError:
+            LOGGER.warning(f"Timeout unsubscribing from {event_group} events")
         except Exception as ex:
             LOGGER.warning(f"Could not unsubscribe from {event_group} events: %s", ex)
 
@@ -326,13 +344,13 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         self.schedule_update_ha_state()
 
     @handle_abode_errors("trigger manual alarm")
-    def turn_on(self, **_kwargs: Any) -> None:
+    async def async_turn_on(self, **_kwargs: Any) -> None:
         """Trigger the manual alarm."""
         if self._is_on:
             LOGGER.debug("Alarm %s already triggered, ignoring duplicate trigger", self._alarm_type)
             return
 
-        response = self._device.trigger_manual_alarm(self._alarm_type)
+        response = await self._device.trigger_manual_alarm(self._alarm_type)
         # Safely extract event_id from response, handling non-dict responses
         if isinstance(response, dict):
             self._timeline_id = response.get('event_id')
@@ -345,18 +363,18 @@ class AbodeManualAlarmSwitch(SwitchEntity):
             self._timeline_id,
         )
         self._is_on = True
-        self.schedule_update_ha_state()
+        self.async_write_ha_state()
 
     @handle_abode_errors("dismiss timeline event")
-    def turn_off(self, **_kwargs: Any) -> None:
+    async def async_turn_off(self, **_kwargs: Any) -> None:
         """Dismiss the manual alarm (if timeline event ID is available)."""
         if self._timeline_id:
-            self._data.abode.dismiss_timeline_event(self._timeline_id)
+            await self._data.abode.dismiss_timeline_event(self._timeline_id)
             LOGGER.info("Dismissed timeline event: %s", self._timeline_id)
             self._timeline_id = None
 
         self._is_on = False
-        self.schedule_update_ha_state()
+        self.async_write_ha_state()
 
     @property
     def is_on(self) -> bool:
@@ -406,9 +424,7 @@ class AbodeTestModeSwitch(SwitchEntity):
     async def _refresh_test_mode_status(self) -> None:
         """Refresh test mode status from Abode."""
         try:
-            self._is_on = await self.hass.async_add_executor_job(
-                self._data.get_test_mode
-            )
+            self._is_on = await self._data.get_test_mode()
             LOGGER.info("Initial test mode status fetched: %s", self._is_on)
             self.async_write_ha_state()
 
@@ -418,6 +434,12 @@ class AbodeTestModeSwitch(SwitchEntity):
                 self._attr_should_poll = True
                 self._initial_sync_done = True
         except AbodeException as ex:
+            if not self._data.test_mode_supported:
+                LOGGER.info("Test mode unsupported; disabling test mode switch")
+                self._attr_available = False
+                self._attr_should_poll = False
+                self.async_write_ha_state()
+                return
             LOGGER.error("Failed to get test mode status (AbodeException): %s", ex)
             import traceback
             LOGGER.debug("Traceback: %s", traceback.format_exc())
@@ -426,7 +448,7 @@ class AbodeTestModeSwitch(SwitchEntity):
             import traceback
             LOGGER.debug("Traceback: %s", traceback.format_exc())
 
-    def update(self) -> None:
+    async def async_update(self) -> None:
         """Update test mode status."""
         # Skip polling for 5 seconds after a state change to let API catch up
         if self._last_state_change is not None:
@@ -437,7 +459,7 @@ class AbodeTestModeSwitch(SwitchEntity):
 
         try:
             previous_state = self._is_on
-            self._is_on = self._data.get_test_mode()
+            self._is_on = await self._data.get_test_mode()
 
             LOGGER.debug("Polling test mode status: was %s, now %s", previous_state, self._is_on)
 
@@ -451,14 +473,20 @@ class AbodeTestModeSwitch(SwitchEntity):
                 self._user_enabled = False
                 self._attr_should_poll = False
         except AbodeException as ex:
+            if not self._data.test_mode_supported:
+                LOGGER.info("Test mode unsupported; disabling test mode switch")
+                self._attr_available = False
+                self._attr_should_poll = False
+                self.async_write_ha_state()
+                return
             LOGGER.error("Failed to update test mode status: %s", ex)
         except Exception as ex:
             LOGGER.error("Unexpected error updating test mode status: %s", ex)
 
     @handle_abode_errors("enable test mode")
-    def turn_on(self, **_kwargs: Any) -> None:
+    async def async_turn_on(self, **_kwargs: Any) -> None:
         """Enable test mode."""
-        self._data.set_test_mode(True)
+        await self._data.set_test_mode(True)
         LOGGER.info("Test mode enabled")
         self._user_enabled = True  # User explicitly enabled test mode
         # Trust the state we just set (API may need time to process)
@@ -467,9 +495,9 @@ class AbodeTestModeSwitch(SwitchEntity):
         self.schedule_update_ha_state()
 
     @handle_abode_errors("disable test mode")
-    def turn_off(self, **_kwargs: Any) -> None:
+    async def async_turn_off(self, **_kwargs: Any) -> None:
         """Disable test mode."""
-        self._data.set_test_mode(False)
+        await self._data.set_test_mode(False)
         LOGGER.info("Test mode disabled")
         self._user_enabled = False  # User explicitly disabled test mode
         # Trust the state we just set (API may need time to process)

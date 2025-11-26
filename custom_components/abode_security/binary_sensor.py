@@ -39,7 +39,7 @@ async def async_setup_entry(
 
     async_add_entities(
         AbodeBinarySensor(data, device)
-        for device in data.abode.get_devices(generic_type=device_types)
+        for device in await data.abode.get_devices(generic_type=device_types)
     )
 
 

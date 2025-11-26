@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from typing import Any, cast
 
-import requests
+import aiohttp
 from abode.devices.base import Device
 from abode.devices.camera import Camera as AbodeCam
 from abode.helpers import timeline
@@ -15,7 +16,6 @@ from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import Throttle
-from requests.models import Response
 
 from . import _vendor  # noqa: F401
 from .const import LOGGER
@@ -36,7 +36,7 @@ async def async_setup_entry(
 
     async_add_entities(
         AbodeCamera(data, device, timeline.CAPTURE_IMAGE)
-        for device in data.abode.get_devices(generic_type="camera")
+        for device in await data.abode.get_devices(generic_type="camera")
     )
 
 
@@ -51,45 +51,77 @@ class AbodeCamera(AbodeDevice, Camera):
         AbodeDevice.__init__(self, data, device)
         Camera.__init__(self)
         self._event = event
-        self._response: Response | None = None
+        self._image_content: bytes | None = None
 
     async def async_added_to_hass(self) -> None:
         """Subscribe Abode events."""
         await super().async_added_to_hass()
 
-        self.hass.async_add_executor_job(
-            self._data.abode.events.add_timeline_callback,
-            self._event,
-            self._capture_callback,
-        )
+        # Wrap the async callback since add_timeline_callback expects sync callbacks
+        def sync_capture_wrapper(capture: Any) -> None:
+            """Sync wrapper to schedule async capture callback."""
+            # Use Home Assistant's async_create_task for proper cleanup on removal
+            self.hass.async_create_task(self._capture_callback(capture))
+
+        try:
+            await asyncio.wait_for(
+                self.hass.async_add_executor_job(
+                    self._data.abode.events.add_timeline_callback,
+                    self._event,
+                    sync_capture_wrapper,
+                ),
+                timeout=10.0,
+            )
+        except asyncio.TimeoutError:
+            pass  # Timeout on timeline callback registration is non-critical
 
         signal = f"abode_camera_capture_{self.entity_id}"
         self.async_on_remove(async_dispatcher_connect(self.hass, signal, self.capture))
 
     def capture(self) -> bool:
         """Request a new image capture."""
-        return cast(bool, self._device.capture())
+        # Use Home Assistant's async_create_task for proper cleanup on removal
+        self.hass.async_create_task(self._async_capture())
+        return True  # Return True to indicate task was scheduled
+
+    async def _async_capture(self) -> None:
+        """Capture image asynchronously."""
+        try:
+            await self._device.capture()
+        except Exception as ex:
+            LOGGER.debug("Failed to capture image: %s", ex)
 
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
     def refresh_image(self) -> None:
         """Find a new image on the timeline."""
-        if self._device.refresh_image():
-            self.get_image()
+        # Use Home Assistant's async_create_task for proper cleanup on removal
+        # This returns immediately while the coroutine runs in the event loop
+        self.hass.async_create_task(self._async_refresh_image())
 
-    def get_image(self) -> None:
-        """Attempt to download the most recent capture."""
+    async def _async_refresh_image(self) -> None:
+        """Async version of refresh_image."""
+        try:
+            if await self._device.refresh_image():
+                await self._async_get_image()
+        except Exception as ex:
+            LOGGER.debug("Failed to refresh image: %s", ex)
+
+    async def _async_get_image(self) -> None:
+        """Attempt to download the most recent capture asynchronously."""
         if self._device.image_url:
             try:
-                self._response = requests.get(
-                    self._device.image_url, stream=True, timeout=10
-                )
-
-                self._response.raise_for_status()
-            except requests.HTTPError as err:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        self._device.image_url,
+                        timeout=aiohttp.ClientTimeout(total=10),
+                    ) as response:
+                        response.raise_for_status()
+                        self._image_content = await response.read()
+            except aiohttp.ClientError as err:
                 LOGGER.warning("Failed to get camera image: %s", err)
-                self._response = None
+                self._image_content = None
         else:
-            self._response = None
+            self._image_content = None
 
     def camera_image(
         self, _width: int | None = None, _height: int | None = None
@@ -97,24 +129,36 @@ class AbodeCamera(AbodeDevice, Camera):
         """Get a camera image."""
         self.refresh_image()
 
-        if self._response:
-            return self._response.content
+        if self._image_content:
+            return self._image_content
 
         return None
 
     def turn_on(self) -> None:
         """Turn on camera."""
-        self._device.privacy_mode(False)
+        # Use Home Assistant's async_create_task for proper cleanup on removal
+        self.hass.async_create_task(self._async_privacy_mode(False))
 
     def turn_off(self) -> None:
         """Turn off camera."""
-        self._device.privacy_mode(True)
+        # Use Home Assistant's async_create_task for proper cleanup on removal
+        self.hass.async_create_task(self._async_privacy_mode(True))
 
-    def _capture_callback(self, capture: Any) -> None:
-        """Update the image with the device then refresh device."""
-        self._device.update_image_location(capture)
-        self.get_image()
-        self.schedule_update_ha_state()
+    async def _async_privacy_mode(self, enable: bool) -> None:
+        """Set privacy mode asynchronously."""
+        try:
+            await self._device.privacy_mode(enable)
+        except Exception as ex:
+            LOGGER.debug("Failed to set privacy mode: %s", ex)
+
+    async def _capture_callback(self, capture: Any) -> None:
+        """Update the image with the device then refresh device asynchronously."""
+        try:
+            await self._device.update_image_location(capture)
+            await self._async_get_image()
+            self.schedule_update_ha_state()
+        except Exception as ex:
+            LOGGER.debug("Failed to update image from capture: %s", ex)
 
     @property
     def is_on(self) -> bool:

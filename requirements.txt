@@ -1,1 +1,1 @@
-jaraco.abode==6.2.1
+# Using local async refactor of jaraco.abode from custom_components/lib/abode/

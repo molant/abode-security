@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import voluptuous as vol
 from abode.exceptions import Exception as AbodeException
 from homeassistant.const import ATTR_ENTITY_ID
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import dispatcher_send
 
@@ -80,7 +80,7 @@ def _create_service_handler(
             obj = abode_system.abode if target == "abode" else abode_system
             method = getattr(obj, method_name)
             args = [extractor(call) for _, extractor in arg_extractors]
-            await call.hass.async_add_executor_job(method, *args)
+            await method(*args)
             LOGGER.debug(f"Successfully {operation_desc}")
         except AbodeException as ex:
             LOGGER.error(f"Failed to {operation_desc}: %s", ex)
@@ -96,7 +96,7 @@ def _get_abode_system(hass: HomeAssistant) -> AbodeSystem | None:
     return None
 
 
-def _change_setting(call: ServiceCall) -> None:
+async def _change_setting(call: ServiceCall) -> None:
     """Change an Abode system setting."""
     setting = call.data[ATTR_SETTING]
     value = call.data[ATTR_VALUE]
@@ -107,13 +107,17 @@ def _change_setting(call: ServiceCall) -> None:
         return
 
     try:
-        abode_system.abode.set_setting(setting, value)
+        await abode_system.abode.set_setting(setting, value)
     except AbodeException as ex:
         LOGGER.warning(ex)
 
 
 def _capture_image(call: ServiceCall) -> None:
-    """Capture a new image."""
+    """Capture a new image.
+
+    This is a sync function (not async) because it only sends dispatcher signals
+    via dispatcher_send(), which is a pure synchronous operation with no I/O.
+    """
     entity_ids = call.data[ATTR_ENTITY_ID]
 
     abode_system = _get_abode_system(call.hass)
@@ -133,7 +137,11 @@ def _capture_image(call: ServiceCall) -> None:
 
 
 def _trigger_automation(call: ServiceCall) -> None:
-    """Trigger an Abode automation."""
+    """Trigger an Abode automation.
+
+    This is a sync function (not async) because it only sends dispatcher signals
+    via dispatcher_send(), which is a pure synchronous operation with no I/O.
+    """
     entity_ids = call.data[ATTR_ENTITY_ID]
 
     abode_system = _get_abode_system(call.hass)
@@ -162,21 +170,20 @@ async def _trigger_alarm_handler(call: ServiceCall) -> None:
         return
 
     try:
-        alarm = await call.hass.async_add_executor_job(
-            abode_system.abode.get_alarm
-        )
-        await call.hass.async_add_executor_job(
-            alarm.trigger_manual_alarm, alarm_type
-        )
+        alarm = abode_system.abode.get_alarm()
+        await alarm.trigger_manual_alarm(alarm_type)
         LOGGER.info("Triggered manual alarm of type: %s", alarm_type)
     except AbodeException as ex:
         LOGGER.error("Failed to trigger manual alarm: %s", ex)
 
 
-@callback
-def async_setup_services(hass: HomeAssistant) -> None:
-    """Home Assistant services."""
+def setup_services(hass: HomeAssistant) -> None:
+    """Set up Home Assistant services.
 
+    Note: This function is synchronous because hass.services.async_register()
+    can be called from both sync and async contexts. When called from a sync
+    context, it schedules the registrations on the event loop immediately.
+    """
     hass.services.async_register(
         DOMAIN, SERVICE_SETTINGS, _change_setting, schema=CHANGE_SETTING_SCHEMA
     )

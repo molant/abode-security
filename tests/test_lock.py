@@ -1,6 +1,6 @@
 """Tests for the Abode Security lock device."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from homeassistant.components.lock import DOMAIN as LOCK_DOMAIN
 from homeassistant.components.lock import LockState
@@ -47,7 +47,7 @@ async def test_lock(hass: HomeAssistant) -> None:
     """Test the lock can be locked."""
     await setup_platform(hass, LOCK_DOMAIN)
 
-    with patch("abode.devices.lock.Lock.lock") as mock_lock:
+    with patch("abode.devices.lock.Lock.lock", new_callable=AsyncMock) as mock_lock:
         await hass.services.async_call(
             LOCK_DOMAIN, SERVICE_LOCK, {ATTR_ENTITY_ID: DEVICE_ID}, blocking=True
         )
@@ -59,7 +59,7 @@ async def test_unlock(hass: HomeAssistant) -> None:
     """Test the lock can be unlocked."""
     await setup_platform(hass, LOCK_DOMAIN)
 
-    with patch("abode.devices.lock.Lock.unlock") as mock_unlock:
+    with patch("abode.devices.lock.Lock.unlock", new_callable=AsyncMock) as mock_unlock:
         await hass.services.async_call(
             LOCK_DOMAIN, SERVICE_UNLOCK, {ATTR_ENTITY_ID: DEVICE_ID}, blocking=True
         )

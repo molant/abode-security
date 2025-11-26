@@ -1,8 +1,8 @@
-jaraco.abode==6.2.1
+# Using local async refactor of jaraco.abode from custom_components/lib/abode/
 homeassistant
 pytest
 pytest-cov
 pytest-asyncio
 ruff
 mypy
-types-requests
+aioresponses

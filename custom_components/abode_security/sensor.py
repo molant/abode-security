@@ -62,19 +62,36 @@ SENSOR_TYPES: tuple[AbodeSensorDescription, ...] = (
 
 
 async def async_setup_entry(
-    _hass: HomeAssistant,
+    hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Abode sensor devices."""
+    from homeassistant.helpers import entity_registry as er
+
     data: AbodeSystem = entry.runtime_data
 
-    async_add_entities(
-        AbodeSensor(data, device, description)
-        for description in SENSOR_TYPES
-        for device in data.abode.get_devices(generic_type="sensor")
-        if description.key in device.get_value("statuses")
+    devices = await data.abode.get_devices(generic_type="sensor")
+    entities: list[SensorEntity] = []
+
+    # Only add connection status sensor if it doesn't already exist
+    entity_registry = er.async_get(hass)
+    connection_sensor_exists = any(
+        entity.config_entry_id == entry.entry_id
+        and entity.platform == "abode_security"
+        and "connection_status" in entity.entity_id
+        for entity in entity_registry.entities.values()
     )
+
+    if not connection_sensor_exists:
+        entities.append(AbodeConnectionStatusSensor(data))
+
+    for description in SENSOR_TYPES:
+        for device in devices:
+            if description.key in device.get_value("statuses"):
+                entities.append(AbodeSensor(data, device, description))
+
+    async_add_entities(entities)
 
 
 class AbodeSensor(AbodeDevice, SensorEntity):
@@ -103,3 +120,26 @@ class AbodeSensor(AbodeDevice, SensorEntity):
     def native_unit_of_measurement(self) -> str:
         """Return the native unit of measurement."""
         return self.entity_description.native_unit_of_measurement_fn(self._device)
+
+
+class AbodeConnectionStatusSensor(SensorEntity):
+    """Sensor reporting Abode connection status."""
+
+    _attr_icon = "mdi:lan-connect"
+    _attr_should_poll = True
+
+    def __init__(self, data: AbodeSystem) -> None:
+        """Initialize the connection status sensor."""
+        self._data = data
+        self._attr_unique_id = f"{data.abode.uuid}-connection-status"
+        self._attr_name = "Abode Connection Status"
+        self._attr_native_value = data.abode.connection_status
+        self._attr_extra_state_attributes = {}
+
+    async def async_update(self) -> None:
+        """Update connection status."""
+        self._attr_native_value = self._data.abode.connection_status
+        if (last_error := self._data.abode.last_error) is not None:
+            self._attr_extra_state_attributes = {"last_error": last_error}
+        else:
+            self._attr_extra_state_attributes = {}

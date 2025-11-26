@@ -1,14 +1,22 @@
 """Configuration for Abode Security tests."""
 
+import json
+import sys
 from collections.abc import Generator
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from abode.helpers import urls as url  # noqa: N812
-from requests_mock import Mocker
+from aioresponses import aioresponses
 
 from tests.common import load_fixture
 from tests.components.light.conftest import mock_light_profiles  # noqa: F401
+
+# Ensure vendored abode library is importable during tests
+_VENDOR_PATH = Path(__file__).resolve().parents[1] / "custom_components" / "lib"
+if (vendor_path_str := str(_VENDOR_PATH)) not in sys.path:
+    sys.path.insert(0, vendor_path_str)
 
 URL = url
 
@@ -26,14 +34,14 @@ def mock_setup_entry() -> Generator[AsyncMock]:
 def mock_abode() -> Generator[Mock]:
     """Provide a mock Abode client."""
     mock_client = Mock()
-    mock_client.get_alarm = Mock(return_value=Mock())
-    mock_client.get_devices = Mock(return_value=[])
-    mock_client.get_automations = Mock(return_value=[])
-    mock_client.get_test_mode = Mock(return_value=False)
+    mock_client.get_alarm = AsyncMock(return_value=Mock())
+    mock_client.get_devices = AsyncMock(return_value=[])
+    mock_client.get_automations = AsyncMock(return_value=[])
+    mock_client.get_test_mode = AsyncMock(return_value=False)
     mock_client.events = Mock()
     mock_client.events.add_event_callback = AsyncMock()
     mock_client.events.remove_event_callback = AsyncMock()
-    mock_client.logout = Mock()
+    mock_client.logout = AsyncMock()
     mock_client.event_controller = Mock()
     mock_client.event_controller.stop = Mock()
 
@@ -41,18 +49,20 @@ def mock_abode() -> Generator[Mock]:
         yield mock_client
 
 
-@pytest.fixture(autouse=True)
-def requests_mock_fixture(requests_mock: Mocker) -> None:
-    """Fixture to provide a requests mocker."""
-    # Mocks the login response for jaraco.abode.
-    requests_mock.post(URL.LOGIN, text=load_fixture("login.json", "abode"))
-    # Mocks the logout response for jaraco.abode.
-    requests_mock.post(URL.LOGOUT, text=load_fixture("logout.json", "abode"))
-    # Mocks the oauth claims response for jaraco.abode.
-    requests_mock.get(URL.OAUTH_TOKEN, text=load_fixture("oauth_claims.json", "abode"))
-    # Mocks the panel response for jaraco.abode.
-    requests_mock.get(URL.PANEL, text=load_fixture("panel.json", "abode"))
-    # Mocks the automations response for jaraco.abode.
-    requests_mock.get(URL.AUTOMATION, text=load_fixture("automation.json", "abode"))
-    # Mocks the devices response for jaraco.abode.
-    requests_mock.get(URL.DEVICES, text=load_fixture("devices.json", "abode"))
+@pytest.fixture
+def aiohttp_mock():
+    """Fixture to provide aiohttp mocking."""
+    with aioresponses() as m:
+        # Mocks the login response for jaraco.abode.
+        m.post(f"{URL.BASE}{URL.LOGIN}", payload=json.loads(load_fixture("login.json", "abode")))
+        # Mocks the logout response for jaraco.abode.
+        m.post(f"{URL.BASE}{URL.LOGOUT}", payload=json.loads(load_fixture("logout.json", "abode")))
+        # Mocks the oauth claims response for jaraco.abode.
+        m.get(f"{URL.BASE}{URL.OAUTH_TOKEN}", payload=json.loads(load_fixture("oauth_claims.json", "abode")))
+        # Mocks the panel response for jaraco.abode.
+        m.get(f"{URL.BASE}{URL.PANEL}", payload=json.loads(load_fixture("panel.json", "abode")))
+        # Mocks the automations response for jaraco.abode.
+        m.get(f"{URL.BASE}{URL.AUTOMATION}", payload=json.loads(load_fixture("automation.json", "abode")))
+        # Mocks the devices response for jaraco.abode.
+        m.get(f"{URL.BASE}{URL.DEVICES}", payload=json.loads(load_fixture("devices.json", "abode")))
+        yield m

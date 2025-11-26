@@ -1,6 +1,6 @@
 """Tests for the Abode Security light device."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
@@ -67,7 +67,7 @@ async def test_switch_off(hass: HomeAssistant) -> None:
     """Test the light can be turned off."""
     await setup_platform(hass, LIGHT_DOMAIN)
 
-    with patch("abode.devices.light.Light.switch_off") as mock_switch_off:
+    with patch("abode.devices.light.Light.switch_off", new_callable=AsyncMock) as mock_switch_off:
         await hass.services.async_call(
             LIGHT_DOMAIN, SERVICE_TURN_OFF, {ATTR_ENTITY_ID: DEVICE_ID}, blocking=True
         )
@@ -79,7 +79,7 @@ async def test_switch_on(hass: HomeAssistant) -> None:
     """Test the light can be turned on."""
     await setup_platform(hass, LIGHT_DOMAIN)
 
-    with patch("abode.devices.light.Light.switch_on") as mock_switch_on:
+    with patch("abode.devices.light.Light.switch_on", new_callable=AsyncMock) as mock_switch_on:
         await hass.services.async_call(
             LIGHT_DOMAIN, SERVICE_TURN_ON, {ATTR_ENTITY_ID: DEVICE_ID}, blocking=True
         )
@@ -91,7 +91,7 @@ async def test_set_brightness(hass: HomeAssistant) -> None:
     """Test the brightness can be set."""
     await setup_platform(hass, LIGHT_DOMAIN)
 
-    with patch("abode.devices.light.Light.set_level") as mock_set_level:
+    with patch("abode.devices.light.Light.set_level", new_callable=AsyncMock) as mock_set_level:
         await hass.services.async_call(
             LIGHT_DOMAIN,
             SERVICE_TURN_ON,
@@ -107,7 +107,7 @@ async def test_set_color(hass: HomeAssistant) -> None:
     """Test the color can be set."""
     await setup_platform(hass, LIGHT_DOMAIN)
 
-    with patch("abode.devices.light.Light.set_color") as mock_set_color:
+    with patch("abode.devices.light.Light.set_color", new_callable=AsyncMock) as mock_set_color:
         await hass.services.async_call(
             LIGHT_DOMAIN,
             SERVICE_TURN_ON,
@@ -123,7 +123,7 @@ async def test_set_color_temp(hass: HomeAssistant) -> None:
     await setup_platform(hass, LIGHT_DOMAIN)
 
     with patch(
-        "abode.devices.light.Light.set_color_temp"
+        "abode.devices.light.Light.set_color_temp", new_callable=AsyncMock
     ) as mock_set_color_temp:
         await hass.services.async_call(
             LIGHT_DOMAIN,

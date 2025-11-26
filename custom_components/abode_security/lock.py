@@ -27,7 +27,7 @@ async def async_setup_entry(
 
     async_add_entities(
         AbodeLock(data, device)
-        for device in data.abode.get_devices(generic_type="lock")
+        for device in await data.abode.get_devices(generic_type="lock")
     )
 
 
@@ -37,13 +37,13 @@ class AbodeLock(AbodeDevice, LockEntity):
     _device: Lock
     _attr_name = None
 
-    def lock(self, **_kwargs: Any) -> None:
+    async def async_lock(self, **_kwargs: Any) -> None:
         """Lock the device."""
-        self._device.lock()
+        await self._device.lock()
 
-    def unlock(self, **_kwargs: Any) -> None:
+    async def async_unlock(self, **_kwargs: Any) -> None:
         """Unlock the device."""
-        self._device.unlock()
+        await self._device.unlock()
 
     @property
     def is_locked(self) -> bool:

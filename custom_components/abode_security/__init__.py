@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
 from functools import partial
 from pathlib import Path
 
+# MUST be imported first to set up vendored library path
+from . import _vendor  # noqa: F401
+
 import abode  # Import the whole module for abode.config.paths reference
+import aiohttp
 from abode.client import Client as Abode
 from abode.exceptions import (
     AuthenticationException as AbodeAuthenticationException,
+    RateLimitException as AbodeRateLimitException,
 )
-from abode.exceptions import (
-    Exception as AbodeException,
-)
+from abode.exceptions import Exception as AbodeException
 from abode.helpers.timeline import Groups as GROUPS  # noqa: N814
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -28,9 +32,6 @@ from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
-from requests.exceptions import ConnectTimeout, HTTPError
-
-from . import _vendor  # noqa: F401
 from .const import (
     CONF_ENABLE_EVENTS,
     CONF_POLLING,
@@ -42,7 +43,7 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
-from .services import async_setup_services
+from .services import setup_services
 
 ATTR_DEVICE_NAME = "device_name"
 ATTR_DEVICE_TYPE = "device_type"
@@ -55,6 +56,28 @@ ATTR_APP_TYPE = "app_type"
 ATTR_EVENT_BY = "event_by"
 
 CONFIG_SCHEMA = cv.removed(DOMAIN, raise_if_present=False)
+
+
+async def _enable_abode_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Enable all Abode entities that were created disabled by device."""
+    from homeassistant.helpers import entity_registry as er
+
+    entity_registry = er.async_get(hass)
+
+    # Find all Abode entities and enable them if disabled by device
+    updated_count = 0
+    for entity in entity_registry.entities.values():
+        if (
+            entity.config_entry_id == entry.entry_id
+            and entity.platform == DOMAIN
+            and entity.disabled_by == er.RegistryEntryDisabler.DEVICE
+        ):
+            LOGGER.debug("Enabling entity: %s", entity.entity_id)
+            entity_registry.async_update_entity(entity.entity_id, disabled_by=None)
+            updated_count += 1
+
+    if updated_count > 0:
+        LOGGER.info("Enabled %d Abode entities that were disabled by device", updated_count)
 
 PLATFORMS = [
     Platform.ALARM_CONTROL_PANEL,
@@ -70,7 +93,7 @@ PLATFORMS = [
 
 async def async_setup(hass: HomeAssistant, _config: ConfigType) -> bool:
     """Set up the Abode component."""
-    async_setup_services(hass)
+    setup_services(hass)
     return True
 
 
@@ -94,16 +117,43 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry, unique_id=entry.data[CONF_USERNAME]
         )
 
+    # Create client with native async support
+    abode_client = Abode(username, password, False, False, False)
+
     try:
-        abode_client = await hass.async_add_executor_job(
-            Abode, username, password, True, True, True
+        # Initialize async session and perform login + device/automation fetch
+        await abode_client._async_initialize()
+        if not abode_client._token:
+            await abode_client.login()
+        if not abode_client._devices:
+            await abode_client.get_devices()
+        if not abode_client._automations:
+            await abode_client.get_automations()
+
+    except AbodeRateLimitException as ex:
+        await abode_client.cleanup()
+        cooldown = max(ex.retry_after or 30, 30)
+        LOGGER.warning(
+            "Abode rate limited during setup: %s. Waiting %s seconds before retry.",
+            ex,
+            cooldown,
         )
+        await asyncio.sleep(cooldown)
+        raise ConfigEntryNotReady(
+            "Rate limited by Abode; will retry configuration later"
+        ) from ex
 
     except AbodeAuthenticationException as ex:
+        await abode_client.cleanup()
         raise ConfigEntryAuthFailed(f"Invalid credentials: {ex}") from ex
 
-    except (AbodeException, ConnectTimeout, HTTPError) as ex:
+    except (AbodeException, aiohttp.ClientError) as ex:
+        await abode_client.cleanup()
         raise ConfigEntryNotReady(f"Unable to connect to Abode: {ex}") from ex
+
+    except Exception:
+        await abode_client.cleanup()
+        raise
 
     entry.runtime_data = AbodeSystem(
         abode_client,
@@ -113,10 +163,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         retry_count=retry_count,
     )
 
+    # Set the Home Assistant event loop for thread-safe callback execution
+    # This allows SocketIO callbacks to properly schedule entity updates
+    loop = asyncio.get_event_loop()
+    abode_client.events.set_event_loop(loop)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    await setup_hass_events(hass, entry)
-    await hass.async_add_executor_job(setup_abode_events, hass, entry)
+    # Enable all Abode entities that were created
+    await _enable_abode_entities(hass, entry)
+
+    await async_setup_hass_events(hass, entry)
+    # setup_abode_events is synchronous - just call it directly
+    setup_abode_events(hass, entry)
 
     return True
 
@@ -128,30 +187,33 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     abode_system: AbodeSystem = entry.runtime_data
-    await hass.async_add_executor_job(abode_system.abode.events.stop)
-    await hass.async_add_executor_job(abode_system.abode.logout)
+    abode_system.abode.events.stop()
+    await abode_system.abode.logout()
+    await abode_system.abode.cleanup()
 
     abode_system.logout_listener()
 
     return unload_ok
 
 
-async def setup_hass_events(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_setup_hass_events(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Home Assistant start and stop callbacks."""
     from .models import AbodeSystem  # Avoid circular import
 
     abode_system: AbodeSystem = entry.runtime_data
 
-    def logout(_event: Event) -> None:
+    async def logout(_event: Event) -> None:
         """Logout of Abode."""
         if not abode_system.polling:
             abode_system.abode.events.stop()
 
-        abode_system.abode.logout()
+        await abode_system.abode.logout()
+        await abode_system.abode.cleanup()
         LOGGER.info("Logged out of Abode")
 
     if not abode_system.polling:
-        await hass.async_add_executor_job(abode_system.abode.events.start)
+        # Start socket IO event listener (runs in separate thread)
+        abode_system.abode.events.start()
 
     abode_system.logout_listener = hass.bus.async_listen_once(
         EVENT_HOMEASSISTANT_STOP, logout

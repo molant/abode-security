@@ -15,7 +15,12 @@ from abode.exceptions import (
     Exception as AbodeException,
 )
 from abode.helpers.errors import MFA_CODE_REQUIRED
-from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
 from requests.exceptions import ConnectTimeout, HTTPError
@@ -61,9 +66,11 @@ class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):
         errors = {}
 
         try:
-            await self.hass.async_add_executor_job(
-                Abode, self._username, self._password, True, False, False
-            )
+            abode = Abode(self._username, self._password, False, False, False)
+            await abode._async_initialize()
+            await abode.login()
+            await abode.get_devices()
+            await abode.get_automations()
 
         except AbodeException as ex:
             if ex.errcode == MFA_CODE_REQUIRED[0]:
@@ -91,10 +98,9 @@ class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):
         """Handle multi-factor authentication (MFA) login with Abode."""
         try:
             # Create instance to access login method for passing MFA code
-            abode = Abode(auto_login=False, get_devices=False, get_automations=False)
-            await self.hass.async_add_executor_job(
-                abode.login, self._username, self._password, self._mfa_code
-            )
+            abode = Abode(self._username, self._password, False, False, False)
+            await abode._async_initialize()
+            await abode.login(self._username, self._password, self._mfa_code)
 
         except AbodeAuthenticationException:
             return self.async_show_form(

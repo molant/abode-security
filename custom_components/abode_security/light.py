@@ -20,6 +20,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import _vendor  # noqa: F401
+from .decorators import handle_abode_errors
 from .entity import AbodeDevice
 from .models import AbodeSystem
 
@@ -36,7 +37,7 @@ async def async_setup_entry(
 
     async_add_entities(
         AbodeLight(data, device)
-        for device in data.abode.get_devices(generic_type="light")
+        for device in await data.abode.get_devices(generic_type="light")
     )
 
 
@@ -48,27 +49,29 @@ class AbodeLight(AbodeDevice, LightEntity):
     _attr_max_color_temp_kelvin = DEFAULT_MAX_KELVIN
     _attr_min_color_temp_kelvin = DEFAULT_MIN_KELVIN
 
-    def turn_on(self, **kwargs: Any) -> None:
+    @handle_abode_errors("set light color temperature")
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the light."""
         if ATTR_COLOR_TEMP_KELVIN in kwargs and self._device.is_color_capable:
-            self._device.set_color_temp(kwargs[ATTR_COLOR_TEMP_KELVIN])
+            await self._device.set_color_temp(kwargs[ATTR_COLOR_TEMP_KELVIN])
             return
 
         if ATTR_HS_COLOR in kwargs and self._device.is_color_capable:
-            self._device.set_color(kwargs[ATTR_HS_COLOR])
+            await self._device.set_color(kwargs[ATTR_HS_COLOR])
             return
 
         if ATTR_BRIGHTNESS in kwargs and self._device.is_dimmable:
             # Convert Home Assistant brightness (0-255) to Abode brightness (0-99)
             # If 100 is sent to Abode, response is 99 causing an error
-            self._device.set_level(ceil(kwargs[ATTR_BRIGHTNESS] * 99 / 255.0))
+            await self._device.set_level(ceil(kwargs[ATTR_BRIGHTNESS] * 99 / 255.0))
             return
 
-        self._device.switch_on()
+        await self._device.switch_on()
 
-    def turn_off(self, **_kwargs: Any) -> None:
+    @handle_abode_errors("turn off light")
+    async def async_turn_off(self, **_kwargs: Any) -> None:
         """Turn off the light."""
-        self._device.switch_off()
+        await self._device.switch_off()
 
     @property
     def is_on(self) -> bool:

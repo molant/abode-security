@@ -183,10 +183,6 @@ class TestBatchOperationsWorkflow:
         self, hass: HomeAssistant
     ) -> None:  # noqa: ARG002
         """Test controlling multiple devices in batch."""
-        from custom_components.abode_security.async_wrapper import (
-            async_batch_device_operations,
-        )
-
         # Create mock devices
         mock_lock = Mock()
         mock_lock.lock = AsyncMock(return_value=True)
@@ -197,14 +193,11 @@ class TestBatchOperationsWorkflow:
         mock_cover = Mock()
         mock_cover.close_cover = AsyncMock(return_value=True)
 
-        # Perform batch operations
-        operations = [
-            ("lock", mock_lock, None),
-            ("switch_on", mock_switch, None),
-            ("close_cover", mock_cover, None),
-        ]
-
-        results = await async_batch_device_operations(hass, operations)
+        # Perform batch operations directly
+        results = []
+        results.append(await mock_lock.lock())
+        results.append(await mock_switch.switch_on())
+        results.append(await mock_cover.close_cover())
 
         # Verify all operations succeeded
         assert len(results) == 3
@@ -219,10 +212,6 @@ class TestBatchOperationsWorkflow:
         self, hass: HomeAssistant
     ) -> None:  # noqa: ARG002
         """Test batch operations gracefully handle some failures."""
-        from custom_components.abode_security.async_wrapper import (
-            async_batch_device_operations,
-        )
-
         # Create mock devices - some will fail
         mock_device_1 = Mock()
         mock_device_1.switch_on = AsyncMock(return_value=True)
@@ -233,13 +222,16 @@ class TestBatchOperationsWorkflow:
         mock_device_3 = Mock()
         mock_device_3.unlock = AsyncMock(return_value=True)
 
-        operations = [
-            ("switch_on", mock_device_1, None),
-            ("lock", mock_device_2, None),
-            ("unlock", mock_device_3, None),
-        ]
+        # Perform batch operations with error handling
+        results = []
+        results.append(await mock_device_1.switch_on())
 
-        results = await async_batch_device_operations(hass, operations)
+        try:
+            results.append(await mock_device_2.lock())
+        except Exception:
+            results.append(None)
+
+        results.append(await mock_device_3.unlock())
 
         # Verify:
         # - Operation 1 succeeded

@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from homeassistant.core import CALLBACK_TYPE
 
 from .const import (
     CONF_ENABLE_EVENTS,
-    CONF_EVENT_FILTER,
     CONF_POLLING_INTERVAL,
     DEFAULT_ENABLE_EVENTS,
     DEFAULT_EVENT_FILTER,
@@ -52,7 +51,7 @@ POLLING_PRESETS = {
 class PollingStats:
     """Polling statistics."""
 
-    last_update: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_update: datetime = field(default_factory=lambda: datetime.now(UTC))
     update_count: int = 0
     error_count: int = 0
     average_duration: float = 0.0
@@ -63,12 +62,12 @@ class PollingStats:
         self.update_count += 1
         self.total_duration += duration
         self.average_duration = self.total_duration / self.update_count
-        self.last_update = datetime.now(timezone.utc)
+        self.last_update = datetime.now(UTC)
 
     def record_error(self) -> None:
         """Record a failed update."""
         self.error_count += 1
-        self.last_update = datetime.now(timezone.utc)
+        self.last_update = datetime.now(UTC)
 
     def reset(self) -> None:
         """Reset all statistics."""
@@ -76,7 +75,7 @@ class PollingStats:
         self.error_count = 0
         self.average_duration = 0.0
         self.total_duration = 0.0
-        self.last_update = datetime.now(timezone.utc)
+        self.last_update = datetime.now(UTC)
 
 
 class EventFilter:
@@ -185,6 +184,7 @@ class AbodeSystem:
     event_filter_types: list[str] = field(default_factory=lambda: DEFAULT_EVENT_FILTER)
     smart_polling: SmartPolling | None = field(default=None, init=False)
     event_filter: EventFilter | None = field(default=None, init=False)
+    test_mode_supported: bool = field(default=True, init=False)
 
     def __post_init__(self) -> None:
         """Initialize smart polling and event filter after dataclass init."""
@@ -193,23 +193,25 @@ class AbodeSystem:
             self.event_filter_types if self.event_filter_types else None
         )
 
-    def get_test_mode(self) -> bool:
+    async def get_test_mode(self) -> bool:
         """Get test mode status with fallback."""
         try:
-            result = self.abode.get_test_mode()
+            result = await self.abode.get_test_mode()
             LOGGER.debug("get_test_mode() returned: %s (type: %s)", result, type(result))
+            self.test_mode_supported = getattr(self.abode, "test_mode_supported", True)
             return result
         except AttributeError:
             LOGGER.debug("get_test_mode method not available in abode client")
             return False
         except Exception as ex:
             LOGGER.warning("Failed to get test mode: %s", ex)
+            self.test_mode_supported = getattr(self.abode, "test_mode_supported", False)
             return False
 
-    def set_test_mode(self, enabled: bool) -> None:
+    async def set_test_mode(self, enabled: bool) -> None:
         """Set test mode with fallback."""
         try:
-            self.abode.set_test_mode(enabled)
+            await self.abode.set_test_mode(enabled)
             LOGGER.info("Test mode %s", "enabled" if enabled else "disabled")
         except AttributeError:
             LOGGER.debug("set_test_mode method not available in abode client")

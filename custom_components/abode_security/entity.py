@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from abode.automation import Automation as AbodeAuto
 from abode.devices.base import Device as AbodeDev
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -26,19 +28,31 @@ class AbodeEntity(Entity):
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to Abode connection status updates."""
-        await self.hass.async_add_executor_job(
-            self._data.abode.events.add_connection_status_callback,
-            self.unique_id,
-            self._update_connection_status,
-        )
+        try:
+            await asyncio.wait_for(
+                self.hass.async_add_executor_job(
+                    self._data.abode.events.add_connection_status_callback,
+                    self.unique_id,
+                    self._update_connection_status,
+                ),
+                timeout=10.0,
+            )
+        except asyncio.TimeoutError:
+            pass  # Timeout on callback registration is non-critical
 
         self._abode_system.entity_ids.add(self.entity_id)
 
     async def async_will_remove_from_hass(self) -> None:
         """Unsubscribe from Abode connection status updates."""
-        await self.hass.async_add_executor_job(
-            self._data.abode.events.remove_connection_status_callback, self.unique_id
-        )
+        try:
+            await asyncio.wait_for(
+                self.hass.async_add_executor_job(
+                    self._data.abode.events.remove_connection_status_callback, self.unique_id
+                ),
+                timeout=10.0,
+            )
+        except asyncio.TimeoutError:
+            pass  # Timeout on callback removal is non-critical
 
     def _update_connection_status(self) -> None:
         """Update the entity available property."""
@@ -58,22 +72,34 @@ class AbodeDevice(AbodeEntity):
     async def async_added_to_hass(self) -> None:
         """Subscribe to device events."""
         await super().async_added_to_hass()
-        await self.hass.async_add_executor_job(
-            self._data.abode.events.add_device_callback,
-            self._device.id,
-            self._update_callback,
-        )
+        try:
+            await asyncio.wait_for(
+                self.hass.async_add_executor_job(
+                    self._data.abode.events.add_device_callback,
+                    self._device.id,
+                    self._update_callback,
+                ),
+                timeout=10.0,
+            )
+        except asyncio.TimeoutError:
+            pass  # Timeout on device callback registration is non-critical
 
     async def async_will_remove_from_hass(self) -> None:
         """Unsubscribe from device events."""
         await super().async_will_remove_from_hass()
-        await self.hass.async_add_executor_job(
-            self._data.abode.events.remove_all_device_callbacks, self._device.id
-        )
+        try:
+            await asyncio.wait_for(
+                self.hass.async_add_executor_job(
+                    self._data.abode.events.remove_all_device_callbacks, self._device.id
+                ),
+                timeout=10.0,
+            )
+        except asyncio.TimeoutError:
+            pass  # Timeout on device callback removal is non-critical
 
-    def update(self) -> None:
+    async def async_update(self) -> None:
         """Update device state."""
-        self._device.refresh()
+        await self._device.refresh()
 
     @property
     def extra_state_attributes(self) -> dict[str, str]:
@@ -113,6 +139,6 @@ class AbodeAutomation(AbodeEntity):
             "type": "CUE automation",
         }
 
-    def update(self) -> None:
+    async def async_update(self) -> None:
         """Update automation state."""
-        self._automation.refresh()
+        await self._automation.refresh()

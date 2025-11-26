@@ -27,7 +27,7 @@ async def async_setup_entry(
 
     async_add_entities(
         AbodeCover(data, device)
-        for device in data.abode.get_devices(generic_type="cover")
+        for device in await data.abode.get_devices(generic_type="cover")
     )
 
 
@@ -42,10 +42,10 @@ class AbodeCover(AbodeDevice, CoverEntity):
         """Return true if cover is closed, else False."""
         return not self._device.is_open
 
-    def close_cover(self, **_kwargs: Any) -> None:
+    async def async_close_cover(self, **_kwargs: Any) -> None:
         """Issue close command to cover."""
-        self._device.close_cover()
+        await self._device.close_cover()
 
-    def open_cover(self, **_kwargs: Any) -> None:
+    async def async_open_cover(self, **_kwargs: Any) -> None:
         """Issue open command to cover."""
-        self._device.open_cover()
+        await self._device.open_cover()

@@ -129,6 +129,10 @@ dmypy.json
 *.swo
 *~
 
+# Allow vendored library under custom_components
+!custom_components/lib/
+!custom_components/lib/**
+
 # OS
 .DS_Store
 Thumbs.db

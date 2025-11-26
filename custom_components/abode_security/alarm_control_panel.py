@@ -20,14 +20,14 @@ from .models import AbodeSystem
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Abode alarm control panel device."""
     data: AbodeSystem = entry.runtime_data
     async_add_entities(
-        [AbodeAlarm(data, await hass.async_add_executor_job(data.abode.get_alarm))]
+        [AbodeAlarm(data, data.abode.get_alarm())]
     )
 
 
@@ -54,39 +54,39 @@ class AbodeAlarm(AbodeDevice, AlarmControlPanelEntity):
         return None
 
     @handle_abode_errors("disarm alarm")
-    def alarm_disarm(self, _code: str | None = None) -> None:
+    async def async_alarm_disarm(self, _code: str | None = None) -> None:
         """Send disarm command."""
-        self._device.set_standby()
+        await self._device.set_standby()
         LOGGER.info("Alarm disarmed")
 
     @handle_abode_errors("arm alarm in home mode")
-    def alarm_arm_home(self, _code: str | None = None) -> None:
+    async def async_alarm_arm_home(self, _code: str | None = None) -> None:
         """Send arm home command."""
-        self._device.set_home()
+        await self._device.set_home()
         LOGGER.info("Alarm armed in home mode")
 
     @handle_abode_errors("arm alarm in away mode")
-    def alarm_arm_away(self, _code: str | None = None) -> None:
+    async def async_alarm_arm_away(self, _code: str | None = None) -> None:
         """Send arm away command."""
-        self._device.set_away()
+        await self._device.set_away()
         LOGGER.info("Alarm armed in away mode")
 
     @handle_abode_errors("trigger manual alarm")
-    def trigger_manual_alarm(self, alarm_type: str) -> None:
+    async def trigger_manual_alarm(self, alarm_type: str) -> None:
         """Trigger a manual alarm."""
-        self._device.trigger_manual_alarm(alarm_type)
+        await self._device.trigger_manual_alarm(alarm_type)
         LOGGER.info("Triggered manual alarm of type: %s", alarm_type)
 
     @handle_abode_errors("acknowledge timeline event")
-    def acknowledge_timeline_event(self, timeline_id: str) -> None:
+    async def acknowledge_timeline_event(self, timeline_id: str) -> None:
         """Acknowledge a timeline alarm event."""
-        self._abode_system.abode.acknowledge_timeline_event(timeline_id)
+        await self._abode_system.abode.acknowledge_timeline_event(timeline_id)
         LOGGER.info("Acknowledged timeline event: %s", timeline_id)
 
     @handle_abode_errors("dismiss timeline event")
-    def dismiss_timeline_event(self, timeline_id: str) -> None:
+    async def dismiss_timeline_event(self, timeline_id: str) -> None:
         """Dismiss a timeline alarm event."""
-        self._abode_system.abode.dismiss_timeline_event(timeline_id)
+        await self._abode_system.abode.dismiss_timeline_event(timeline_id)
         LOGGER.info("Dismissed timeline event: %s", timeline_id)
 
     @property

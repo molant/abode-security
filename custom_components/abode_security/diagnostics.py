@@ -18,22 +18,22 @@ async def async_get_config_entry_diagnostics(
 
     # Collect device information
     try:
-        devices = abode_system.abode.get_devices()
+        devices = await abode_system.abode.get_devices()
         device_count = len(devices) if devices else 0
         device_types = {}
         if devices:
             for device in devices:
                 device_type = getattr(device, "type", "unknown")
                 device_types[device_type] = device_types.get(device_type, 0) + 1
-    except (AttributeError, Exception):
+    except (AttributeError, TypeError, ValueError, KeyError):
         device_count = 0
         device_types = {}
 
     # Collect automation information
     try:
-        automations = abode_system.abode.get_automations()
+        automations = await abode_system.abode.get_automations()
         automation_count = len(automations) if automations else 0
-    except (AttributeError, Exception):
+    except (AttributeError, TypeError, ValueError, KeyError):
         automation_count = 0
 
     # Collect alarm information
@@ -44,14 +44,14 @@ async def async_get_config_entry_diagnostics(
             "type": getattr(alarm, "type", "unknown"),
             "battery": getattr(alarm, "battery", "unknown"),
         }
-    except (AttributeError, Exception):
+    except (AttributeError, TypeError, ValueError):
         alarm_status = {"status": "unavailable"}
 
     # Collect connectivity status
     try:
         is_connected = abode_system.abode.events.connected
         connection_status = "connected" if is_connected else "disconnected"
-    except (AttributeError, Exception):
+    except (AttributeError, TypeError):
         connection_status = "unknown"
 
     # Collect event capability information
@@ -65,7 +65,7 @@ async def async_get_config_entry_diagnostics(
             has_timeline_support = True
         except ImportError:
             has_timeline_support = False
-    except (AttributeError, Exception):
+    except AttributeError:
         pass
 
     return {
