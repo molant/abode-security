@@ -185,6 +185,8 @@ class AbodeSystem:
     smart_polling: SmartPolling | None = field(default=None, init=False)
     event_filter: EventFilter | None = field(default=None, init=False)
     test_mode_supported: bool = field(default=True, init=False)
+    cms_settings_supported: bool = field(default=True, init=False)
+    cms_settings_cache: dict = field(default_factory=dict, init=False)
 
     def __post_init__(self) -> None:
         """Initialize smart polling and event filter after dataclass init."""
@@ -217,3 +219,165 @@ class AbodeSystem:
             LOGGER.debug("set_test_mode method not available in abode client")
         except Exception as ex:
             LOGGER.debug("Failed to set test mode: %s", ex)
+
+    async def get_monitoring_active(self) -> bool:
+        """Get monitoring active status with fallback."""
+        try:
+            cms_settings = await self.abode.get_cms_settings()
+            result = cms_settings.get("monitoringActive", False)
+            LOGGER.debug("get_monitoring_active() returned: %s", result)
+            self.cms_settings_supported = True
+            self.cms_settings_cache = cms_settings
+            return bool(result)
+        except AttributeError:
+            LOGGER.debug("get_cms_settings method not available in abode client")
+            return False
+        except Exception as ex:
+            LOGGER.warning("Failed to get monitoring active: %s", ex)
+            self.cms_settings_supported = False
+            return False
+
+    async def set_monitoring_active(self, enabled: bool) -> None:
+        """Set monitoring active with fallback."""
+        try:
+            await self.abode.set_cms_setting("monitoringActive", enabled)
+            LOGGER.info("Monitoring active %s", "enabled" if enabled else "disabled")
+        except AttributeError:
+            LOGGER.debug("set_cms_setting method not available in abode client")
+        except Exception as ex:
+            LOGGER.debug("Failed to set monitoring active: %s", ex)
+
+    async def get_send_media(self) -> bool:
+        """Get send media status with fallback."""
+        try:
+            cms_settings = await self.abode.get_cms_settings()
+            result = cms_settings.get("sendMedia", False)
+            LOGGER.debug("get_send_media() returned: %s", result)
+            self.cms_settings_supported = True
+            self.cms_settings_cache = cms_settings
+            return bool(result)
+        except AttributeError:
+            LOGGER.debug("get_cms_settings method not available in abode client")
+            return False
+        except Exception as ex:
+            LOGGER.warning("Failed to get send media: %s", ex)
+            self.cms_settings_supported = False
+            return False
+
+    async def set_send_media(self, enabled: bool) -> None:
+        """Set send media with fallback."""
+        try:
+            await self.abode.set_cms_setting("sendMedia", enabled)
+            LOGGER.info("Send media %s", "enabled" if enabled else "disabled")
+        except AttributeError:
+            LOGGER.debug("set_cms_setting method not available in abode client")
+        except Exception as ex:
+            LOGGER.debug("Failed to set send media: %s", ex)
+
+    async def get_dispatch_without_verification(self) -> bool:
+        """Get dispatch without verification status with fallback."""
+        try:
+            cms_settings = await self.abode.get_cms_settings()
+            result = cms_settings.get("dispatchWithoutVerification", False)
+            LOGGER.debug("get_dispatch_without_verification() returned: %s", result)
+            self.cms_settings_supported = True
+            self.cms_settings_cache = cms_settings
+            return bool(result)
+        except AttributeError:
+            LOGGER.debug("get_cms_settings method not available in abode client")
+            return False
+        except Exception as ex:
+            LOGGER.warning("Failed to get dispatch without verification: %s", ex)
+            self.cms_settings_supported = False
+            return False
+
+    async def set_dispatch_without_verification(self, enabled: bool) -> None:
+        """Set dispatch without verification with fallback."""
+        try:
+            await self.abode.set_cms_setting("dispatchWithoutVerification", enabled)
+            LOGGER.info("Dispatch without verification %s", "enabled" if enabled else "disabled")
+        except AttributeError:
+            LOGGER.debug("set_cms_setting method not available in abode client")
+        except Exception as ex:
+            LOGGER.debug("Failed to set dispatch without verification: %s", ex)
+
+    async def get_dispatch_police(self) -> bool:
+        """Get dispatch police status with fallback."""
+        try:
+            cms_settings = await self.abode.get_cms_settings()
+            result = cms_settings.get("dispatchPolice", False)
+            LOGGER.debug("get_dispatch_police() returned: %s", result)
+            self.cms_settings_supported = True
+            self.cms_settings_cache = cms_settings
+            return bool(result)
+        except AttributeError:
+            LOGGER.debug("get_cms_settings method not available in abode client")
+            return False
+        except Exception as ex:
+            LOGGER.warning("Failed to get dispatch police: %s", ex)
+            self.cms_settings_supported = False
+            return False
+
+    async def set_dispatch_police(self, enabled: bool) -> None:
+        """Set dispatch police with fallback."""
+        try:
+            await self.abode.set_cms_setting("dispatchPolice", enabled)
+            LOGGER.info("Dispatch police %s", "enabled" if enabled else "disabled")
+        except AttributeError:
+            LOGGER.debug("set_cms_setting method not available in abode client")
+        except Exception as ex:
+            LOGGER.debug("Failed to set dispatch police: %s", ex)
+
+    async def get_dispatch_fire(self) -> bool:
+        """Get dispatch fire status with fallback."""
+        try:
+            cms_settings = await self.abode.get_cms_settings()
+            result = cms_settings.get("dispatchFire", False)
+            LOGGER.debug("get_dispatch_fire() returned: %s", result)
+            self.cms_settings_supported = True
+            self.cms_settings_cache = cms_settings
+            return bool(result)
+        except AttributeError:
+            LOGGER.debug("get_cms_settings method not available in abode client")
+            return False
+        except Exception as ex:
+            LOGGER.warning("Failed to get dispatch fire: %s", ex)
+            self.cms_settings_supported = False
+            return False
+
+    async def set_dispatch_fire(self, enabled: bool) -> None:
+        """Set dispatch fire with fallback."""
+        try:
+            await self.abode.set_cms_setting("dispatchFire", enabled)
+            LOGGER.info("Dispatch fire %s", "enabled" if enabled else "disabled")
+        except AttributeError:
+            LOGGER.debug("set_cms_setting method not available in abode client")
+        except Exception as ex:
+            LOGGER.debug("Failed to set dispatch fire: %s", ex)
+
+    async def get_dispatch_medical(self) -> bool:
+        """Get dispatch medical status with fallback."""
+        try:
+            cms_settings = await self.abode.get_cms_settings()
+            result = cms_settings.get("dispatchMedical", False)
+            LOGGER.debug("get_dispatch_medical() returned: %s", result)
+            self.cms_settings_supported = True
+            self.cms_settings_cache = cms_settings
+            return bool(result)
+        except AttributeError:
+            LOGGER.debug("get_cms_settings method not available in abode client")
+            return False
+        except Exception as ex:
+            LOGGER.warning("Failed to get dispatch medical: %s", ex)
+            self.cms_settings_supported = False
+            return False
+
+    async def set_dispatch_medical(self, enabled: bool) -> None:
+        """Set dispatch medical with fallback."""
+        try:
+            await self.abode.set_cms_setting("dispatchMedical", enabled)
+            LOGGER.info("Dispatch medical %s", "enabled" if enabled else "disabled")
+        except AttributeError:
+            LOGGER.debug("set_cms_setting method not available in abode client")
+        except Exception as ex:
+            LOGGER.debug("Failed to set dispatch medical: %s", ex)

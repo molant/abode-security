@@ -139,3 +139,6 @@ custom_components/lib/**/__pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Others
+tmp/

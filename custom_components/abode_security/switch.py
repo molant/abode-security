@@ -88,8 +88,17 @@ async def async_setup_entry(
         for alarm_type in MANUAL_ALARM_TYPES
     )
 
-    # Add test mode switch (wrapper methods handle missing methods gracefully)
-    entities.append(AbodeTestModeSwitch(data, alarm))
+    # Add CMS settings switches (wrapper methods handle missing methods gracefully)
+    # Order: Monitoring Active, Test Mode, Send Media, Dispatch Without Verification, Fire, Medical, Police
+    entities.extend([
+        AbodeMonitoringActiveSwitch(data, alarm),
+        AbodeTestModeSwitch(data, alarm),
+        AbodeSendMediaSwitch(data, alarm),
+        AbodeDispatchWithoutVerificationSwitch(data, alarm),
+        AbodeDispatchFireSwitch(data, alarm),
+        AbodeDispatchMedicalSwitch(data, alarm),
+        AbodeDispatchPoliceSwitch(data, alarm),
+    ])
 
     async_add_entities(entities)
 
@@ -380,6 +389,221 @@ class AbodeManualAlarmSwitch(SwitchEntity):
     def is_on(self) -> bool:
         """Return True if the alarm is active."""
         return self._is_on
+
+
+class AbodeCMSSettingSwitch(SwitchEntity):
+    """Base class for CMS configuration switches."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self,
+        data: AbodeSystem,
+        alarm: Alarm,
+        name: str,
+        icon: str,
+        getter_name: str,
+        setter_name: str,
+    ) -> None:
+        """Initialize the CMS setting switch."""
+        self._data = data
+        self._alarm = alarm
+        self._attr_name = name
+        self._attr_icon = icon
+        self._getter_name = getter_name
+        self._setter_name = setter_name
+        self._is_on = False
+        self._last_state_change: datetime | None = None
+        # Use alarm device ID and setting name for unique ID
+        self._attr_unique_id = f"{alarm.id}-{getter_name.lower().replace('_', '-')}"
+        self._attr_available = True
+        self._attr_should_poll = False
+        self._initial_sync_done = False
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        """Return device registry information for this entity."""
+        return {
+            "identifiers": {(DOMAIN, self._alarm.id)},
+            "manufacturer": "Abode",
+            "model": self._alarm.type,
+            "name": self._alarm.name,
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Update setting status on first add."""
+        LOGGER.info("CMS setting switch %s added to Home Assistant", self._attr_name)
+        await super().async_added_to_hass()
+        await self._refresh_status()
+
+    async def _refresh_status(self) -> None:
+        """Refresh setting status from Abode."""
+        try:
+            getter = getattr(self._data, self._getter_name)
+            self._is_on = await getter()
+            LOGGER.debug("Initial %s status fetched: %s", self._attr_name, self._is_on)
+            self.async_write_ha_state()
+
+            # Enable polling after first successful fetch
+            if not self._initial_sync_done:
+                LOGGER.debug("Enabling polling for %s after initial sync", self._attr_name)
+                self._attr_should_poll = True
+                self._initial_sync_done = True
+        except AbodeException as ex:
+            if not self._data.cms_settings_supported:
+                LOGGER.info("%s unsupported; disabling switch", self._attr_name)
+                self._attr_available = False
+                self._attr_should_poll = False
+                self.async_write_ha_state()
+                return
+            LOGGER.error("Failed to get %s status: %s", self._attr_name, ex)
+        except Exception as ex:
+            LOGGER.error("Unexpected error getting %s status: %s", self._attr_name, ex)
+
+    async def async_update(self) -> None:
+        """Update setting status."""
+        # Skip polling for 5 seconds after a state change
+        if self._last_state_change is not None:
+            time_since_change = datetime.now(UTC) - self._last_state_change
+            if time_since_change < timedelta(seconds=5):
+                LOGGER.debug("Skipping %s poll (waiting for API)", self._attr_name)
+                return
+
+        try:
+            previous_state = self._is_on
+            getter = getattr(self._data, self._getter_name)
+            self._is_on = await getter()
+
+            LOGGER.debug("%s status: was %s, now %s", self._attr_name, previous_state, self._is_on)
+
+            if previous_state != self._is_on:
+                LOGGER.info("%s status changed: %s -> %s", self._attr_name, previous_state, self._is_on)
+        except AbodeException as ex:
+            if not self._data.cms_settings_supported:
+                LOGGER.info("%s unsupported; disabling switch", self._attr_name)
+                self._attr_available = False
+                self._attr_should_poll = False
+                self.async_write_ha_state()
+                return
+            LOGGER.error("Failed to update %s status: %s", self._attr_name, ex)
+        except Exception as ex:
+            LOGGER.error("Unexpected error updating %s status: %s", self._attr_name, ex)
+
+    @handle_abode_errors("enable CMS setting")
+    async def async_turn_on(self, **_kwargs: Any) -> None:
+        """Enable the CMS setting."""
+        setter = getattr(self._data, self._setter_name)
+        await setter(True)
+        LOGGER.info("%s enabled", self._attr_name)
+        self._is_on = True
+        self._last_state_change = datetime.now(UTC)
+        self.schedule_update_ha_state()
+
+    @handle_abode_errors("disable CMS setting")
+    async def async_turn_off(self, **_kwargs: Any) -> None:
+        """Disable the CMS setting."""
+        setter = getattr(self._data, self._setter_name)
+        await setter(False)
+        LOGGER.info("%s disabled", self._attr_name)
+        self._is_on = False
+        self._last_state_change = datetime.now(UTC)
+        self.schedule_update_ha_state()
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if the CMS setting is enabled."""
+        return self._is_on
+
+
+class AbodeMonitoringActiveSwitch(AbodeCMSSettingSwitch):
+    """Switch for monitoring active CMS setting."""
+
+    def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
+        """Initialize the monitoring active switch."""
+        super().__init__(
+            data,
+            alarm,
+            name="Monitoring Active",
+            icon="mdi:shield-check",
+            getter_name="get_monitoring_active",
+            setter_name="set_monitoring_active",
+        )
+
+
+class AbodeSendMediaSwitch(AbodeCMSSettingSwitch):
+    """Switch for send media CMS setting."""
+
+    def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
+        """Initialize the send media switch."""
+        super().__init__(
+            data,
+            alarm,
+            name="Send Media",
+            icon="mdi:camera",
+            getter_name="get_send_media",
+            setter_name="set_send_media",
+        )
+
+
+class AbodeDispatchWithoutVerificationSwitch(AbodeCMSSettingSwitch):
+    """Switch for dispatch without verification CMS setting."""
+
+    def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
+        """Initialize the dispatch without verification switch."""
+        super().__init__(
+            data,
+            alarm,
+            name="Dispatch Without Verification",
+            icon="mdi:police-badge",
+            getter_name="get_dispatch_without_verification",
+            setter_name="set_dispatch_without_verification",
+        )
+
+
+class AbodeDispatchPoliceSwitch(AbodeCMSSettingSwitch):
+    """Switch for dispatch police CMS setting."""
+
+    def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
+        """Initialize the dispatch police switch."""
+        super().__init__(
+            data,
+            alarm,
+            name="Dispatch Police",
+            icon="mdi:police-badge",
+            getter_name="get_dispatch_police",
+            setter_name="set_dispatch_police",
+        )
+
+
+class AbodeDispatchFireSwitch(AbodeCMSSettingSwitch):
+    """Switch for dispatch fire CMS setting."""
+
+    def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
+        """Initialize the dispatch fire switch."""
+        super().__init__(
+            data,
+            alarm,
+            name="Dispatch Fire",
+            icon="mdi:fire-truck",
+            getter_name="get_dispatch_fire",
+            setter_name="set_dispatch_fire",
+        )
+
+
+class AbodeDispatchMedicalSwitch(AbodeCMSSettingSwitch):
+    """Switch for dispatch medical CMS setting."""
+
+    def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
+        """Initialize the dispatch medical switch."""
+        super().__init__(
+            data,
+            alarm,
+            name="Dispatch Medical",
+            icon="mdi:hospital-box",
+            getter_name="get_dispatch_medical",
+            setter_name="set_dispatch_medical",
+        )
 
 
 class AbodeTestModeSwitch(SwitchEntity):

@@ -38,6 +38,21 @@ def mock_abode() -> Generator[Mock]:
     mock_client.get_devices = AsyncMock(return_value=[])
     mock_client.get_automations = AsyncMock(return_value=[])
     mock_client.get_test_mode = AsyncMock(return_value=False)
+
+    # CMS settings methods
+    cms_settings = {
+        "monitoringActive": True,
+        "testModeActive": False,
+        "sendMedia": True,
+        "dispatchWithoutVerification": False,
+        "dispatchPolice": True,
+        "dispatchFire": True,
+        "dispatchMedical": True,
+    }
+    mock_client.get_cms_settings = AsyncMock(return_value=cms_settings)
+    mock_client.set_cms_setting = AsyncMock(return_value=cms_settings)
+    mock_client.set_test_mode = AsyncMock(return_value=cms_settings)
+
     mock_client.events = Mock()
     mock_client.events.add_event_callback = AsyncMock()
     mock_client.events.remove_event_callback = AsyncMock()
@@ -65,4 +80,17 @@ def aiohttp_mock():
         m.get(f"{URL.BASE}{URL.AUTOMATION}", payload=json.loads(load_fixture("automation.json", "abode")))
         # Mocks the devices response for jaraco.abode.
         m.get(f"{URL.BASE}{URL.DEVICES}", payload=json.loads(load_fixture("devices.json", "abode")))
+        # Mocks the security panel response for CMS settings.
+        m.get(f"{URL.BASE}{URL.SECURITY_PANEL}", payload=json.loads(load_fixture("panel.json", "abode")))
+        # Mocks the CMS settings endpoint.
+        cms_settings_response = {
+            "monitoringActive": True,
+            "testModeActive": False,
+            "sendMedia": True,
+            "dispatchWithoutVerification": False,
+            "dispatchPolice": True,
+            "dispatchFire": True,
+            "dispatchMedical": True,
+        }
+        m.post(f"{URL.BASE}{URL.CMS_SETTINGS}", payload=cms_settings_response)
         yield m

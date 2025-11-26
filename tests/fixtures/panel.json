@@ -40,6 +40,30 @@
     "area_2": "standby",
     "area_2_label": "Standby"
   },
+  "attributes": {
+    "home": {
+      "entryTimerInSeconds": 60,
+      "exitTimerInSeconds": 60
+    },
+    "away": {
+      "entryTimerInSeconds": 60,
+      "exitTimerInSeconds": 60
+    },
+    "cms": {
+      "vendorId": 2,
+      "vendor": "rrms",
+      "testModeActive": false,
+      "customSettings": true,
+      "monitoringActive": true,
+      "sendMedia": true,
+      "dispatchWithoutVerification": false,
+      "dispatchPolice": true,
+      "dispatchFire": true,
+      "dispatchMedical": true,
+      "faults": [],
+      "pin": "4_DIGIT_PIN"
+    }
+  },
   "areas": {
     "1": {
       "mode": "0",

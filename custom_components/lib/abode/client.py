@@ -540,26 +540,84 @@ class Client:
         if not isinstance(enabled, bool):
             raise Exception(errors.INVALID_TEST_MODE_VALUE)
 
-        log.debug('Set Test Mode Request - enabled=%s', enabled)
+        try:
+            response_object = await self.set_cms_setting('testModeActive', enabled)
+            log.info('Test mode set to: %s', 'enabled' if enabled else 'disabled')
+            return response_object
+        except Exception as err:
+            # If the error is specifically about test mode, wrap it appropriately
+            if "testModeActive" in str(err):
+                raise Exception(errors.SET_TEST_MODE_RESPONSE)
+            raise
+
+    async def get_cms_settings(self):
+        """Get all CMS settings from the panel.
+
+        Returns a dictionary with all available CMS settings:
+        - monitoringActive
+        - testModeActive
+        - sendMedia
+        - dispatchWithoutVerification
+        - dispatchPolice
+        - dispatchFire
+        - dispatchMedical
+        """
+        # Prefer cached panel data if available
+        if isinstance(self._panel, dict):
+            attributes = self._panel.get("attributes", {})
+            cms = attributes.get("cms", {})
+            if cms:
+                log.debug("Using cached CMS settings: %s", cms)
+                return cms
+
+        # Fallback to fetching from SECURITY_PANEL endpoint
+        response = await self.send_request("get", urls.SECURITY_PANEL, raise_on_error=False)
+        if response is None or response.status == 404:
+            log.warning("CMS settings endpoint unavailable (status=%s)", getattr(response, "status", "unknown"))
+            return {}
+
+        response_data = await response.json()
+        log.debug("Get CMS Settings URL (get): %s", urls.SECURITY_PANEL)
+        log.debug("Get CMS Settings Response (parsed): %s", response_data)
+
+        cms_settings = response_data.get("attributes", {}).get("cms", {})
+        return cms_settings if isinstance(cms_settings, dict) else {}
+
+    async def set_cms_setting(self, key, value):
+        """Set a specific CMS setting.
+
+        Args:
+            key: The CMS setting key (e.g., 'monitoringActive', 'sendMedia')
+            value: The value to set (typically boolean)
+
+        Returns:
+            Dict with all updated CMS settings from the API response
+        """
+        if not isinstance(value, bool):
+            log.error("CMS setting value must be boolean, got %s", type(value))
+            raise Exception(errors.REQUEST)
+
+        log.debug('Set CMS Setting Request - key=%s, value=%s', key, value)
         response = await self.send_request(
-            'post', urls.CMS_SETTINGS, data={'testModeActive': enabled}
+            'post', urls.CMS_SETTINGS, data={key: value}
         )
         response_object = await response.json()
 
-        log.debug('Set Test Mode URL (post): %s', urls.CMS_SETTINGS)
-        log.debug('Set Test Mode Response (parsed): %s', response_object)
+        log.debug('Set CMS Setting URL (post): %s', urls.CMS_SETTINGS)
+        log.debug('Set CMS Setting Response (parsed): %s', response_object)
 
         response_object = response_object if isinstance(response_object, dict) else {}
 
-        if 'testModeActive' not in response_object:
-            log.error('testModeActive field missing from response: %s', response_object)
-            raise Exception(errors.SET_TEST_MODE_RESPONSE)
+        # Validate response contains the setting we just changed
+        if key not in response_object:
+            log.error('%s field missing from response: %s', key, response_object)
+            raise Exception(errors.REQUEST)
 
-        if response_object.get('testModeActive') != enabled:
-            log.error('Set test mode failed - expected %s, got %s', enabled, response_object.get('testModeActive'))
-            raise Exception(errors.SET_TEST_MODE_RESPONSE)
+        if response_object.get(key) != value:
+            log.error('Set %s failed - expected %s, got %s', key, value, response_object.get(key))
+            raise Exception(errors.REQUEST)
 
-        log.info('Test mode set to: %s', 'enabled' if enabled else 'disabled')
+        log.info('CMS setting %s set to: %s', key, value)
 
         return response_object
 
