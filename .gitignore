@@ -132,6 +132,8 @@ dmypy.json
 # Allow vendored library under custom_components
 !custom_components/lib/
 !custom_components/lib/**
+# But ignore pycache even in vendored library
+custom_components/lib/**/__pycache__/
 
 # OS
 .DS_Store
