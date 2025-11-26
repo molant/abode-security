@@ -15,5 +15,5 @@
   "version": "1.0.0",
   "minimum_home_assistant_version": "2024.1.0",
   "diagnostics": true,
-  "icon": "https://brands.home-assistant.io/brands/_/abode/dark_icon.png"
+  "icon": "icon.png"
 }
