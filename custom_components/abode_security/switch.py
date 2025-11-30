@@ -33,7 +33,15 @@ except ImportError:
 DEVICE_TYPES = ["switch", "valve"]
 
 # Manual alarm types
-MANUAL_ALARM_TYPES = ["PANIC", "SILENT_PANIC", "MEDICAL", "CO", "SMOKE_CO", "SMOKE", "BURGLAR"]
+MANUAL_ALARM_TYPES = [
+    "PANIC",
+    "SILENT_PANIC",
+    "MEDICAL",
+    "CO",
+    "SMOKE_CO",
+    "SMOKE",
+    "BURGLAR",
+]
 
 # Map alarm types to their event codes
 # These codes are from abode.helpers.events.csv
@@ -90,15 +98,17 @@ async def async_setup_entry(
 
     # Add CMS settings switches (wrapper methods handle missing methods gracefully)
     # Order: Monitoring Active, Test Mode, Send Media, Dispatch Without Verification, Fire, Medical, Police
-    entities.extend([
-        AbodeMonitoringActiveSwitch(data, alarm),
-        AbodeTestModeSwitch(data, alarm),
-        AbodeSendMediaSwitch(data, alarm),
-        AbodeDispatchWithoutVerificationSwitch(data, alarm),
-        AbodeDispatchFireSwitch(data, alarm),
-        AbodeDispatchMedicalSwitch(data, alarm),
-        AbodeDispatchPoliceSwitch(data, alarm),
-    ])
+    entities.extend(
+        [
+            AbodeMonitoringActiveSwitch(data, alarm),
+            AbodeTestModeSwitch(data, alarm),
+            AbodeSendMediaSwitch(data, alarm),
+            AbodeDispatchWithoutVerificationSwitch(data, alarm),
+            AbodeDispatchFireSwitch(data, alarm),
+            AbodeDispatchMedicalSwitch(data, alarm),
+            AbodeDispatchPoliceSwitch(data, alarm),
+        ]
+    )
 
     async_add_entities(entities)
 
@@ -144,7 +154,9 @@ class AbodeAutomationSwitch(AbodeAutomation, SwitchEntity):
             """Wrapper to schedule async trigger as a task."""
             self.hass.async_create_task(self.trigger())
 
-        self.async_on_remove(async_dispatcher_connect(self.hass, signal, _trigger_wrapper))
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, signal, _trigger_wrapper)
+        )
 
     @handle_abode_errors("enable automation")
     async def async_turn_on(self, **_kwargs: Any) -> None:
@@ -204,15 +216,15 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         "BURGLAR": "Burglar Alarm",
     }
 
-    def __init__(
-        self, data: AbodeSystem, device: Alarm, alarm_type: str
-    ) -> None:
+    def __init__(self, data: AbodeSystem, device: Alarm, alarm_type: str) -> None:
         """Initialize the manual alarm switch."""
         self._data = data
         self._device = device
         self._alarm_type = alarm_type
         self._attr_unique_id = f"{device.id}-manual-alarm-{alarm_type.lower()}"
-        self._attr_name = self.ALARM_NAMES.get(alarm_type, alarm_type.replace('_', ' ').title())
+        self._attr_name = self.ALARM_NAMES.get(
+            alarm_type, alarm_type.replace("_", " ").title()
+        )
         self._attr_icon = self.ALARM_ICONS.get(alarm_type)
         self._attr_available = True
 
@@ -242,7 +254,7 @@ class AbodeManualAlarmSwitch(SwitchEntity):
                 timeout=10.0,
             )
             LOGGER.debug(f"Subscribed to {event_group} events")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             LOGGER.warning(f"Timeout subscribing to {event_group} events")
         except Exception as ex:
             LOGGER.warning(f"Could not subscribe to {event_group} events: %s", ex)
@@ -267,7 +279,7 @@ class AbodeManualAlarmSwitch(SwitchEntity):
                 timeout=10.0,
             )
             LOGGER.debug(f"Unsubscribed from {event_group} events")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             LOGGER.warning(f"Timeout unsubscribing from {event_group} events")
         except Exception as ex:
             LOGGER.warning(f"Could not unsubscribe from {event_group} events: %s", ex)
@@ -281,10 +293,14 @@ class AbodeManualAlarmSwitch(SwitchEntity):
             return
 
         # Subscribe to alarm trigger events
-        await self._subscribe_to_events(TimelineGroups.ALARM, self._alarm_event_callback)
+        await self._subscribe_to_events(
+            TimelineGroups.ALARM, self._alarm_event_callback
+        )
 
         # Subscribe to alarm end/dismiss events
-        await self._subscribe_to_events(TimelineGroups.ALARM_END, self._alarm_end_callback)
+        await self._subscribe_to_events(
+            TimelineGroups.ALARM_END, self._alarm_end_callback
+        )
 
     async def async_will_remove_from_hass(self) -> None:
         """Clean up event subscriptions when removed."""
@@ -294,8 +310,12 @@ class AbodeManualAlarmSwitch(SwitchEntity):
             return
 
         # Remove event callbacks
-        await self._unsubscribe_from_events(TimelineGroups.ALARM, self._alarm_event_callback)
-        await self._unsubscribe_from_events(TimelineGroups.ALARM_END, self._alarm_end_callback)
+        await self._unsubscribe_from_events(
+            TimelineGroups.ALARM, self._alarm_event_callback
+        )
+        await self._unsubscribe_from_events(
+            TimelineGroups.ALARM_END, self._alarm_end_callback
+        )
 
     def _alarm_event_callback(self, event: dict[str, Any]) -> None:
         """Handle alarm trigger events from timeline.
@@ -304,16 +324,16 @@ class AbodeManualAlarmSwitch(SwitchEntity):
             event: Timeline event dictionary containing alarm information
         """
         # Check if this is an actual alarm event
-        if event.get('is_alarm') != '1':
+        if event.get("is_alarm") != "1":
             return
 
         # Only update if event matches this alarm type
-        event_code = event.get('event_code', '')
+        event_code = event.get("event_code", "")
         if not _map_event_code_to_alarm_type(event_code, self._alarm_type):
             return
 
         # Update state when alarm is triggered
-        self._timeline_id = event.get('id')
+        self._timeline_id = event.get("id")
         self._is_on = True
         LOGGER.debug(
             "Alarm %s triggered via event (event_id: %s, code: %s)",
@@ -333,9 +353,9 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         LOGGER.debug(
             "Alarm end callback fired - alarm_type: %s, event_code: %s, is_alarm: %s, event_id: %s",
             self._alarm_type,
-            event.get('event_code'),
-            event.get('is_alarm'),
-            event.get('id'),
+            event.get("event_code"),
+            event.get("is_alarm"),
+            event.get("id"),
         )
 
         # Check if this is an actual alarm event
@@ -348,7 +368,7 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         LOGGER.info(
             "Alarm %s ended via event (event_code: %s, all alarms dismissed)",
             self._alarm_type,
-            event.get('event_code'),
+            event.get("event_code"),
         )
         self.schedule_update_ha_state()
 
@@ -356,13 +376,16 @@ class AbodeManualAlarmSwitch(SwitchEntity):
     async def async_turn_on(self, **_kwargs: Any) -> None:
         """Trigger the manual alarm."""
         if self._is_on:
-            LOGGER.debug("Alarm %s already triggered, ignoring duplicate trigger", self._alarm_type)
+            LOGGER.debug(
+                "Alarm %s already triggered, ignoring duplicate trigger",
+                self._alarm_type,
+            )
             return
 
         response = await self._device.trigger_manual_alarm(self._alarm_type)
         # Safely extract event_id from response, handling non-dict responses
         if isinstance(response, dict):
-            self._timeline_id = response.get('event_id')
+            self._timeline_id = response.get("event_id")
         else:
             self._timeline_id = None
 
@@ -447,7 +470,9 @@ class AbodeCMSSettingSwitch(SwitchEntity):
 
             # Enable polling after first successful fetch
             if not self._initial_sync_done:
-                LOGGER.debug("Enabling polling for %s after initial sync", self._attr_name)
+                LOGGER.debug(
+                    "Enabling polling for %s after initial sync", self._attr_name
+                )
                 self._attr_should_poll = True
                 self._initial_sync_done = True
         except AbodeException as ex:
@@ -475,10 +500,20 @@ class AbodeCMSSettingSwitch(SwitchEntity):
             getter = getattr(self._data, self._getter_name)
             self._is_on = await getter()
 
-            LOGGER.debug("%s status: was %s, now %s", self._attr_name, previous_state, self._is_on)
+            LOGGER.debug(
+                "%s status: was %s, now %s",
+                self._attr_name,
+                previous_state,
+                self._is_on,
+            )
 
             if previous_state != self._is_on:
-                LOGGER.info("%s status changed: %s -> %s", self._attr_name, previous_state, self._is_on)
+                LOGGER.info(
+                    "%s status changed: %s -> %s",
+                    self._attr_name,
+                    previous_state,
+                    self._is_on,
+                )
         except AbodeException as ex:
             if not self._data.cms_settings_supported:
                 LOGGER.info("%s unsupported; disabling switch", self._attr_name)
@@ -620,7 +655,9 @@ class AbodeTestModeSwitch(SwitchEntity):
         self._alarm = alarm
         self._is_on = False
         self._user_enabled = False  # Track if user explicitly enabled test mode
-        self._last_state_change: datetime | None = None  # Track when state was last changed
+        self._last_state_change: datetime | None = (
+            None  # Track when state was last changed
+        )
         # Use alarm device ID for unique ID to link to the alarm device
         self._attr_unique_id = f"{alarm.id}-test-mode"
         self._attr_available = True
@@ -666,10 +703,12 @@ class AbodeTestModeSwitch(SwitchEntity):
                 return
             LOGGER.error("Failed to get test mode status (AbodeException): %s", ex)
             import traceback
+
             LOGGER.debug("Traceback: %s", traceback.format_exc())
         except Exception as ex:
             LOGGER.error("Unexpected error getting test mode status: %s", ex)
             import traceback
+
             LOGGER.debug("Traceback: %s", traceback.format_exc())
 
     async def async_update(self) -> None:
@@ -685,15 +724,21 @@ class AbodeTestModeSwitch(SwitchEntity):
             previous_state = self._is_on
             self._is_on = await self._data.get_test_mode()
 
-            LOGGER.debug("Polling test mode status: was %s, now %s", previous_state, self._is_on)
+            LOGGER.debug(
+                "Polling test mode status: was %s, now %s", previous_state, self._is_on
+            )
 
             if previous_state != self._is_on:
-                LOGGER.info("Test mode status changed: %s -> %s", previous_state, self._is_on)
+                LOGGER.info(
+                    "Test mode status changed: %s -> %s", previous_state, self._is_on
+                )
 
             # If test mode was enabled by user but is now off externally (e.g., 30-min timeout),
             # stop polling to save resources
             if self._user_enabled and previous_state and not self._is_on:
-                LOGGER.info("Test mode auto-disabled (30-min timeout), stopping polling")
+                LOGGER.info(
+                    "Test mode auto-disabled (30-min timeout), stopping polling"
+                )
                 self._user_enabled = False
                 self._attr_should_poll = False
         except AbodeException as ex:

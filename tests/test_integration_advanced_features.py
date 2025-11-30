@@ -28,7 +28,9 @@ class TestSmartPollingIntegration:
     """Test smart polling integration with the system."""
 
     async def test_smart_polling_initialized_with_presets(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that smart polling is initialized when using presets."""
         from custom_components.abode_security.models import POLLING_PRESETS
@@ -56,7 +58,9 @@ class TestSmartPollingIntegration:
         assert mock_entry.state is ConfigEntryState.LOADED
 
     async def test_smart_polling_tracks_update_statistics(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that smart polling tracks update statistics."""
         await setup_platform(hass, ALARM_DOMAIN)
@@ -81,7 +85,9 @@ class TestSmartPollingIntegration:
         assert 15 <= interval <= 120
 
     async def test_smart_polling_adapts_to_errors(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that smart polling adapts interval when errors occur."""
         await setup_platform(hass, ALARM_DOMAIN)
@@ -101,7 +107,9 @@ class TestSmartPollingIntegration:
         assert adapted_interval >= initial_interval
 
     async def test_smart_polling_improves_with_good_performance(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that smart polling improves interval with good performance."""
         await setup_platform(hass, ALARM_DOMAIN)
@@ -123,7 +131,9 @@ class TestEventFilteringIntegration:
     """Test event filtering integration with the system."""
 
     async def test_event_filter_initialized_from_config(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that event filter is initialized from config."""
         mock_entry = MockConfigEntry(
@@ -147,7 +157,9 @@ class TestEventFilteringIntegration:
         assert mock_entry.state is ConfigEntryState.LOADED
 
     async def test_event_filter_allows_all_by_default(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that event filter allows all events by default."""
         await setup_platform(hass, ALARM_DOMAIN)
@@ -161,7 +173,9 @@ class TestEventFilteringIntegration:
         assert abode_system.event_filter.should_process("unknown_event")
 
     async def test_event_filter_filters_specified_events(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that event filter filters specified events."""
         await setup_platform(hass, ALARM_DOMAIN)
@@ -176,7 +190,9 @@ class TestEventFilteringIntegration:
         assert not abode_system.event_filter.should_process("alarm_state_change")
 
     async def test_event_filter_tracks_statistics(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that event filter tracks filtering statistics."""
         await setup_platform(hass, ALARM_DOMAIN)
@@ -199,7 +215,9 @@ class TestBatchOperationsIntegration:
     """Test batch operations integration."""
 
     async def test_batch_operations_execute_successfully(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,  # noqa: ARG002
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that batch operations execute successfully."""
         mock_device = Mock()
@@ -217,7 +235,9 @@ class TestBatchOperationsIntegration:
         mock_device.switch_off.assert_called_once()
 
     async def test_batch_operations_handle_individual_failures(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,  # noqa: ARG002
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that batch operations handle individual operation failures."""
         mock_device = Mock()
@@ -239,7 +259,9 @@ class TestBatchOperationsIntegration:
         assert results[1] is not None
 
     async def test_batch_read_devices_collects_status(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,  # noqa: ARG002
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that batch read devices collects status information."""
         mock_device = Mock()
@@ -274,7 +296,9 @@ class TestOptionsFlowIntegration:
     """Test options flow for advanced features."""
 
     async def test_options_flow_updates_polling_interval(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that options flow can update polling interval."""
         mock_entry = MockConfigEntry(
@@ -307,7 +331,9 @@ class TestOptionsFlowIntegration:
         assert mock_entry.options[CONF_POLLING_INTERVAL] == 60
 
     async def test_options_flow_updates_event_enable(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that options flow can enable/disable events."""
         mock_entry = MockConfigEntry(
@@ -339,7 +365,9 @@ class TestOptionsFlowIntegration:
         assert mock_entry.options[CONF_ENABLE_EVENTS] is False
 
     async def test_options_flow_updates_retry_count(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that options flow can update retry count."""
         mock_entry = MockConfigEntry(
@@ -375,7 +403,9 @@ class TestEndToEndScenarios:
     """Test complete end-to-end scenarios."""
 
     async def test_complete_setup_with_all_advanced_features(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test complete setup with all advanced features enabled."""
         from custom_components.abode_security.const import CONF_USERNAME
@@ -411,7 +441,9 @@ class TestEndToEndScenarios:
         assert abode_system.event_filter is not None
 
     async def test_polling_adaptation_over_time(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that polling adapts over time based on performance."""
         await setup_platform(hass, ALARM_DOMAIN)
@@ -439,7 +471,9 @@ class TestEndToEndScenarios:
         assert 15 <= final_interval <= 120
 
     async def test_event_filtering_with_multiple_events(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test event filtering with multiple event types."""
         await setup_platform(hass, ALARM_DOMAIN)
@@ -461,7 +495,8 @@ class TestEndToEndScenarios:
         ]
 
         allowed_count = sum(
-            1 for event in test_events
+            1
+            for event in test_events
             if abode_system.event_filter.should_process(event)
         )
 

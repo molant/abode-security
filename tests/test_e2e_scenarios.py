@@ -23,7 +23,9 @@ class TestFullSetupWorkflow:
     """Test the complete setup workflow."""
 
     async def test_user_adds_integration_and_configures_options(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test user adding integration and then configuring options."""
         # Step 1: User adds the integration via config flow
@@ -109,7 +111,9 @@ class TestFullSetupWorkflow:
             assert mock_entry.state is ConfigEntryState.LOADED
 
     async def test_smart_polling_optimization_workflow(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test smart polling optimization over time."""
         await setup_platform(hass, ALARM_DOMAIN)
@@ -140,7 +144,9 @@ class TestFullSetupWorkflow:
         assert 15 <= interval_after <= 120
 
     async def test_event_filter_reduces_unnecessary_updates(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test that event filtering reduces unnecessary processing."""
         await setup_platform(hass, ALARM_DOMAIN)
@@ -163,7 +169,8 @@ class TestFullSetupWorkflow:
         ]
 
         processed_count = sum(
-            1 for event in events_received
+            1
+            for event in events_received
             if abode_system.event_filter.should_process(event)
         )
 
@@ -180,8 +187,9 @@ class TestBatchOperationsWorkflow:
     """Test batch operations in realistic scenarios."""
 
     async def test_batch_arm_disarm_multiple_devices(
-        self, hass: HomeAssistant
-    ) -> None:  # noqa: ARG002
+        self,
+        hass: HomeAssistant,  # noqa: ARG002
+    ) -> None:
         """Test controlling multiple devices in batch."""
         # Create mock devices
         mock_lock = Mock()
@@ -209,8 +217,9 @@ class TestBatchOperationsWorkflow:
         mock_cover.close_cover.assert_called_once()
 
     async def test_batch_operations_with_partial_failures(
-        self, hass: HomeAssistant
-    ) -> None:  # noqa: ARG002
+        self,
+        hass: HomeAssistant,  # noqa: ARG002
+    ) -> None:
         """Test batch operations gracefully handle some failures."""
         # Create mock devices - some will fail
         mock_device_1 = Mock()
@@ -251,7 +260,9 @@ class TestConfigurationPresets:
     """Test configuration presets workflow."""
 
     async def test_user_selects_aggressive_preset(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test user selecting aggressive polling preset."""
         from custom_components.abode_security.models import POLLING_PRESETS
@@ -282,7 +293,9 @@ class TestConfigurationPresets:
         assert mock_entry.data[CONF_POLLING_INTERVAL] == aggressive_preset["interval"]
 
     async def test_user_switches_between_presets(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test user switching between different presets."""
         from custom_components.abode_security.models import POLLING_PRESETS
@@ -325,7 +338,9 @@ class TestErrorRecoveryScenarios:
     """Test error recovery and resilience."""
 
     async def test_graceful_recovery_from_network_error(
-        self, hass: HomeAssistant, mock_abode  # noqa: ARG002
+        self,
+        hass: HomeAssistant,
+        mock_abode,  # noqa: ARG002
     ) -> None:
         """Test graceful recovery from network errors."""
         await setup_platform(hass, ALARM_DOMAIN)
@@ -352,9 +367,7 @@ class TestErrorRecoveryScenarios:
         # Should be lower after recovery
         assert interval_after_recovery <= interval_after_errors
 
-    async def test_invalid_config_handling(
-        self, hass: HomeAssistant
-    ) -> None:  # noqa: ARG002
+    async def test_invalid_config_handling(self, hass: HomeAssistant) -> None:  # noqa: ARG002
         """Test handling of invalid configuration."""
         # Create entry with missing required fields
         mock_entry = MockConfigEntry(

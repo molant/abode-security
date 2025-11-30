@@ -6,17 +6,16 @@ import asyncio
 from functools import partial
 from pathlib import Path
 
-# MUST be imported first to set up vendored library path
-from . import _vendor  # noqa: F401
-
 import abode  # Import the whole module for abode.config.paths reference
 import aiohttp
 from abode.client import Client as Abode
 from abode.exceptions import (
     AuthenticationException as AbodeAuthenticationException,
-    RateLimitException as AbodeRateLimitException,
 )
 from abode.exceptions import Exception as AbodeException
+from abode.exceptions import (
+    RateLimitException as AbodeRateLimitException,
+)
 from abode.helpers.timeline import Groups as GROUPS  # noqa: N814
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -32,6 +31,9 @@ from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
+
+# MUST be imported first to set up vendored library path
+from . import _vendor  # noqa: F401
 from .const import (
     CONF_ENABLE_EVENTS,
     CONF_POLLING,
@@ -77,7 +79,10 @@ async def _enable_abode_entities(hass: HomeAssistant, entry: ConfigEntry) -> Non
             updated_count += 1
 
     if updated_count > 0:
-        LOGGER.info("Enabled %d Abode entities that were disabled by device", updated_count)
+        LOGGER.info(
+            "Enabled %d Abode entities that were disabled by device", updated_count
+        )
+
 
 PLATFORMS = [
     Platform.ALARM_CONTROL_PANEL,
@@ -191,7 +196,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await abode_system.abode.logout()
     await abode_system.abode.cleanup()
 
-    abode_system.logout_listener()
+    if abode_system.logout_listener is not None:
+        abode_system.logout_listener()
 
     return unload_ok
 

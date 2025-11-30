@@ -8,7 +8,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from .const import LOGGER
-from .exceptions import AbodeException
+from .exceptions import AbodeError
 
 _T = TypeVar("_T")
 
@@ -20,7 +20,7 @@ def handle_abode_errors(operation_name: str) -> Callable:
         operation_name: Human-readable operation description for logging
 
     Returns:
-        Decorated function that catches AbodeException and logs errors
+        Decorated function that catches AbodeError and logs errors
     """
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -28,7 +28,7 @@ def handle_abode_errors(operation_name: str) -> Callable:
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return await func(*args, **kwargs)
-            except AbodeException as ex:
+            except AbodeError as ex:
                 LOGGER.error(f"Failed to {operation_name}: %s", ex)
                 return None
 
@@ -36,7 +36,7 @@ def handle_abode_errors(operation_name: str) -> Callable:
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return func(*args, **kwargs)
-            except AbodeException as ex:
+            except AbodeError as ex:
                 LOGGER.error(f"Failed to {operation_name}: %s", ex)
                 return None
 

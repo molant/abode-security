@@ -2,10 +2,12 @@
 
 import csv
 
-from importlib_resources import files
+try:
+    from importlib.resources import files
+except ImportError:
+    from importlib_resources import files
 
 from jaraco.collections import RangeMap
-from jaraco.functools import invoke
 
 
 class Groups:
@@ -69,11 +71,10 @@ def map_event_code(event_code):
 
 
 def _read_events():
-    with files().joinpath('events.csv').open(encoding='utf-8') as strm:
+    with files(__package__).joinpath('events.csv').open(encoding='utf-8') as strm:
         yield from csv.DictReader(strm, quoting=csv.QUOTE_NONE, skipinitialspace=True)
 
 
-@invoke
 def _load_events():
     def var_name(event):
         default = (
@@ -92,3 +93,6 @@ def _load_events():
     }
     assert len(all_events) == len(vars)
     globals().update(vars)
+
+
+_load_events()

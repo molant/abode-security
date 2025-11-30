@@ -1,10 +1,18 @@
 import logging
 
-from jaraco.collections import DictAdapter, Projection
-
 from ._itertools import single
 
 log = logging.getLogger(__name__)
+
+
+class DictAdapter(dict):
+    """Adapt a dict for format string with attribute-like access."""
+
+    def __init__(self, mapping):
+        self.data = mapping
+
+    def __getitem__(self, key):
+        return self.data[key]
 
 
 class Stateful:
@@ -24,7 +32,9 @@ class Stateful:
 
         Only updates keys already present.
         """
-        self._state.update(Projection(self._state, state))
+        # Only update keys already present in self._state
+        projection = {key: state[key] for key in self._state if key in state}
+        self._state.update(projection)
 
     @property
     def desc(self):

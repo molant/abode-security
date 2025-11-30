@@ -7,7 +7,6 @@ are present in the code without requiring full module imports.
 from __future__ import annotations
 
 import ast
-import re
 from pathlib import Path
 
 import pytest
@@ -37,7 +36,7 @@ class AsyncAwaitStaticAnalyzer:
     def function_contains_await(self, func_name: str) -> bool:
         """Check if a function contains any await statements."""
         for node in ast.walk(self.tree):
-            if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)):
+            if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)):  # noqa: SIM102
                 if node.name == func_name:
                     for child in ast.walk(node):
                         if isinstance(child, ast.Await):
@@ -69,14 +68,13 @@ class AsyncAwaitStaticAnalyzer:
         """Find uses of asyncio.run() in the code."""
         calls = []
         for node in ast.walk(self.tree):
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Attribute):
-                    if (
-                        isinstance(node.func.value, ast.Name)
-                        and node.func.value.id == "asyncio"
-                        and node.func.attr == "run"
-                    ):
-                        calls.append(node.lineno)
+            if isinstance(node, ast.Call):  # noqa: SIM102
+                if isinstance(node.func, ast.Attribute) and (
+                    isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "asyncio"
+                    and node.func.attr == "run"
+                ):
+                    calls.append(node.lineno)
 
         return calls
 
@@ -84,8 +82,8 @@ class AsyncAwaitStaticAnalyzer:
         """Find uses of run_until_complete() in the code."""
         calls = []
         for node in ast.walk(self.tree):
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Attribute):
+            if isinstance(node, ast.Call):  # noqa: SIM102
+                if isinstance(node.func, ast.Attribute):  # noqa: SIM102
                     if node.func.attr == "run_until_complete":
                         calls.append(node.lineno)
 
@@ -95,14 +93,13 @@ class AsyncAwaitStaticAnalyzer:
         """Find asyncio.wait_for() calls."""
         calls = []
         for node in ast.walk(self.tree):
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Attribute):
-                    if (
-                        isinstance(node.func.value, ast.Name)
-                        and node.func.value.id == "asyncio"
-                        and node.func.attr == "wait_for"
-                    ):
-                        calls.append(node.lineno)
+            if isinstance(node, ast.Call):  # noqa: SIM102
+                if isinstance(node.func, ast.Attribute) and (
+                    isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "asyncio"
+                    and node.func.attr == "wait_for"
+                ):
+                    calls.append(node.lineno)
 
         return calls
 
@@ -186,34 +183,38 @@ class TestAsyncAwaitStaticPatterns:
             "_trigger_automation should be sync def"
         )
 
-    def test_service_handlers_have_correct_await_usage(self, services_file: str) -> None:
+    def test_service_handlers_have_correct_await_usage(
+        self, services_file: str
+    ) -> None:
         """Verify service handlers use await correctly."""
         analyzer = AsyncAwaitStaticAnalyzer(services_file, "services.py")
 
         # Async handlers should have await
-        assert analyzer.function_contains_await(
-            "_change_setting"
-        ), "_change_setting should contain await"
-        assert analyzer.function_contains_await(
-            "_trigger_alarm_handler"
-        ), "_trigger_alarm_handler should contain await"
+        assert analyzer.function_contains_await("_change_setting"), (
+            "_change_setting should contain await"
+        )
+        assert analyzer.function_contains_await("_trigger_alarm_handler"), (
+            "_trigger_alarm_handler should contain await"
+        )
 
         # Sync handlers should not have await
-        assert not analyzer.function_contains_await(
-            "_capture_image"
-        ), "_capture_image should not contain await"
-        assert not analyzer.function_contains_await(
-            "_trigger_automation"
-        ), "_trigger_automation should not contain await"
+        assert not analyzer.function_contains_await("_capture_image"), (
+            "_capture_image should not contain await"
+        )
+        assert not analyzer.function_contains_await("_trigger_automation"), (
+            "_trigger_automation should not contain await"
+        )
 
     def test_factory_handler_is_async(self, services_file: str) -> None:
         """Verify service handler factory creates async handler."""
         analyzer = AsyncAwaitStaticAnalyzer(services_file, "services.py")
-        async_funcs = analyzer.find_async_functions()
+        analyzer.find_async_functions()
 
         # The handler function inside _create_service_handler should be async
         # We'll check the factory itself returns an async handler
-        assert "handler" in services_file, "_create_service_handler should define handler"
+        assert "handler" in services_file, (
+            "_create_service_handler should define handler"
+        )
         assert "async def handler" in services_file, "handler should be async def"
 
     def test_entity_has_async_lifecycle_methods(self, entity_file: str) -> None:
@@ -229,9 +230,9 @@ class TestAsyncAwaitStaticPatterns:
         ]
 
         for func_name in expected_async:
-            assert (
-                async_funcs.get(func_name) is True
-            ), f"{func_name} should be async def"
+            assert async_funcs.get(func_name) is True, (
+                f"{func_name} should be async def"
+            )
 
     def test_timeout_protection_in_entity(self, entity_file: str) -> None:
         """Verify executor jobs have timeout protection."""
@@ -255,9 +256,7 @@ class TestAsyncAwaitStaticPatterns:
             analyzer = AsyncAwaitStaticAnalyzer(content, py_file.name)
             run_calls = analyzer.find_asyncio_run_calls()
 
-            assert (
-                len(run_calls) == 0
-            ), f"{py_file.name} should not use asyncio.run()"
+            assert len(run_calls) == 0, f"{py_file.name} should not use asyncio.run()"
 
     def test_no_run_until_complete_in_integration(self) -> None:
         """Verify integration doesn't use run_until_complete()."""
@@ -270,9 +269,9 @@ class TestAsyncAwaitStaticPatterns:
             analyzer = AsyncAwaitStaticAnalyzer(content, py_file.name)
             run_calls = analyzer.find_run_until_complete_calls()
 
-            assert (
-                len(run_calls) == 0
-            ), f"{py_file.name} should not use run_until_complete()"
+            assert len(run_calls) == 0, (
+                f"{py_file.name} should not use run_until_complete()"
+            )
 
     def test_no_async_properties_in_integration(self) -> None:
         """Verify no async properties (invalid pattern)."""
@@ -285,30 +284,28 @@ class TestAsyncAwaitStaticPatterns:
             analyzer = AsyncAwaitStaticAnalyzer(content, py_file.name)
             async_props = analyzer.find_async_properties()
 
-            assert (
-                len(async_props) == 0
-            ), f"{py_file.name} has invalid async properties: {async_props}"
+            assert len(async_props) == 0, (
+                f"{py_file.name} has invalid async properties: {async_props}"
+            )
 
     def test_camera_has_dispatcher_cleanup(self, camera_file: str) -> None:
         """Verify camera uses async_on_remove for dispatcher cleanup."""
-        assert (
-            "async_on_remove" in camera_file
-        ), "camera.py should use async_on_remove"
-        assert (
-            "async_dispatcher_connect" in camera_file
-        ), "camera.py should use async_dispatcher_connect"
+        assert "async_on_remove" in camera_file, "camera.py should use async_on_remove"
+        assert "async_dispatcher_connect" in camera_file, (
+            "camera.py should use async_dispatcher_connect"
+        )
 
     def test_switch_has_async_task_wrapping(self, switch_file: str) -> None:
         """Verify switch properly wraps async callbacks."""
-        assert (
-            "async_create_task" in switch_file
-        ), "switch.py should use async_create_task"
+        assert "async_create_task" in switch_file, (
+            "switch.py should use async_create_task"
+        )
 
     def test_init_uses_modern_event_loop(self, init_file: str) -> None:
         """Verify __init__.py uses modern event loop API."""
-        assert (
-            "asyncio.get_event_loop()" in init_file
-        ), "__init__.py should use asyncio.get_event_loop()"
+        assert "asyncio.get_event_loop()" in init_file, (
+            "__init__.py should use asyncio.get_event_loop()"
+        )
 
         # Should not use deprecated hass.loop
         assert "hass.loop" not in init_file, "__init__.py should not use hass.loop"
@@ -317,17 +314,15 @@ class TestAsyncAwaitStaticPatterns:
         """Verify timeout protection pattern with try/except."""
         # Count asyncio.wait_for calls
         wait_for_count = entity_file.count("asyncio.wait_for(")
-        assert (
-            wait_for_count >= 4
-        ), f"Expected at least 4 asyncio.wait_for calls, found {wait_for_count}"
+        assert wait_for_count >= 4, (
+            f"Expected at least 4 asyncio.wait_for calls, found {wait_for_count}"
+        )
 
         # Should have timeout parameter
         assert "timeout=" in entity_file, "asyncio.wait_for should have timeout"
 
         # Should have TimeoutError handling
-        assert (
-            "TimeoutError" in entity_file
-        ), "Should handle asyncio.TimeoutError"
+        assert "TimeoutError" in entity_file, "Should handle asyncio.TimeoutError"
 
 
 class TestAsyncAwaitDocumentation:
@@ -344,25 +339,23 @@ class TestAsyncAwaitDocumentation:
         content = services_file.read_text()
 
         # Check for docstring on _capture_image
-        assert (
-            "dispatcher_send()" in content and "sync" in content.lower()
-        ), "Service handlers should document why they are sync/async"
+        assert "dispatcher_send()" in content and "sync" in content.lower(), (
+            "Service handlers should document why they are sync/async"
+        )
 
     def test_async_patterns_documented(self) -> None:
         """Verify async patterns are documented in code."""
-        docs_file = (
-            Path(__file__).parent.parent / "docs" / "ASYNC_AWAIT_PATTERNS.md"
-        )
+        docs_file = Path(__file__).parent.parent / "docs" / "ASYNC_AWAIT_PATTERNS.md"
 
         if docs_file.exists():
             content = docs_file.read_text()
             # Verify documentation exists
-            assert (
-                "async" in content.lower()
-            ), "Documentation should cover async patterns"
-            assert (
-                "await" in content.lower()
-            ), "Documentation should cover await patterns"
+            assert "async" in content.lower(), (
+                "Documentation should cover async patterns"
+            )
+            assert "await" in content.lower(), (
+                "Documentation should cover await patterns"
+            )
 
 
 class TestAsyncAwaitIntegration:
@@ -405,14 +398,10 @@ class TestAsyncAwaitIntegration:
             total_asyncs += content.count("async def")
 
         # Should have substantial async coverage
-        assert (
-            total_asyncs > 20
-        ), f"Expected 20+ async functions, found {total_asyncs}"
-        assert (
-            total_awaits > 50
-        ), f"Expected 50+ await statements, found {total_awaits}"
+        assert total_asyncs > 20, f"Expected 20+ async functions, found {total_asyncs}"
+        assert total_awaits > 50, f"Expected 50+ await statements, found {total_awaits}"
 
-        print(f"\nIntegration Stats:")
+        print("\nIntegration Stats:")
         print(f"  Total async functions: {total_asyncs}")
         print(f"  Total await statements: {total_awaits}")
 

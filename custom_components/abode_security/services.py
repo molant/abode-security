@@ -126,9 +126,7 @@ def _capture_image(call: ServiceCall) -> None:
         return
 
     target_entities = [
-        entity_id
-        for entity_id in abode_system.entity_ids
-        if entity_id in entity_ids
+        entity_id for entity_id in abode_system.entity_ids if entity_id in entity_ids
     ]
 
     for entity_id in target_entities:
@@ -150,9 +148,7 @@ def _trigger_automation(call: ServiceCall) -> None:
         return
 
     target_entities = [
-        entity_id
-        for entity_id in abode_system.entity_ids
-        if entity_id in entity_ids
+        entity_id for entity_id in abode_system.entity_ids if entity_id in entity_ids
     ]
 
     for entity_id in target_entities:
@@ -200,7 +196,10 @@ def setup_services(hass: HomeAssistant) -> None:
     )
 
     hass.services.async_register(
-        DOMAIN, SERVICE_TRIGGER_ALARM, _trigger_alarm_handler, schema=TRIGGER_ALARM_SCHEMA
+        DOMAIN,
+        SERVICE_TRIGGER_ALARM,
+        _trigger_alarm_handler,
+        schema=TRIGGER_ALARM_SCHEMA,
     )
 
     hass.services.async_register(

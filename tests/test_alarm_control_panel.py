@@ -5,9 +5,7 @@ from unittest.mock import PropertyMock, patch
 from homeassistant.components.alarm_control_panel import (
     DOMAIN as ALARM_DOMAIN,
 )
-from homeassistant.components.alarm_control_panel import (
-    AlarmControlPanelState,
-)
+from homeassistant.components.alarm_control_panel import AlarmControlPanelState
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     ATTR_FRIENDLY_NAME,

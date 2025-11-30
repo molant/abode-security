@@ -18,7 +18,7 @@ CONF_EVENT_FILTER = "event_filter"
 DEFAULT_POLLING_INTERVAL = 30  # seconds
 DEFAULT_ENABLE_EVENTS = True
 DEFAULT_RETRY_COUNT = 3
-DEFAULT_EVENT_FILTER = []  # No filtering by default
+DEFAULT_EVENT_FILTER: list[str] = []  # No filtering by default
 
 # Event types for filtering
 EVENT_TYPES = [

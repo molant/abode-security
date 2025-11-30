@@ -1,0 +1,22 @@
+#!/bin/bash
+set -e
+
+echo "Running pre-commit checks..."
+
+# Set PYTHONPATH to include vendored libraries
+export PYTHONPATH="$(cd "$(dirname "$0")/../custom_components/lib" && pwd):$PYTHONPATH"
+
+# Lint with ruff
+echo "Linting with ruff..."
+python3 -m ruff check custom_components/abode_security tests
+python3 -m ruff format --check custom_components/abode_security tests
+
+# Type check with mypy
+echo "Type checking with mypy..."
+python3 -m mypy custom_components/abode_security --ignore-missing-imports
+
+# Run tests with pytest
+echo "Running tests with pytest..."
+python3 -m pytest tests/ -v --tb=short
+
+echo "Pre-commit checks passed!"

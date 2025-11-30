@@ -10,11 +10,10 @@ import random
 import threading
 import urllib.parse
 
+import jaraco.collections
 from lomond import WebSocket, events
 from lomond.errors import WebSocketError
 from lomond.persist import persist
-
-import jaraco.collections
 
 from .exceptions import SocketIOException
 from .helpers import errors as ERRORS

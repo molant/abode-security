@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import timedelta
 from typing import Any, cast
 
@@ -63,7 +64,7 @@ class AbodeCamera(AbodeDevice, Camera):
             # Use Home Assistant's async_create_task for proper cleanup on removal
             self.hass.async_create_task(self._capture_callback(capture))
 
-        try:
+        with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(
                 self.hass.async_add_executor_job(
                     self._data.abode.events.add_timeline_callback,
@@ -72,8 +73,6 @@ class AbodeCamera(AbodeDevice, Camera):
                 ),
                 timeout=10.0,
             )
-        except asyncio.TimeoutError:
-            pass  # Timeout on timeline callback registration is non-critical
 
         signal = f"abode_camera_capture_{self.entity_id}"
         self.async_on_remove(async_dispatcher_connect(self.hass, signal, self.capture))
@@ -110,13 +109,15 @@ class AbodeCamera(AbodeDevice, Camera):
         """Attempt to download the most recent capture asynchronously."""
         if self._device.image_url:
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
+                async with (
+                    aiohttp.ClientSession() as session,
+                    session.get(
                         self._device.image_url,
                         timeout=aiohttp.ClientTimeout(total=10),
-                    ) as response:
-                        response.raise_for_status()
-                        self._image_content = await response.read()
+                    ) as response,
+                ):
+                    response.raise_for_status()
+                    self._image_content = await response.read()
             except aiohttp.ClientError as err:
                 LOGGER.warning("Failed to get camera image: %s", err)
                 self._image_content = None

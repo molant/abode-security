@@ -26,22 +26,9 @@ from .test_constants import (
     AUTOMATION_UID,
     DEVICE_ENTITY_ID,
     DEVICE_UID,
-    DISPATCH_FIRE_ENTITY_ID,
-    DISPATCH_FIRE_UID,
-    DISPATCH_MEDICAL_ENTITY_ID,
-    DISPATCH_MEDICAL_UID,
-    DISPATCH_POLICE_ENTITY_ID,
-    DISPATCH_POLICE_UID,
-    DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID,
-    DISPATCH_WITHOUT_VERIFICATION_UID,
     DOMAIN,
-    MONITORING_ACTIVE_ENTITY_ID,
-    MONITORING_ACTIVE_UID,
     PANIC_ALARM_ENTITY_ID,
-    SEND_MEDIA_ENTITY_ID,
-    SEND_MEDIA_UID,
     TEST_MODE_ENTITY_ID,
-    TEST_MODE_UID,
 )
 
 # Use new constants from test_constants
@@ -76,7 +63,9 @@ async def test_switch_on(hass: HomeAssistant) -> None:
     """Test the switch can be turned on."""
     await setup_platform(hass, SWITCH_DOMAIN)
 
-    with patch("abode.devices.switch.Switch.switch_on", new_callable=AsyncMock) as mock_switch_on:
+    with patch(
+        "abode.devices.switch.Switch.switch_on", new_callable=AsyncMock
+    ) as mock_switch_on:
         await hass.services.async_call(
             SWITCH_DOMAIN, SERVICE_TURN_ON, {ATTR_ENTITY_ID: DEVICE_ID}, blocking=True
         )
@@ -89,7 +78,9 @@ async def test_switch_off(hass: HomeAssistant) -> None:
     """Test the switch can be turned off."""
     await setup_platform(hass, SWITCH_DOMAIN)
 
-    with patch("abode.devices.switch.Switch.switch_off", new_callable=AsyncMock) as mock_switch_off:
+    with patch(
+        "abode.devices.switch.Switch.switch_off", new_callable=AsyncMock
+    ) as mock_switch_off:
         await hass.services.async_call(
             SWITCH_DOMAIN, SERVICE_TURN_OFF, {ATTR_ENTITY_ID: DEVICE_ID}, blocking=True
         )
@@ -109,7 +100,9 @@ async def test_automation_attributes(hass: HomeAssistant) -> None:
 
 async def test_turn_automation_off(hass: HomeAssistant) -> None:
     """Test the automation can be turned off."""
-    with patch("abode.automation.Automation.enable", new_callable=AsyncMock) as mock_trigger:
+    with patch(
+        "abode.automation.Automation.enable", new_callable=AsyncMock
+    ) as mock_trigger:
         await setup_platform(hass, SWITCH_DOMAIN)
 
         await hass.services.async_call(
@@ -125,7 +118,9 @@ async def test_turn_automation_off(hass: HomeAssistant) -> None:
 
 async def test_turn_automation_on(hass: HomeAssistant) -> None:
     """Test the automation can be turned on."""
-    with patch("abode.automation.Automation.enable", new_callable=AsyncMock) as mock_trigger:
+    with patch(
+        "abode.automation.Automation.enable", new_callable=AsyncMock
+    ) as mock_trigger:
         await setup_platform(hass, SWITCH_DOMAIN)
 
         await hass.services.async_call(
@@ -168,7 +163,9 @@ async def test_manual_alarm_switch_turn_on(hass: HomeAssistant) -> None:
     """Test the manual alarm switch can be turned on."""
     await setup_platform(hass, SWITCH_DOMAIN)
 
-    with patch("abode.devices.alarm.Alarm.trigger_manual_alarm", new_callable=AsyncMock) as mock:
+    with patch(
+        "abode.devices.alarm.Alarm.trigger_manual_alarm", new_callable=AsyncMock
+    ) as mock:
         mock.return_value = {"event_id": "test_event_123"}
         await hass.services.async_call(
             SWITCH_DOMAIN,
@@ -249,7 +246,9 @@ async def test_trigger_alarm_service(hass: HomeAssistant) -> None:
     """Test the trigger alarm service."""
     await setup_platform(hass, SWITCH_DOMAIN)
 
-    with patch("abode.devices.alarm.Alarm.trigger_manual_alarm", new_callable=AsyncMock) as mock:
+    with patch(
+        "abode.devices.alarm.Alarm.trigger_manual_alarm", new_callable=AsyncMock
+    ) as mock:
         await hass.services.async_call(
             DOMAIN,
             SERVICE_TRIGGER_ALARM,

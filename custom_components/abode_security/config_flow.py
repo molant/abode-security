@@ -23,7 +23,10 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
-from requests.exceptions import ConnectTimeout, HTTPError
+from requests.exceptions import (  # type: ignore[import-untyped]
+    ConnectTimeout,
+    HTTPError,
+)
 
 from . import _vendor  # noqa: F401
 from .const import (
@@ -41,7 +44,7 @@ from .const import (
 CONF_MFA = "mfa_code"
 
 
-class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):
+class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     """Config flow for Abode."""
 
     VERSION = 1
@@ -214,15 +217,13 @@ class AbodeOptionsFlowHandler(OptionsFlow):
 
         options_schema = vol.Schema(
             {
-                vol.Optional(
-                    CONF_POLLING_INTERVAL, default=polling_interval
-                ): vol.All(vol.Coerce(int), vol.Range(min=15, max=120)),
-                vol.Optional(
-                    CONF_ENABLE_EVENTS, default=enable_events
-                ): bool,
-                vol.Optional(
-                    CONF_RETRY_COUNT, default=retry_count
-                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
+                vol.Optional(CONF_POLLING_INTERVAL, default=polling_interval): vol.All(
+                    vol.Coerce(int), vol.Range(min=15, max=120)
+                ),
+                vol.Optional(CONF_ENABLE_EVENTS, default=enable_events): bool,
+                vol.Optional(CONF_RETRY_COUNT, default=retry_count): vol.All(
+                    vol.Coerce(int), vol.Range(min=1, max=5)
+                ),
             }
         )
 

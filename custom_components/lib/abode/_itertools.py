@@ -1,10 +1,12 @@
+import jaraco.itertools
 import more_itertools
 
-import jaraco.functools
-import jaraco.itertools
 
-single = jaraco.functools.compose(more_itertools.one, jaraco.itertools.always_iterable)
+def single(value):
+    """Ensure value is a single item by converting to iterable and extracting one element."""
+    return more_itertools.one(jaraco.itertools.always_iterable(value))
 
-opt_single = jaraco.functools.compose(
-    more_itertools.only, jaraco.itertools.always_iterable
-)
+
+def opt_single(value):
+    """Extract optional single item from iterable, or None if empty."""
+    return more_itertools.only(jaraco.itertools.always_iterable(value))

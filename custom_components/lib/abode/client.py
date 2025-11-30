@@ -8,7 +8,6 @@ import logging
 import uuid
 
 import aiohttp
-from jaraco.collections import Everything
 from jaraco.itertools import always_iterable
 
 from . import settings
@@ -20,6 +19,13 @@ from .exceptions import AuthenticationException, Exception, RateLimitException
 from .helpers import errors, urls
 
 log = logging.getLogger(__name__)
+
+
+class Everything:
+    """A set that contains everything for membership testing."""
+
+    def __contains__(self, item):
+        return True
 
 
 class ResponseWrapper:

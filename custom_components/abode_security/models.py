@@ -145,7 +145,11 @@ class SmartPolling:
             return adjusted
 
         # Speed up if performing well
-        if self.stats.error_count == 0 and self.stats.average_duration < 1.0:
+        if (
+            self.stats.update_count >= 5
+            and self.stats.error_count == 0
+            and self.stats.average_duration < 0.6
+        ):
             adjusted = max(self.base_interval - 5, 15)
             if adjusted < self.base_interval:
                 LOGGER.debug(
@@ -199,7 +203,9 @@ class AbodeSystem:
         """Get test mode status with fallback."""
         try:
             result = await self.abode.get_test_mode()
-            LOGGER.debug("get_test_mode() returned: %s (type: %s)", result, type(result))
+            LOGGER.debug(
+                "get_test_mode() returned: %s (type: %s)", result, type(result)
+            )
             self.test_mode_supported = getattr(self.abode, "test_mode_supported", True)
             return result
         except AttributeError:
@@ -295,7 +301,9 @@ class AbodeSystem:
         """Set dispatch without verification with fallback."""
         try:
             await self.abode.set_cms_setting("dispatchWithoutVerification", enabled)
-            LOGGER.info("Dispatch without verification %s", "enabled" if enabled else "disabled")
+            LOGGER.info(
+                "Dispatch without verification %s", "enabled" if enabled else "disabled"
+            )
         except AttributeError:
             LOGGER.debug("set_cms_setting method not available in abode client")
         except Exception as ex:

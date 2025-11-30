@@ -70,7 +70,7 @@ async def test_get_test_mode_returns_false_when_method_missing() -> None:
         logout_listener=None,
     )
 
-    result = abode_system.get_test_mode()
+    result = await abode_system.get_test_mode()
     assert result is False
 
 
@@ -90,12 +90,12 @@ async def test_set_test_mode_handles_exception_gracefully() -> None:
     abode_system.set_test_mode(True)
 
 
-async def test_alarm_control_panel_error_handling(hass: HomeAssistant, mock_abode) -> None:
+async def test_alarm_control_panel_error_handling(
+    hass: HomeAssistant, mock_abode
+) -> None:
     """Test that alarm control panel methods handle errors gracefully."""
     # Make set_standby raise an error to test error handling
-    mock_abode.get_alarm.return_value.set_standby.side_effect = Exception(
-        "API Error"
-    )
+    mock_abode.get_alarm.return_value.set_standby.side_effect = Exception("API Error")
 
     await setup_platform(hass, ALARM_DOMAIN)
 
@@ -107,7 +107,9 @@ async def test_alarm_control_panel_error_handling(hass: HomeAssistant, mock_abod
     assert state.state is not None
 
 
-async def test_test_mode_switch_polling_disabled_initially(hass: HomeAssistant, mock_abode) -> None:
+async def test_test_mode_switch_polling_disabled_initially(
+    hass: HomeAssistant, mock_abode
+) -> None:
     """Test that test mode switch doesn't poll until initial sync is done."""
     mock_abode.get_test_mode = Mock(return_value=False)
 
@@ -120,7 +122,9 @@ async def test_test_mode_switch_polling_disabled_initially(hass: HomeAssistant, 
     assert state.state == "off"
 
 
-async def test_event_callback_helpers_handle_exceptions(hass: HomeAssistant, mock_abode) -> None:
+async def test_event_callback_helpers_handle_exceptions(
+    hass: HomeAssistant, mock_abode
+) -> None:
     """Test that event callback helpers handle exceptions gracefully."""
     # Make add_event_callback raise to test exception handling
     mock_abode.events.add_event_callback.side_effect = Exception("Subscription failed")
@@ -132,15 +136,15 @@ async def test_event_callback_helpers_handle_exceptions(hass: HomeAssistant, moc
     assert state is not None
 
 
-async def test_service_handler_factory_error_handling(hass: HomeAssistant, mock_abode) -> None:
+async def test_service_handler_factory_error_handling(
+    hass: HomeAssistant, mock_abode
+) -> None:
     """Test that service handlers created with factory handle errors gracefully."""
     from custom_components.abode_security.const import DOMAIN
     from custom_components.abode_security.services import SERVICE_ACKNOWLEDGE_ALARM
 
     # Make acknowledge_timeline_event raise an error
-    mock_abode.acknowledge_timeline_event.side_effect = Exception(
-        "API Error"
-    )
+    mock_abode.acknowledge_timeline_event.side_effect = Exception("API Error")
 
     await setup_platform(hass, SWITCH_DOMAIN)
 

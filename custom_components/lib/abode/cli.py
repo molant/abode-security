@@ -10,43 +10,49 @@ import logging
 import os
 import time
 
+import abode
 import keyring
 from more_itertools import always_iterable
 
-import abode
-from jaraco.context import suppress
-from jaraco.functools import pass_none
-
 from . import Client
-from .helpers import timeline as TIMELINE
+from .helpers import timeline as TIMELINE  # noqa: N812
 from .helpers import urls
 
 log = logging.getLogger(__name__)
 
 
-@suppress(ImportError)
+def pass_none(func):
+    """Decorator that returns None if first argument is None."""
+    def wrapper(arg, *args, **kwargs):
+        if arg is None:
+            return None
+        return func(arg, *args, **kwargs)
+    return wrapper
+
+
 def enable_color():
-    import colorlog
+    with contextlib.suppress(ImportError):
+        import colorlog
 
-    fmt = "%(asctime)s %(levelname)s (%(threadName)s) [%(name)s] %(message)s"
-    colorfmt = f"%(log_color)s{fmt}%(reset)s"
-    datefmt = '%Y-%m-%d %H:%M:%S'
+        fmt = "%(asctime)s %(levelname)s (%(threadName)s) [%(name)s] %(message)s"
+        colorfmt = f"%(log_color)s{fmt}%(reset)s"
+        datefmt = '%Y-%m-%d %H:%M:%S'
 
-    handler = logging.getLogger().handlers[0]
-    handler.setFormatter(
-        colorlog.ColoredFormatter(
-            colorfmt,
-            datefmt=datefmt,
-            reset=True,
-            log_colors=dict(
-                DEBUG='cyan',
-                INFO='green',
-                WARNING='yellow',
-                ERROR='red',
-                CRITICAL='red',
-            ),
+        handler = logging.getLogger().handlers[0]
+        handler.setFormatter(
+            colorlog.ColoredFormatter(
+                colorfmt,
+                datefmt=datefmt,
+                reset=True,
+                log_colors=dict(
+                    DEBUG='cyan',
+                    INFO='green',
+                    WARNING='yellow',
+                    ERROR='red',
+                    CRITICAL='red',
+                ),
+            )
         )
-    )
 
 
 def setup_logging(log_level=logging.INFO):

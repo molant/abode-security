@@ -20,7 +20,7 @@ async def async_get_config_entry_diagnostics(
     try:
         devices = await abode_system.abode.get_devices()
         device_count = len(devices) if devices else 0
-        device_types = {}
+        device_types: dict[str, int] = {}
         if devices:
             for device in devices:
                 device_type = getattr(device, "type", "unknown")
@@ -62,6 +62,7 @@ async def async_get_config_entry_diagnostics(
         # Check for timeline support
         try:
             from abode.helpers.timeline import Groups  # noqa: F401
+
             has_timeline_support = True
         except ImportError:
             has_timeline_support = False

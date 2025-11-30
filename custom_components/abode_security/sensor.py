@@ -134,7 +134,7 @@ class AbodeConnectionStatusSensor(SensorEntity):
         self._attr_unique_id = f"{data.abode.uuid}-connection-status"
         self._attr_name = "Abode Connection Status"
         self._attr_native_value = data.abode.connection_status
-        self._attr_extra_state_attributes = {}
+        self._attr_extra_state_attributes: dict[str, str] = {}
 
     async def async_update(self) -> None:
         """Update connection status."""

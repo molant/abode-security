@@ -6,7 +6,6 @@ from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.abode_security.const import (
     CONF_ENABLE_EVENTS,

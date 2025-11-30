@@ -3,7 +3,5 @@
 from __future__ import annotations
 
 
-class AbodeException(Exception):
+class AbodeError(Exception):
     """Base exception for Abode integration."""
-
-    pass

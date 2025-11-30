@@ -2,9 +2,10 @@
 
 from http import HTTPStatus
 
-import pytest
 from abode.exceptions import (
     Exception as AbodeException,
+)
+from abode.exceptions import (
     RateLimitException,
     SocketIOException,
 )

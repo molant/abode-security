@@ -42,7 +42,9 @@ PANIC_ALARM_ENTITY_ID = "switch.test_alarm_panic_alarm"
 TEST_MODE_ENTITY_ID = "switch.test_alarm_test_mode"
 MONITORING_ACTIVE_ENTITY_ID = "switch.test_alarm_monitoring_active"
 SEND_MEDIA_ENTITY_ID = "switch.test_alarm_send_media"
-DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID = "switch.test_alarm_dispatch_without_verification"
+DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID = (
+    "switch.test_alarm_dispatch_without_verification"
+)
 DISPATCH_POLICE_ENTITY_ID = "switch.test_alarm_dispatch_police"
 DISPATCH_FIRE_ENTITY_ID = "switch.test_alarm_dispatch_fire"
 DISPATCH_MEDICAL_ENTITY_ID = "switch.test_alarm_dispatch_medical"

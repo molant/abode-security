@@ -10,7 +10,7 @@ import asyncio
 import inspect
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -32,9 +32,9 @@ class TestAsyncAwaitPatterns:
         ]
 
         for name, func in async_handlers:
-            assert inspect.iscoroutinefunction(
-                func
-            ), f"{name} should be async def but is {type(func)}"
+            assert inspect.iscoroutinefunction(func), (
+                f"{name} should be async def but is {type(func)}"
+            )
 
         # Handlers that should be sync (no await)
         sync_handlers = [
@@ -43,9 +43,9 @@ class TestAsyncAwaitPatterns:
         ]
 
         for name, func in sync_handlers:
-            assert not inspect.iscoroutinefunction(
-                func
-            ), f"{name} should be sync def but is async"
+            assert not inspect.iscoroutinefunction(func), (
+                f"{name} should be sync def but is async"
+            )
 
     def test_entity_lifecycle_methods_are_async(self) -> None:
         """Verify entity lifecycle methods are async."""
@@ -63,9 +63,9 @@ class TestAsyncAwaitPatterns:
         for method_name, cls in async_methods:
             if hasattr(cls, method_name):
                 method = getattr(cls, method_name)
-                assert inspect.iscoroutinefunction(
-                    method
-                ), f"{cls.__name__}.{method_name} should be async"
+                assert inspect.iscoroutinefunction(method), (
+                    f"{cls.__name__}.{method_name} should be async"
+                )
 
     def test_platform_setup_functions_are_async(self) -> None:
         """Verify platform setup functions are async."""
@@ -83,12 +83,12 @@ class TestAsyncAwaitPatterns:
         for module_name in platform_modules:
             try:
                 module = __import__(module_name, fromlist=["async_setup_entry"])
-                assert hasattr(
-                    module, "async_setup_entry"
-                ), f"{module_name} missing async_setup_entry"
-                assert inspect.iscoroutinefunction(
-                    module.async_setup_entry
-                ), f"{module_name}.async_setup_entry should be async"
+                assert hasattr(module, "async_setup_entry"), (
+                    f"{module_name} missing async_setup_entry"
+                )
+                assert inspect.iscoroutinefunction(module.async_setup_entry), (
+                    f"{module_name}.async_setup_entry should be async"
+                )
             except ImportError:
                 # Module might not be importable in test environment
                 pass
@@ -111,34 +111,38 @@ class TestAsyncAwaitPatterns:
         for method_name, cls in config_async_methods:
             if hasattr(cls, method_name):
                 method = getattr(cls, method_name)
-                assert inspect.iscoroutinefunction(
-                    method
-                ), f"{cls.__name__}.{method_name} should be async"
+                assert inspect.iscoroutinefunction(method), (
+                    f"{cls.__name__}.{method_name} should be async"
+                )
 
         # Options flow step should be async
-        assert inspect.iscoroutinefunction(
-            AbodeOptionsFlowHandler.async_step_init
-        ), "AbodeOptionsFlowHandler.async_step_init should be async"
+        assert inspect.iscoroutinefunction(AbodeOptionsFlowHandler.async_step_init), (
+            "AbodeOptionsFlowHandler.async_step_init should be async"
+        )
 
     def test_no_asyncio_run_usage(self) -> None:
         """Verify integration doesn't use asyncio.run()."""
-        import_dir = Path(__file__).parent.parent / "custom_components" / "abode_security"
+        import_dir = (
+            Path(__file__).parent.parent / "custom_components" / "abode_security"
+        )
 
         for py_file in import_dir.glob("**/*.py"):
             content = py_file.read_text()
-            assert (
-                "asyncio.run(" not in content
-            ), f"{py_file.name} contains asyncio.run() which should not be used"
+            assert "asyncio.run(" not in content, (
+                f"{py_file.name} contains asyncio.run() which should not be used"
+            )
 
     def test_no_run_until_complete_usage(self) -> None:
         """Verify integration doesn't use run_until_complete()."""
-        import_dir = Path(__file__).parent.parent / "custom_components" / "abode_security"
+        import_dir = (
+            Path(__file__).parent.parent / "custom_components" / "abode_security"
+        )
 
         for py_file in import_dir.glob("**/*.py"):
             content = py_file.read_text()
-            assert (
-                "run_until_complete" not in content
-            ), f"{py_file.name} contains run_until_complete() which should not be used"
+            assert "run_until_complete" not in content, (
+                f"{py_file.name} contains run_until_complete() which should not be used"
+            )
 
     def test_timeout_protection_on_executor_jobs(self) -> None:
         """Verify executor jobs are protected with asyncio.wait_for()."""
@@ -152,9 +156,9 @@ class TestAsyncAwaitPatterns:
 
         # Count asyncio.wait_for usage
         wait_for_count = content.count("asyncio.wait_for(")
-        assert (
-            wait_for_count >= 4
-        ), f"Expected at least 4 asyncio.wait_for calls in entity.py, found {wait_for_count}"
+        assert wait_for_count >= 4, (
+            f"Expected at least 4 asyncio.wait_for calls in entity.py, found {wait_for_count}"
+        )
 
         # Verify timeout parameter
         assert "timeout=" in content, "asyncio.wait_for should have timeout parameter"
@@ -164,16 +168,18 @@ class TestAsyncAwaitPatterns:
         from custom_components.abode_security.services import _create_service_handler
 
         # Create a mock handler
-        mock_method = AsyncMock(return_value=None)
+        AsyncMock(return_value=None)
 
         handler = _create_service_handler(
-            "test_method", "test operation", ("arg1", lambda c: "value1")
+            "test_method",
+            "test operation",
+            ("arg1", lambda _: "value1"),  # noqa: ARG005
         )
 
         # Handler should be a coroutine function
-        assert inspect.iscoroutinefunction(
-            handler
-        ), "Service handler factory should create async handler"
+        assert inspect.iscoroutinefunction(handler), (
+            "Service handler factory should create async handler"
+        )
 
     def test_dispatcher_callbacks_properly_wrapped(self) -> None:
         """Verify dispatcher callbacks are properly wrapped for async."""
@@ -186,14 +192,13 @@ class TestAsyncAwaitPatterns:
         content = camera_file.read_text()
 
         # Verify async_on_remove is used with dispatcher_connect
-        assert (
-            "async_on_remove" in content and "async_dispatcher_connect" in content
-        ), "Camera should use async_on_remove with async_dispatcher_connect"
+        assert "async_on_remove" in content and "async_dispatcher_connect" in content, (
+            "Camera should use async_on_remove with async_dispatcher_connect"
+        )
 
         # Verify proper cleanup pattern
-        assert (
-            "self.async_on_remove(async_dispatcher_connect("
-            in content.replace("\n", "")
+        assert "self.async_on_remove(async_dispatcher_connect(" in content.replace(
+            "\n", ""
         ), "Dispatcher connections should be registered with async_on_remove"
 
     def test_sync_to_async_callback_wrapper(self) -> None:
@@ -207,9 +212,9 @@ class TestAsyncAwaitPatterns:
         content = switch_file.read_text()
 
         # Verify the async_create_task pattern for wrapping sync dispatcher callbacks
-        assert (
-            "async_create_task" in content
-        ), "Switch should use async_create_task to wrap async callbacks"
+        assert "async_create_task" in content, (
+            "Switch should use async_create_task to wrap async callbacks"
+        )
 
     def test_models_async_methods(self) -> None:
         """Verify AbodeSystem has async methods for API calls."""
@@ -219,17 +224,19 @@ class TestAsyncAwaitPatterns:
         async_methods = ["get_test_mode", "set_test_mode"]
 
         for method_name in async_methods:
-            assert hasattr(
-                AbodeSystem, method_name
-            ), f"AbodeSystem missing {method_name}"
+            assert hasattr(AbodeSystem, method_name), (
+                f"AbodeSystem missing {method_name}"
+            )
             method = getattr(AbodeSystem, method_name)
-            assert inspect.iscoroutinefunction(
-                method
-            ), f"AbodeSystem.{method_name} should be async"
+            assert inspect.iscoroutinefunction(method), (
+                f"AbodeSystem.{method_name} should be async"
+            )
 
     def test_no_async_properties(self) -> None:
         """Verify no async properties (invalid Python pattern)."""
-        import_dir = Path(__file__).parent.parent / "custom_components" / "abode_security"
+        import_dir = (
+            Path(__file__).parent.parent / "custom_components" / "abode_security"
+        )
 
         # Check for the anti-pattern of @property with async def
         for py_file in import_dir.glob("**/*.py"):
@@ -239,13 +246,18 @@ class TestAsyncAwaitPatterns:
             for i, line in enumerate(lines[:-1]):
                 if "@property" in line:
                     next_line = lines[i + 1]
-                    assert (
-                        "async def" not in next_line
-                    ), f"{py_file.name}: Found async property which is invalid"
+                    assert "async def" not in next_line, (
+                        f"{py_file.name}: Found async property which is invalid"
+                    )
 
     def test_service_method_naming_convention(self) -> None:
         """Verify service methods follow naming conventions."""
-        from custom_components.abode_security import alarm_control_panel, cover, light, lock
+        from custom_components.abode_security import (
+            alarm_control_panel,
+            cover,
+            light,
+            lock,
+        )
 
         # Methods that operate on devices should have async_ prefix
         expected_async_methods = [
@@ -261,13 +273,13 @@ class TestAsyncAwaitPatterns:
         ]
 
         for method_name, cls in expected_async_methods:
-            assert hasattr(
-                cls, method_name
-            ), f"{cls.__name__} missing method {method_name}"
+            assert hasattr(cls, method_name), (
+                f"{cls.__name__} missing method {method_name}"
+            )
             method = getattr(cls, method_name)
-            assert inspect.iscoroutinefunction(
-                method
-            ), f"{cls.__name__}.{method_name} should be async"
+            assert inspect.iscoroutinefunction(method), (
+                f"{cls.__name__}.{method_name} should be async"
+            )
 
 
 class TestAsyncAwaitSemantics:
@@ -288,7 +300,7 @@ class TestAsyncAwaitSemantics:
         assert inspect.iscoroutine(coro), "_change_setting should return a coroutine"
 
         # Should be awaitable
-        try:
+        try:  # noqa: SIM105
             await coro
         except Exception:
             pass  # May fail due to mock, but should be awaitable
@@ -305,9 +317,9 @@ class TestAsyncAwaitSemantics:
 
         # Should NOT be a coroutine
         result = _capture_image(mock_call)
-        assert (
-            not inspect.iscoroutine(result)
-        ), "_capture_image should not return a coroutine"
+        assert not inspect.iscoroutine(result), (
+            "_capture_image should not return a coroutine"
+        )
         assert result is None, "_capture_image should return None"
 
     @pytest.mark.asyncio
@@ -322,9 +334,9 @@ class TestAsyncAwaitSemantics:
 
         # Should NOT be a coroutine
         result = _trigger_automation(mock_call)
-        assert (
-            not inspect.iscoroutine(result)
-        ), "_trigger_automation should not return a coroutine"
+        assert not inspect.iscoroutine(result), (
+            "_trigger_automation should not return a coroutine"
+        )
         assert result is None, "_trigger_automation should return None"
 
     @pytest.mark.asyncio
@@ -333,8 +345,8 @@ class TestAsyncAwaitSemantics:
         from custom_components.abode_security.services import _create_service_handler
 
         # Create a handler using the factory
-        mock_method = AsyncMock(return_value=None)
-        handler = _create_service_handler("test", "test op", ("arg", lambda c: "val"))
+        AsyncMock(return_value=None)
+        handler = _create_service_handler("test", "test op", ("arg", lambda _: "val"))  # noqa: ARG005
 
         mock_call = MagicMock()
         mock_call.hass = MagicMock()
@@ -345,7 +357,7 @@ class TestAsyncAwaitSemantics:
         assert inspect.iscoroutine(coro), "Factory handler should return a coroutine"
 
         # Should be awaitable
-        try:
+        try:  # noqa: SIM105
             await coro
         except Exception:
             pass  # May fail due to mock, but should be awaitable
@@ -353,14 +365,15 @@ class TestAsyncAwaitSemantics:
     @pytest.mark.asyncio
     async def test_timeout_protection_catches_errors(self) -> None:
         """Verify timeout protection properly catches TimeoutError."""
+
         # Simulate what happens when asyncio.wait_for times out
         async def timeout_handler() -> None:
-            try:
+            try:  # noqa: SIM105
                 await asyncio.wait_for(
                     asyncio.sleep(10),  # This will timeout
                     timeout=0.001,  # Very short timeout
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass  # Should be caught gracefully
 
         # Should not raise
@@ -369,7 +382,6 @@ class TestAsyncAwaitSemantics:
     @pytest.mark.asyncio
     async def test_async_create_task_scheduling(self) -> None:
         """Verify async_create_task properly schedules coroutines."""
-        from unittest.mock import AsyncMock
 
         # Mock Home Assistant's async_create_task
         task_created = False
@@ -402,15 +414,13 @@ class TestIntegrationStructure:
             async_unload_entry,
         )
 
-        assert inspect.iscoroutinefunction(
-            async_setup
-        ), "async_setup should be async"
-        assert inspect.iscoroutinefunction(
-            async_setup_entry
-        ), "async_setup_entry should be async"
-        assert inspect.iscoroutinefunction(
-            async_unload_entry
-        ), "async_unload_entry should be async"
+        assert inspect.iscoroutinefunction(async_setup), "async_setup should be async"
+        assert inspect.iscoroutinefunction(async_setup_entry), (
+            "async_setup_entry should be async"
+        )
+        assert inspect.iscoroutinefunction(async_unload_entry), (
+            "async_unload_entry should be async"
+        )
 
     def test_services_module_has_setup_function(self) -> None:
         """Verify services.py exports setup_services."""
@@ -419,9 +429,9 @@ class TestIntegrationStructure:
         # Should be callable
         assert callable(setup_services), "setup_services should be callable"
         # Should not be async (it registers async handlers)
-        assert (
-            not inspect.iscoroutinefunction(setup_services)
-        ), "setup_services should be sync"
+        assert not inspect.iscoroutinefunction(setup_services), (
+            "setup_services should be sync"
+        )
 
     def test_all_platform_modules_importable(self) -> None:
         """Verify all platform modules can be imported."""
@@ -437,9 +447,9 @@ class TestIntegrationStructure:
         ]
 
         for module_name in platforms:
-            try:
+            try:  # noqa: SIM105
                 __import__(module_name)
-            except ImportError as e:
+            except ImportError:
                 # Some imports might fail due to missing dependencies
                 # but we can at least verify the modules exist
                 pass
@@ -452,15 +462,9 @@ class TestIntegrationStructure:
             AbodeEntity,
         )
 
-        assert (
-            AbodeEntity is not None
-        ), "AbodeEntity should be defined"
-        assert (
-            AbodeDevice is not None
-        ), "AbodeDevice should be defined"
-        assert (
-            AbodeAutomation is not None
-        ), "AbodeAutomation should be defined"
+        assert AbodeEntity is not None, "AbodeEntity should be defined"
+        assert AbodeDevice is not None, "AbodeDevice should be defined"
+        assert AbodeAutomation is not None, "AbodeAutomation should be defined"
 
 
 class TestAsyncAwaitRobustness:
@@ -477,7 +481,9 @@ class TestAsyncAwaitRobustness:
             return "success"
 
         result = test_async_func()
-        assert inspect.iscoroutine(result), "Decorated async func should still be coroutine"
+        assert inspect.iscoroutine(result), (
+            "Decorated async func should still be coroutine"
+        )
         result_value = await result
         assert result_value == "success", "Decorated async func should work"
 
@@ -491,7 +497,9 @@ class TestAsyncAwaitRobustness:
             return "success"
 
         result = test_sync_func()
-        assert not inspect.iscoroutine(result), "Decorated sync func should not be coroutine"
+        assert not inspect.iscoroutine(result), (
+            "Decorated sync func should not be coroutine"
+        )
         assert result == "success", "Decorated sync func should work"
 
     def test_event_loop_configuration(self) -> None:
@@ -505,12 +513,12 @@ class TestAsyncAwaitRobustness:
         content = init_file.read_text()
 
         # Should use asyncio.get_event_loop(), not deprecated hass.loop
-        assert (
-            "asyncio.get_event_loop()" in content
-        ), "Should use asyncio.get_event_loop()"
-        assert (
-            "hass.loop" not in content
-        ), "Should not use deprecated hass.loop attribute"
+        assert "asyncio.get_event_loop()" in content, (
+            "Should use asyncio.get_event_loop()"
+        )
+        assert "hass.loop" not in content, (
+            "Should not use deprecated hass.loop attribute"
+        )
 
 
 if __name__ == "__main__":

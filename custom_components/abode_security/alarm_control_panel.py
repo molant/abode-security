@@ -26,9 +26,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up Abode alarm control panel device."""
     data: AbodeSystem = entry.runtime_data
-    async_add_entities(
-        [AbodeAlarm(data, data.abode.get_alarm())]
-    )
+    async_add_entities([AbodeAlarm(data, data.abode.get_alarm())])
 
 
 class AbodeAlarm(AbodeDevice, AlarmControlPanelEntity):
