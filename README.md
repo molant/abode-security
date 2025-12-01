@@ -26,10 +26,14 @@ A powerful Home Assistant integration for the Abode Security System, providing r
 - **Alarm Control Panel** - Main security system control and status
 
 ### Advanced Features
+- **Full Async Support** - Built-in async/await patterns throughout the integration
+- **Async HTTP Client** - aiohttp-based client for non-blocking network operations
+- **Event Filtering** - Advanced event filtering system for timeline management
+- **Batch Operations** - Efficient batch processing for device operations
+- **Smart Polling** - Intelligent polling with configuration presets and event-based fallback
 - **Comprehensive Error Handling** - Graceful degradation on API failures
 - **Enhanced Diagnostics** - Detailed system information for troubleshooting
 - **User Configuration Framework** - Customizable polling and event settings
-- **Async Foundation** - Non-blocking operations for better performance
 - **Type Safety** - Full type hints for IDE support and mypy compatibility
 
 ## Quick Start
@@ -206,11 +210,21 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for:
 - Testing instructions
 - Building and deployment
 
+## Architecture & Implementation
+
+### Async-First Design
+The integration uses an async-first architecture with:
+- **aiohttp-based HTTP client** - Async network requests for non-blocking I/O
+- **Async service handlers** - All I/O operations properly awaited
+- **Event loop integration** - Full Home Assistant async patterns compliance
+- **Hybrid dependency approach** - Minimal external dependencies with inline utilities
+
+For detailed information on async patterns, see [ASYNC_AWAIT_PATTERNS.md](docs/ASYNC_AWAIT_PATTERNS.md).
+
 ## Known Limitations
 
 1. **No 2FA Support** - Two-factor authentication not currently supported
-2. **Sync API Only** - jaraco.abode library is synchronous (async wrapper implemented)
-3. **Limited Features** - Some advanced Abode features not exposed by the library
+2. **Limited Features** - Some advanced Abode features not exposed by the underlying library
 
 ## Support & Contributing
 
@@ -231,13 +245,27 @@ Contributions are welcome! Please:
 
 See [DEVELOPMENT.md](DEVELOPMENT.md#contributing) for more detailed contribution guidelines.
 
+## Acknowledgments
+
+This integration builds upon:
+- **[jaraco.abode](https://github.com/jaraco/abode)** - The underlying Abode Python client library, maintained by the jaraco community
+- **[Home Assistant](https://github.com/home-assistant/core)** - The amazing open-source home automation platform
+
+Special thanks to the original Home Assistant Abode integration for inspiration. This custom integration is independently maintained with enhanced async support, improved code quality, comprehensive error handling, and extensive type safety.
+
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) file for details.
 
-The original Home Assistant Abode integration served as a foundation. This custom integration is independently maintained with enhanced features, improved code quality, and comprehensive error handling.
-
 ## Version History
+
+### Latest Features
+- **Async HTTP Client** - aiohttp-based client for non-blocking network operations (Phase 5)
+- **Event Filtering** - Advanced timeline event filtering system (Phase 4B)
+- **Batch Operations** - Efficient batch processing for device operations (Phase 4B)
+- **Smart Polling** - Intelligent polling with configuration presets (Phase 4B)
+- **User Configuration** - Customizable polling intervals and event settings (Phase 4A)
+- **Hybrid Dependencies** - Reduced dependency complexity with inline utilities
 
 ### 1.0.0 (2024-11-23)
 - **Initial Release**
@@ -245,7 +273,7 @@ The original Home Assistant Abode integration served as a foundation. This custo
 - Support for 8 platforms (binary sensors, cameras, covers, lights, locks, sensors, switches, alarm control panel)
 - Comprehensive error handling and type safety
 - Enhanced diagnostics and user configuration
-- Async wrapper foundation for future improvements
+- Async foundation with full type hints
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history and breaking changes.
 
