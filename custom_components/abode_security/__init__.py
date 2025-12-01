@@ -33,7 +33,10 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 # MUST be imported first to set up vendored library path
-from . import _vendor  # noqa: F401
+from . import (
+    _vendor,  # noqa: F401
+    config_flow,  # noqa: F401
+)
 from .const import (
     CONF_ENABLE_EVENTS,
     CONF_POLLING,

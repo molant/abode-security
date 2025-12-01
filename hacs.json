@@ -4,5 +4,6 @@
   "render_readme": true,
   "iot_class": "cloud_push",
   "documentation": "https://github.com/molant/abode-security",
-  "issues": "https://github.com/molant/abode-security/issues"
+  "issues": "https://github.com/molant/abode-security/issues",
+  "zip_release": false
 }

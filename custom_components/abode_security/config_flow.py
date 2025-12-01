@@ -1,6 +1,9 @@
 """Config flow for the Abode Security System component."""
 
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
+
+# MUST be imported first to set up vendored library path
+from . import _vendor  # noqa: F401
 
 from collections.abc import Mapping
 from http import HTTPStatus
@@ -11,9 +14,7 @@ from abode.client import Client as Abode
 from abode.exceptions import (
     AuthenticationException as AbodeAuthenticationException,
 )
-from abode.exceptions import (
-    Exception as AbodeException,
-)
+from abode.exceptions import Exception as AbodeException
 from abode.helpers.errors import MFA_CODE_REQUIRED
 from homeassistant.config_entries import (
     ConfigEntry,
@@ -28,7 +29,6 @@ from requests.exceptions import (  # type: ignore[import-untyped]
     HTTPError,
 )
 
-from . import _vendor  # noqa: F401
 from .const import (
     CONF_ENABLE_EVENTS,
     CONF_POLLING,
@@ -44,10 +44,11 @@ from .const import (
 CONF_MFA = "mfa_code"
 
 
-class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
+class AbodeFlowHandler(ConfigFlow):
     """Config flow for Abode."""
 
     VERSION = 1
+    DOMAIN = DOMAIN
 
     def __init__(self) -> None:
         """Initialize."""
