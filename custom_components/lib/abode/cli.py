@@ -12,9 +12,9 @@ import time
 
 import abode
 import keyring
-from more_itertools import always_iterable
 
 from . import Client
+from ._itertools import always_iterable
 from .helpers import timeline as TIMELINE  # noqa: N812
 from .helpers import urls
 

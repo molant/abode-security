@@ -6,7 +6,7 @@ import contextlib
 import logging
 import threading
 
-from jaraco.itertools import always_iterable
+from ._itertools import always_iterable
 
 from . import socketio as sio
 from ._itertools import opt_single, single

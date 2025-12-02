@@ -8,7 +8,8 @@ import logging
 import uuid
 
 import aiohttp
-from jaraco.itertools import always_iterable
+
+from ._itertools import always_iterable
 
 from . import settings
 from .automation import Automation
