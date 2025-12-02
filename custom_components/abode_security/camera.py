@@ -8,9 +8,6 @@ from datetime import timedelta
 from typing import Any, cast
 
 import aiohttp
-from abode.devices.base import Device
-from abode.devices.camera import Camera as AbodeCam
-from abode.helpers import timeline
 from homeassistant.components.camera import Camera
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant
@@ -18,7 +15,9 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import Throttle
 
-from . import _vendor  # noqa: F401
+from .abode.devices.base import Device
+from .abode.devices.camera import Camera as AbodeCam
+from .abode.helpers import timeline
 from .const import LOGGER
 from .entity import AbodeDevice
 from .models import AbodeSystem

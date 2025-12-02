@@ -61,7 +61,7 @@ async def async_get_config_entry_diagnostics(
         has_event_support = hasattr(abode_system.abode.events, "add_event_callback")
         # Check for timeline support
         try:
-            from abode.helpers.timeline import Groups  # noqa: F401
+            from .abode.helpers.timeline import Groups  # noqa: F401
 
             has_timeline_support = True
         except ImportError:

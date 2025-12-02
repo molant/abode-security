@@ -20,7 +20,7 @@ from .const import (
 )
 
 if TYPE_CHECKING:
-    from abode.client import Client as AbodeClient
+    from .abode.client import Client as AbodeClient
 
 # Configuration Presets
 POLLING_PRESETS = {

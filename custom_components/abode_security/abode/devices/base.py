@@ -1,13 +1,13 @@
 import logging
 import warnings
 
-import abode
-from jaraco.classes.ancestry import iter_subclasses
 
+from ..exceptions import Exception
 from ..helpers import errors as ERROR
 from ..helpers import urls
 from ..state import Stateful
 from . import pkg
+from ._ancestry import iter_subclasses
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class Device(Stateful):
     @property
     def _control_url(self):
         if not self._state['control_url']:
-            raise abode.Exception(("Control URL required",))
+            raise Exception(("Control URL required",))
         return self._state['control_url']
 
     async def set_status(self, status) -> None:
@@ -43,10 +43,10 @@ class Device(Stateful):
         log.debug("Set Status Response: %s", response_object)
 
         if response_object['id'] != self.id:
-            raise abode.Exception(ERROR.SET_STATUS_DEV_ID)
+            raise Exception(ERROR.SET_STATUS_DEV_ID)
 
         if response_object['status'] != str(status):
-            raise abode.Exception(ERROR.SET_STATUS_STATE)
+            raise Exception(ERROR.SET_STATUS_STATE)
 
         # Note: Status returned is a string of int (e.g. "0") and not
         # the string indication normally passed for the status (e.g.
@@ -67,10 +67,10 @@ class Device(Stateful):
         log.debug("Set Level Response: %s", response_object)
 
         if response_object['id'] != self.id:
-            raise abode.Exception(ERROR.SET_STATUS_DEV_ID)
+            raise Exception(ERROR.SET_STATUS_DEV_ID)
 
         if response_object['level'] != str(level):
-            raise abode.Exception(ERROR.SET_STATUS_STATE)
+            raise Exception(ERROR.SET_STATUS_STATE)
 
         self.update(response_object)
 
@@ -137,7 +137,7 @@ class Device(Stateful):
         try:
             type_tag = state['type_tag']
         except KeyError as exc:
-            raise abode.Exception(ERROR.UNABLE_TO_MAP_DEVICE) from exc
+            raise Exception(ERROR.UNABLE_TO_MAP_DEVICE) from exc
 
         return cls.resolve_class(type_tag)(state, client)
 

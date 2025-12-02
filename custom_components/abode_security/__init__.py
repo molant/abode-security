@@ -6,17 +6,7 @@ import asyncio
 from functools import partial
 from pathlib import Path
 
-import abode  # Import the whole module for abode.config.paths reference
 import aiohttp
-from abode.client import Client as Abode
-from abode.exceptions import (
-    AuthenticationException as AbodeAuthenticationException,
-)
-from abode.exceptions import Exception as AbodeException
-from abode.exceptions import (
-    RateLimitException as AbodeRateLimitException,
-)
-from abode.helpers.timeline import Groups as GROUPS  # noqa: N814
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_DATE,
@@ -32,11 +22,15 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-# MUST be imported first to set up vendored library path
-from . import (
-    _vendor,  # noqa: F401
-    config_flow,  # noqa: F401
+from .abode.client import Client as Abode
+from .abode.exceptions import (
+    AuthenticationException as AbodeAuthenticationException,
 )
+from .abode.exceptions import Exception as AbodeException
+from .abode.exceptions import (
+    RateLimitException as AbodeRateLimitException,
+)
+from .abode.helpers.timeline import Groups as GROUPS  # noqa: N814
 from .const import (
     CONF_ENABLE_EVENTS,
     CONF_POLLING,
@@ -107,6 +101,7 @@ async def async_setup(hass: HomeAssistant, _config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Abode integration from a config entry."""
+    from . import abode
     from .models import AbodeSystem  # Avoid circular import
 
     username = entry.data[CONF_USERNAME]

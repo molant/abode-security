@@ -3,8 +3,8 @@
 import logging
 import math
 
-import abode
 
+from ..exceptions import Exception
 from ..helpers import errors as ERROR
 from ..helpers import urls
 from .switch import Switch
@@ -38,7 +38,7 @@ class Light(Switch):
         log.debug("Set Color Temp Response: %s", await response.text())
 
         if response_object['idForPanel'] != self.id:
-            raise abode.Exception(ERROR.SET_STATUS_DEV_ID)
+            raise Exception(ERROR.SET_STATUS_DEV_ID)
 
         if response_object['colorTemperature'] != int(color_temp):
             log.warning(
@@ -75,7 +75,7 @@ class Light(Switch):
         log.debug("Set Color Response: %s", await response.text())
 
         if response_object['idForPanel'] != self.id:
-            raise abode.Exception(ERROR.SET_STATUS_DEV_ID)
+            raise Exception(ERROR.SET_STATUS_DEV_ID)
 
         # Abode will sometimes return hue value off by 1 (rounding error)
         hue_comparison = math.isclose(response_object["hue"], int(hue), abs_tol=1)

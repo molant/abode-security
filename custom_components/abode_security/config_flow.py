@@ -1,21 +1,12 @@
 """Config flow for the Abode Security System component."""
 
-from __future__ import annotations  # noqa: I001
-
-# MUST be imported first to set up vendored library path
-from . import _vendor  # noqa: F401
+from __future__ import annotations
 
 from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Any, cast
 
 import voluptuous as vol
-from abode.client import Client as Abode
-from abode.exceptions import (
-    AuthenticationException as AbodeAuthenticationException,
-)
-from abode.exceptions import Exception as AbodeException
-from abode.helpers.errors import MFA_CODE_REQUIRED
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -67,6 +58,10 @@ class AbodeFlowHandler(ConfigFlow):
 
     async def _async_abode_login(self, step_id: str) -> ConfigFlowResult:
         """Handle login with Abode."""
+        from .abode.client import Client as Abode
+        from .abode.exceptions import Exception as AbodeException
+        from .abode.helpers.errors import MFA_CODE_REQUIRED
+
         errors = {}
 
         try:
@@ -100,6 +95,11 @@ class AbodeFlowHandler(ConfigFlow):
 
     async def _async_abode_mfa_login(self) -> ConfigFlowResult:
         """Handle multi-factor authentication (MFA) login with Abode."""
+        from .abode.client import Client as Abode
+        from .abode.exceptions import (
+            AuthenticationException as AbodeAuthenticationException,
+        )
+
         try:
             # Create instance to access login method for passing MFA code
             abode = Abode(self._username, self._password, False, False, False)

@@ -7,9 +7,6 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from abode.devices.alarm import Alarm
-from abode.devices.switch import Switch
-from abode.exceptions import Exception as AbodeException
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -17,7 +14,9 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import _vendor  # noqa: F401
+from .abode.devices.alarm import Alarm
+from .abode.devices.switch import Switch
+from .abode.exceptions import Exception as AbodeException
 from .const import DOMAIN, LOGGER
 from .decorators import handle_abode_errors
 from .entity import AbodeAutomation, AbodeDevice
@@ -26,7 +25,7 @@ from .models import AbodeSystem
 PARALLEL_UPDATES = 1
 
 try:
-    from abode.helpers.timeline import Groups as TimelineGroups
+    from .abode.helpers.timeline import Groups as TimelineGroups
 except ImportError:
     TimelineGroups = None
 
@@ -44,7 +43,7 @@ MANUAL_ALARM_TYPES = [
 ]
 
 # Map alarm types to their event codes
-# These codes are from abode.helpers.events.csv
+# These codes are from .abode.helpers.events.csv
 ALARM_TYPE_EVENT_CODES = {
     "PANIC": ["1120"],  # Panic Alert
     "SILENT_PANIC": ["1122"],  # Silent Panic Alert

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from abode.devices.alarm import Alarm
 from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelEntity,
     AlarmControlPanelEntityFeature,
@@ -12,7 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import _vendor  # noqa: F401
+from .abode.devices.alarm import Alarm
 from .const import LOGGER
 from .decorators import handle_abode_errors
 from .entity import AbodeDevice

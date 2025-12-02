@@ -5,12 +5,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 
-from abode.automation import Automation as AbodeAuto
-from abode.devices.base import Device as AbodeDev
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
-from . import _vendor  # noqa: F401
+from .abode.automation import Automation as AbodeAuto
+from .abode.devices.base import Device as AbodeDev
 from .const import ATTRIBUTION, DOMAIN
 from .models import AbodeSystem
 

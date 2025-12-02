@@ -4,8 +4,8 @@ import logging
 import warnings
 from typing import Any
 
-import abode
 
+from .exceptions import Exception
 from ._itertools import single
 from .helpers import errors as ERROR
 from .helpers import urls
@@ -31,7 +31,7 @@ class Automation(Stateful):
         state: dict[str, Any] = single(await response.json())
 
         if state['id'] != self._state['id'] or state['enabled'] != enable:
-            raise abode.Exception(ERROR.INVALID_AUTOMATION_EDIT_RESPONSE)
+            raise Exception(ERROR.INVALID_AUTOMATION_EDIT_RESPONSE)
 
         self.update(state)
 
@@ -49,7 +49,7 @@ class Automation(Stateful):
 
     def _validate(self, state):
         if state['id'] != self.id:
-            raise abode.Exception(ERROR.INVALID_AUTOMATION_REFRESH_RESPONSE)
+            raise Exception(ERROR.INVALID_AUTOMATION_REFRESH_RESPONSE)
 
     @property
     def automation_id(self):

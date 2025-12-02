@@ -5,8 +5,8 @@ import base64
 import logging
 import pathlib
 
-import abode
 
+from ..exceptions import Exception
 from .._itertools import single
 from ..helpers import errors as ERROR
 from ..helpers import timeline as TIMELINE
@@ -46,7 +46,7 @@ class Camera(base.Device):
             url = self._state['control_url']
 
         else:
-            raise abode.Exception(ERROR.MISSING_CONTROL_URL)
+            raise Exception(ERROR.MISSING_CONTROL_URL)
 
         try:
             response = await self._client.send_request("put", url)
@@ -56,7 +56,7 @@ class Camera(base.Device):
 
             return True
 
-        except abode.Exception as exc:
+        except Exception as exc:
             log.warning("Failed to capture image: %s", exc)
 
         return False
@@ -83,13 +83,13 @@ class Camera(base.Device):
         # Verify that the event code is of the "CAPTURE IMAGE" event
         event_code = timeline.get('event_code')
         if event_code != TIMELINE.CAPTURE_IMAGE['event_code']:
-            raise abode.Exception(ERROR.CAM_TIMELINE_EVENT_INVALID)
+            raise Exception(ERROR.CAM_TIMELINE_EVENT_INVALID)
 
         # The timeline response has an entry for "file_path" that acts as the
         # location of the image within the Abode servers.
         file_path = timeline.get('file_path')
         if not file_path:
-            raise abode.Exception(ERROR.CAM_IMAGE_REFRESH_NO_FILE)
+            raise Exception(ERROR.CAM_IMAGE_REFRESH_NO_FILE)
 
         # Perform a "head" request for the image and look for a
         # 302 Found response
@@ -101,13 +101,13 @@ class Camera(base.Device):
                 str(response.status),
                 await response.text(),
             )
-            raise abode.Exception(ERROR.CAM_IMAGE_UNEXPECTED_RESPONSE)
+            raise Exception(ERROR.CAM_IMAGE_UNEXPECTED_RESPONSE)
 
         # The response should have a location header that is the actual
         # location of the image stored on AWS
         location = response.headers.get('location')
         if not location:
-            raise abode.Exception(ERROR.CAM_IMAGE_NO_LOCATION_HEADER)
+            raise Exception(ERROR.CAM_IMAGE_NO_LOCATION_HEADER)
 
         self._image_url = location
 
@@ -133,7 +133,7 @@ class Camera(base.Device):
                 str(response.status),
                 await response.text(),
             )
-            raise abode.Exception(ERROR.CAM_IMAGE_REQUEST_INVALID)
+            raise Exception(ERROR.CAM_IMAGE_REQUEST_INVALID)
 
         loop = asyncio.get_event_loop()
         image_data = await response.read()
@@ -153,7 +153,7 @@ class Camera(base.Device):
             response = await self._client.send_request("post", url)
             log.debug("Camera snapshot URL (post): %s", url)
             log.debug("Camera snapshot response: %s", await response.text())
-        except abode.Exception as exc:
+        except Exception as exc:
             log.warning("Failed to get camera snapshot image: %s", exc)
             return False
 
@@ -204,7 +204,7 @@ class Camera(base.Device):
         log.debug("Camera KVS Stream Response: REDACTED (due to embedded credentials)")
 
         if response_object['channelEndpoint'] is None:  # pragma: no cover
-            raise abode.Exception(ERROR.START_KVS_STREAM)
+            raise Exception(ERROR.START_KVS_STREAM)
 
         log.info("Started camera %s KVS stream:", self.id)
 
@@ -238,10 +238,10 @@ class Camera(base.Device):
             log.debug("Camera Privacy Mode Response: %s", await response.text())
 
             if response_object['id'] != self.id:
-                raise abode.Exception(ERROR.SET_STATUS_DEV_ID)
+                raise Exception(ERROR.SET_STATUS_DEV_ID)
 
             if response_object['privacy'] != str(privacy):
-                raise abode.Exception(ERROR.SET_PRIVACY_MODE)
+                raise Exception(ERROR.SET_PRIVACY_MODE)
 
             log.info("Set camera %s privacy mode to: %s", self.id, privacy)
 

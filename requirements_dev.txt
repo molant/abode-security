@@ -8,9 +8,5 @@ aioresponses
 lomond>=0.3.3
 importlib_resources>=5.0
 six>=1.16.0
-more_itertools>=10.0
 platformdirs>=4.0.0
-jaraco.itertools
-jaraco.classes
-jaraco.collections
 pyturbojpeg

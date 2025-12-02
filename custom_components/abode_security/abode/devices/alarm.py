@@ -6,8 +6,8 @@ import json
 import logging
 import time
 
-import abode
 
+from ..exceptions import Exception
 from ..helpers import errors as ERROR
 from ..helpers import urls
 from .switch import Switch
@@ -50,10 +50,10 @@ class Alarm(Switch):
     async def set_mode(self, mode):
         """Set Abode alarm mode."""
         if not mode:
-            raise abode.Exception(ERROR.MISSING_ALARM_MODE)
+            raise Exception(ERROR.MISSING_ALARM_MODE)
 
         if mode.lower() not in self.all_modes:
-            raise abode.Exception(ERROR.INVALID_ALARM_MODE)
+            raise Exception(ERROR.INVALID_ALARM_MODE)
 
         mode = mode.lower()
 
@@ -65,10 +65,10 @@ class Alarm(Switch):
         response_object = await response.json()
 
         if response_object['area'] != self._area:
-            raise abode.Exception(ERROR.SET_MODE_AREA)
+            raise Exception(ERROR.SET_MODE_AREA)
 
         if response_object['mode'] != mode:
-            raise abode.Exception(ERROR.SET_MODE_MODE)
+            raise Exception(ERROR.SET_MODE_MODE)
 
         self._state['mode'][(self.id)] = response_object['mode']
 
@@ -91,12 +91,12 @@ class Alarm(Switch):
     async def trigger_manual_alarm(self, alarm_type):
         """Trigger a manual alarm and fetch the corresponding timeline event ID."""
         if not alarm_type:
-            raise abode.Exception(ERROR.MISSING_ALARM_TYPE)
+            raise Exception(ERROR.MISSING_ALARM_TYPE)
 
         alarm_type = alarm_type.upper()
 
         if alarm_type not in self.all_alarm_types:
-            raise abode.Exception(ERROR.INVALID_ALARM_TYPE)
+            raise Exception(ERROR.INVALID_ALARM_TYPE)
 
         response = await self._client.send_request(
             'post', urls.panel_alarm(), data={'type': alarm_type}
@@ -115,7 +115,7 @@ class Alarm(Switch):
 
         # Check for successful response
         if response_object.get('code') != 200:
-            raise abode.Exception(ERROR.TRIGGER_ALARM_RESPONSE)
+            raise Exception(ERROR.TRIGGER_ALARM_RESPONSE)
 
         log.info('Triggered manual alarm %s of type: %s', self.id, alarm_type)
 

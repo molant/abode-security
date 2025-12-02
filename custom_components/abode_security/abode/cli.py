@@ -10,11 +10,11 @@ import logging
 import os
 import time
 
-import abode
 import keyring
-from more_itertools import always_iterable
 
+from .exceptions import Exception
 from . import Client
+from ._itertools import always_iterable
 from .helpers import timeline as TIMELINE  # noqa: N812
 from .helpers import urls
 
@@ -293,7 +293,7 @@ def _create_client_instance(args):
 def _log_errors_and_logout(client):
     try:
         yield client
-    except abode.Exception as exc:
+    except Exception as exc:
         log.error(exc)
     finally:
         client.logout()
@@ -533,7 +533,7 @@ class Dispatcher:  # pragma: no cover
         try:
             if device.refresh_image() and device.image_to_file(path):
                 log.info("Saved image to %s for device id: %s", path, device.id)
-        except abode.Exception as exc:
+        except Exception as exc:
             log.warning("Unable to save image: %s", exc)
 
     def trigger_manual_alarm(self):

@@ -7,7 +7,7 @@ try:
 except ImportError:
     from importlib_resources import files
 
-from jaraco.collections import RangeMap
+from ._collections import RangeMap
 
 
 class Groups:

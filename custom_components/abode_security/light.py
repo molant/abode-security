@@ -5,7 +5,6 @@ from __future__ import annotations
 from math import ceil
 from typing import Any
 
-from abode.devices.light import Light
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP_KELVIN,
@@ -19,7 +18,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import _vendor  # noqa: F401
+from .abode.devices.light import Light
 from .decorators import handle_abode_errors
 from .entity import AbodeDevice
 from .models import AbodeSystem

@@ -2,10 +2,10 @@
 
 from http import HTTPStatus
 
-from abode.exceptions import (
+from abode_security.abode.exceptions import (
     Exception as AbodeException,
 )
-from abode.exceptions import (
+from abode_security.abode.exceptions import (
     RateLimitException,
     SocketIOException,
 )
@@ -63,7 +63,7 @@ class TestRateLimitException:
 
     def test_rate_limit_exception_inherits_from_authentication_exception(self) -> None:
         """Test RateLimitException is an AuthenticationException."""
-        from abode.exceptions import AuthenticationException
+        from abode_security.abode.exceptions import AuthenticationException
 
         error_tuple = (429, "Too many requests")
         exc = RateLimitException(error_tuple)

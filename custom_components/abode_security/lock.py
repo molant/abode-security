@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from abode.devices.lock import Lock
 from homeassistant.components.lock import LockEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import _vendor  # noqa: F401
+from .abode.devices.lock import Lock
 from .entity import AbodeDevice
 from .models import AbodeSystem
 

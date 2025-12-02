@@ -6,7 +6,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import cast
 
-from abode.devices.sensor import Sensor
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -17,7 +16,7 @@ from homeassistant.const import LIGHT_LUX, PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import _vendor  # noqa: F401
+from .abode.devices.sensor import Sensor
 from .entity import AbodeDevice
 from .models import AbodeSystem
 

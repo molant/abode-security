@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import cast
 
-from abode.devices.binary_sensor import BinarySensor
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
@@ -14,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util.enum import try_parse_enum
 
-from . import _vendor  # noqa: F401
+from .abode.devices.binary_sensor import BinarySensor
 from .entity import AbodeDevice
 from .models import AbodeSystem
 

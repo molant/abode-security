@@ -6,13 +6,12 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
-from abode.exceptions import Exception as AbodeException
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import dispatcher_send
 
-from . import _vendor  # noqa: F401
+from .abode.exceptions import Exception as AbodeException
 from .const import DOMAIN, LOGGER
 
 if TYPE_CHECKING:

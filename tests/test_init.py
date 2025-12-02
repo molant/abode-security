@@ -3,10 +3,10 @@
 from http import HTTPStatus
 from unittest.mock import patch
 
-from abode.exceptions import (
+from abode_security.abode.exceptions import (
     AuthenticationException as AbodeAuthenticationException,
 )
-from abode.exceptions import (
+from abode_security.abode.exceptions import (
     Exception as AbodeException,
 )
 from homeassistant.components.alarm_control_panel import DOMAIN as ALARM_DOMAIN

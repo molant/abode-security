@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from abode.devices.cover import Cover
 from homeassistant.components.cover import CoverEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import _vendor  # noqa: F401
+from .abode.devices.cover import Cover
 from .entity import AbodeDevice
 from .models import AbodeSystem
 

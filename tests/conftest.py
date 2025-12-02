@@ -11,13 +11,11 @@ _CUSTOM_COMPONENTS_PATH = Path(__file__).resolve().parents[1] / "custom_componen
 if (custom_components_path_str := str(_CUSTOM_COMPONENTS_PATH)) not in sys.path:
     sys.path.insert(0, custom_components_path_str)
 
-# Ensure vendored abode library is importable during tests
-_VENDOR_PATH = Path(__file__).resolve().parents[1] / "custom_components" / "lib"
-if (vendor_path_str := str(_VENDOR_PATH)) not in sys.path:
-    sys.path.insert(0, vendor_path_str)
+# Vendored abode library is now in custom_components/abode_security/abode
+# and will be imported as abode_security.abode via the sys.path setup above
 
 import pytest  # noqa: E402
-from abode.helpers import urls as url  # noqa: E402, N812
+from abode_security.abode.helpers import urls as url  # noqa: E402, N812
 from aioresponses import aioresponses  # noqa: E402
 
 from tests.common import load_fixture  # noqa: E402

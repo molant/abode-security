@@ -9,8 +9,8 @@
     "models": ["Abode", "Iota"]
   },
   "iot_class": "cloud_push",
-  "loggers": ["jaraco.abode", "lomond"],
-  "requirements": ["jaraco.abode==6.2.1"],
+  "loggers": ["lomond"],
+  "requirements": ["platformdirs", "keyring", "lomond", "aiohttp"],
   "single_config_entry": true,
   "version": "1.0.0",
   "minimum_home_assistant_version": "2024.1.0",

@@ -8,9 +8,9 @@ import logging
 import uuid
 
 import aiohttp
-from jaraco.itertools import always_iterable
 
 from . import settings
+from ._itertools import always_iterable
 from .automation import Automation
 from .devices import alarm as alarm
 from .devices.base import Device, Unknown
