@@ -24,6 +24,7 @@ _VENDOR_PATH_STR = str(_VENDOR_PATH)
 if _VENDOR_PATH_STR not in sys.path:
     sys.path.insert(0, _VENDOR_PATH_STR)
 
-# Clear any cached imports of abode to force reload from our vendored path
-for mod_name in [name for name in sys.modules if name.startswith("abode")]:
-    del sys.modules[mod_name]
+# Clear any cached imports of abode (but NOT abode_security) to force reload from our vendored path
+for mod_name in list(sys.modules.keys()):
+    if mod_name.startswith("abode") and not mod_name.startswith("abode_security"):
+        del sys.modules[mod_name]
