@@ -2,7 +2,8 @@ import logging
 import warnings
 
 import abode
-from jaraco.classes.ancestry import iter_subclasses
+
+from ._ancestry import iter_subclasses
 
 from ..helpers import errors as ERROR
 from ..helpers import urls

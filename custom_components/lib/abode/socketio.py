@@ -10,19 +10,19 @@ import random
 import threading
 import urllib.parse
 
-import jaraco.collections
 from lomond import WebSocket, events
 from lomond.errors import WebSocketError
 from lomond.persist import persist
 
 from .exceptions import SocketIOException
 from .helpers import errors as ERRORS
+from .helpers._collections import BijectiveMap
 
 log = logging.getLogger(__name__)
 
 
 class EngineIO:
-    codes = jaraco.collections.BijectiveMap(
+    codes = BijectiveMap(
         open=0,
         close=1,
         ping=2,
@@ -86,7 +86,7 @@ def find_json_list(text):
 class SocketIO:
     """Class for using websockets to talk to a SocketIO server."""
 
-    codes = jaraco.collections.BijectiveMap(
+    codes = BijectiveMap(
         connect=0,
         disconnect=1,
         event=2,
