@@ -4,7 +4,7 @@ set -e
 echo "Running pre-commit checks..."
 
 # Set PYTHONPATH to include vendored libraries
-export PYTHONPATH="$(cd "$(dirname "$0")/../custom_components/lib" && pwd):$PYTHONPATH"
+export PYTHONPATH="$(cd "$(dirname "$0")/../custom_components/abode_security/lib" && pwd):$PYTHONPATH"
 
 # Lint with ruff
 echo "Linting with ruff..."

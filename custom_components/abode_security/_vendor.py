@@ -8,7 +8,9 @@ from pathlib import Path
 # Add vendored library path to BEGINNING of sys.path
 # We vendor the Abode client library separately to avoid conflicts
 _CANDIDATE_PATHS = [
-    Path(__file__).resolve().parent.parent / "lib",  # custom_components/lib
+    Path(__file__).resolve().parent / "lib",  # custom_components/abode_security/lib
+    Path(__file__).resolve().parent.parent
+    / "lib",  # custom_components/lib (legacy fallback)
     Path(__file__).resolve().parents[2] / "lib",  # repo-root/lib fallback
 ]
 

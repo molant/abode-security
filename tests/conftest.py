@@ -12,7 +12,9 @@ if (custom_components_path_str := str(_CUSTOM_COMPONENTS_PATH)) not in sys.path:
     sys.path.insert(0, custom_components_path_str)
 
 # Ensure vendored abode library is importable during tests
-_VENDOR_PATH = Path(__file__).resolve().parents[1] / "custom_components" / "lib"
+_VENDOR_PATH = (
+    Path(__file__).resolve().parents[1] / "custom_components" / "abode_security" / "lib"
+)
 if (vendor_path_str := str(_VENDOR_PATH)) not in sys.path:
     sys.path.insert(0, vendor_path_str)
 

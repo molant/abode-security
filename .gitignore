@@ -130,10 +130,14 @@ dmypy.json
 *~
 .claude/settings.local.json
 
-# Allow vendored library under custom_components
+# Allow vendored library under abode_security
+!custom_components/abode_security/lib/
+!custom_components/abode_security/lib/**
+# But ignore pycache even in vendored library
+custom_components/abode_security/lib/**/__pycache__/
+# Legacy fallback for old location (deprecated)
 !custom_components/lib/
 !custom_components/lib/**
-# But ignore pycache even in vendored library
 custom_components/lib/**/__pycache__/
 
 # OS

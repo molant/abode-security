@@ -1,0 +1,253 @@
+"""Abode alarm device."""
+
+import asyncio
+import copy
+import json
+import logging
+import time
+
+import abode
+
+from ..helpers import errors as ERROR
+from ..helpers import urls
+from .switch import Switch
+
+log = logging.getLogger(__name__)
+
+
+def id(area):
+    return f'area_{area}'
+
+
+def state_from_panel(panel_state, area='1'):
+    """Adapt panel state to alarm state."""
+    alarm_state = copy.deepcopy(panel_state)
+    alarm_state['name'] = 'Abode Alarm'
+    alarm_state['id'] = id(area)
+    alarm_state['type'] = 'Alarm'
+    alarm_state['type_tag'] = 'device_type.alarm'
+    return alarm_state
+
+
+def create_alarm(panel_json, abode, area='1'):
+    """Create a new alarm device from a panel response."""
+    return Alarm(state_from_panel(panel_json), abode, area)
+
+
+class Alarm(Switch):
+    """Class to represent the Abode alarm as a device."""
+
+    tags = ('alarm',)
+    all_modes = 'away', 'standby', 'home'
+    all_alarm_types = 'PANIC', 'SILENT_PANIC', 'MEDICAL', 'CO', 'SMOKE_CO', 'SMOKE', 'BURGLAR'
+    timeline_event_retry_delays = (0, 2, 5, 10, 20, 30)  # Exponential backoff in seconds
+
+    def __init__(self, json_obj, abode, area='1'):
+        """Set up Abode alarm device."""
+        super().__init__(json_obj, abode)
+        self._area = area
+
+    async def set_mode(self, mode):
+        """Set Abode alarm mode."""
+        if not mode:
+            raise abode.Exception(ERROR.MISSING_ALARM_MODE)
+
+        if mode.lower() not in self.all_modes:
+            raise abode.Exception(ERROR.INVALID_ALARM_MODE)
+
+        mode = mode.lower()
+
+        response = await self._client.send_request("put", urls.panel_mode(self._area, mode))
+
+        log.debug("Set Alarm Home URL (put): %s", urls.panel_mode(self._area, mode))
+        log.debug("Set Alarm Home Response: %s", await response.text())
+
+        response_object = await response.json()
+
+        if response_object['area'] != self._area:
+            raise abode.Exception(ERROR.SET_MODE_AREA)
+
+        if response_object['mode'] != mode:
+            raise abode.Exception(ERROR.SET_MODE_MODE)
+
+        self._state['mode'][(self.id)] = response_object['mode']
+
+        log.info("Set alarm %s mode to: %s", self.id, response_object['mode'])
+
+        return True
+
+    async def set_home(self):
+        """Arm Abode to home mode."""
+        return await self.set_mode('home')
+
+    async def set_away(self):
+        """Arm Abode to home mode."""
+        return await self.set_mode('away')
+
+    async def set_standby(self):
+        """Arm Abode to stay mode."""
+        return await self.set_mode('standby')
+
+    async def trigger_manual_alarm(self, alarm_type):
+        """Trigger a manual alarm and fetch the corresponding timeline event ID."""
+        if not alarm_type:
+            raise abode.Exception(ERROR.MISSING_ALARM_TYPE)
+
+        alarm_type = alarm_type.upper()
+
+        if alarm_type not in self.all_alarm_types:
+            raise abode.Exception(ERROR.INVALID_ALARM_TYPE)
+
+        response = await self._client.send_request(
+            'post', urls.panel_alarm(), data={'type': alarm_type}
+        )
+
+        log.debug('Trigger Manual Alarm URL (post): %s', urls.panel_alarm())
+        log.debug('Trigger Manual Alarm Response (raw): %s', await response.text())
+
+        response_object = await response.json()
+
+        # Print full payload for debugging
+        log.debug(
+            'Trigger Manual Alarm Response:\n%s',
+            json.dumps(response_object, indent=2),
+        )
+
+        # Check for successful response
+        if response_object.get('code') != 200:
+            raise abode.Exception(ERROR.TRIGGER_ALARM_RESPONSE)
+
+        log.info('Triggered manual alarm %s of type: %s', self.id, alarm_type)
+
+        # Fetch timeline events to find the alarm event ID
+        event_id = await self._find_timeline_alarm_event()
+
+        if event_id:
+            response_object['event_id'] = event_id
+            log.info('Found alarm event ID: %s', event_id)
+        else:
+            log.warning('Could not find timeline event for triggered alarm')
+
+        return response_object
+
+    async def _find_timeline_alarm_event(self, timeout_seconds=90):
+        """Find the most recent alarm event within the timeout window.
+
+        Looks for the most recent event with is_alarm='1' that occurred
+        within the timeout window. Uses exponential backoff to retry because
+        Abode's API does not immediately expose triggered alarm events in
+        the timeline (typically 30-60+ seconds delay). This allows us to
+        reliably return the event ID to the caller for dismissal/acknowledgment.
+
+        Args:
+            timeout_seconds: Maximum age of event to consider (in seconds)
+
+        Returns:
+            Event ID if found, None otherwise
+        """
+        try:
+            trigger_time = time.time()
+
+            for delay_seconds in self.timeline_event_retry_delays:
+                if delay_seconds > 0:
+                    log.debug('Event not found, waiting %d seconds before retry', delay_seconds)
+                    await asyncio.sleep(delay_seconds)
+
+                # Fetch recent timeline events
+                events = await self._client.get_timeline_events(size=10)
+
+                if not events:
+                    log.debug('No timeline events found (attempt %d)', self.timeline_event_retry_delays.index(delay_seconds) + 1)
+                    continue
+
+                # Look for the most recent alarm event within the timeout window
+                for event in events:
+                    # Check if it's an alarm event
+                    if event.get('is_alarm') == '1':
+                        # Verify it's recent (within timeout)
+                        event_utc = int(event.get('event_utc', 0))
+                        age_seconds = trigger_time - event_utc
+
+                        if 0 <= age_seconds <= timeout_seconds:
+                            event_id = event.get('id')
+                            event_type = event.get('event_type', 'Unknown')
+                            log.debug('Found recent alarm event: id=%s, type=%s, age=%.1f seconds',
+                                     event_id, event_type, age_seconds)
+                            return event_id
+
+            log.warning('No recent alarm event found within %d seconds after multiple retries', timeout_seconds)
+            return None
+
+        except Exception as e:
+            log.warning('Error finding timeline alarm event: %s', e)
+            return None
+
+    async def switch_on(self):
+        """Arm Abode to default mode."""
+        return await self.set_mode(self._client.default_mode)
+
+    async def switch_off(self):
+        """Arm Abode to home mode."""
+        return await self.set_standby()
+
+    async def refresh(self, url=urls.PANEL):
+        """Refresh the alarm device."""
+        state = await super().refresh(url)
+
+        self._client._panel.update(state)
+
+        return state
+
+    def update(self, state):
+        super().update(state_from_panel(state, area=self._area))
+
+    @property
+    def is_on(self):
+        """Is alarm armed."""
+        return self.mode in ('home', 'away')
+
+    @property
+    def is_standby(self):
+        """Is alarm in standby mode."""
+        return self.mode == 'standby'
+
+    @property
+    def is_home(self):
+        """Is alarm in home mode."""
+        return self.mode == 'home'
+
+    @property
+    def is_away(self):
+        """Is alarm in away mode."""
+        return self.mode == 'away'
+
+    @property
+    def mode(self):
+        """Get alarm mode."""
+        mode = self.get_value('mode').get(self.id, None)
+
+        return mode.lower()
+
+    @property
+    def status(self):
+        """To match existing property."""
+        return self.mode
+
+    @property
+    def battery(self):
+        """Return true if base station on battery backup."""
+        return int(self._state.get('battery', '0')) == 1
+
+    @property
+    def is_cellular(self):
+        """Return true if base station on cellular backup."""
+        return int(self._state.get('is_cellular', '0')) == 1
+
+    @property
+    def mac_address(self):
+        """Get the hub mac address."""
+        return self.mac
+
+    @property
+    def uuid(self):
+        return self.mac.replace(':', '').lower()
