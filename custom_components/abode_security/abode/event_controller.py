@@ -15,7 +15,7 @@ from .helpers import errors, timeline, urls
 
 log = logging.getLogger(__name__)
 
-SOCKETIO_URL = 'wss://my.goabode.com/socket.io/'
+SOCKETIO_URL = "wss://my.goabode.com/socket.io/"
 
 
 def _cookie_string(cookies):
@@ -27,12 +27,12 @@ def _cookie_string(cookies):
     Returns:
         str: Cookie string in 'name=value; name=value' format
     """
-    if not hasattr(cookies, '__iter__'):
-        return ''
+    if not hasattr(cookies, "__iter__"):
+        return ""
     try:
         return "; ".join(f"{cookie.name}={cookie.value}" for cookie in cookies)
     except (AttributeError, TypeError):
-        return ''
+        return ""
 
 
 class EventController:
@@ -40,7 +40,7 @@ class EventController:
 
     # Configuration constants for callback execution
     DEFAULT_CALLBACK_TIMEOUT = 10  # seconds for normal callbacks
-    LONG_OPERATION_TIMEOUT = 30    # seconds for setup/initialization callbacks
+    LONG_OPERATION_TIMEOUT = 30  # seconds for setup/initialization callbacks
 
     def __init__(self, client, url=SOCKETIO_URL):
         self._client = client
@@ -51,6 +51,9 @@ class EventController:
         # Thread synchronization lock for callback collections
         # This ensures thread-safe access from SocketIO thread and main thread
         self._callback_lock = threading.RLock()
+        # Thread synchronization lock for connection state
+        # Protects _connected flag from race conditions between SocketIO and HA threads
+        self._connection_lock = threading.Lock()
 
         # Setup callback dicts
         self._connection_status_callbacks = collections.defaultdict(list)
@@ -67,13 +70,13 @@ class EventController:
         self._socketio = sio.SocketIO(url=url, origin=urls.BASE)
 
         # Setup SocketIO Callbacks
-        self._socketio.on('started', self._on_socket_started)
-        self._socketio.on('connected', self._on_socket_connected)
-        self._socketio.on('disconnected', self._on_socket_disconnected)
-        self._socketio.on('com.goabode.device.update', self._on_device_update)
-        self._socketio.on('com.goabode.gateway.mode', self._on_mode_change)
-        self._socketio.on('com.goabode.gateway.timeline', self._on_timeline_update)
-        self._socketio.on('com.goabode.automation', self._on_automation_update)
+        self._socketio.on("started", self._on_socket_started)
+        self._socketio.on("connected", self._on_socket_connected)
+        self._socketio.on("disconnected", self._on_socket_disconnected)
+        self._socketio.on("com.goabode.device.update", self._on_device_update)
+        self._socketio.on("com.goabode.gateway.mode", self._on_mode_change)
+        self._socketio.on("com.goabode.gateway.timeline", self._on_timeline_update)
+        self._socketio.on("com.goabode.automation", self._on_automation_update)
 
     def start(self):
         """Start a thread to handle Abode SocketIO notifications."""
@@ -198,7 +201,7 @@ class EventController:
                 if not isinstance(timeline_event, dict):
                     raise Exception(errors.EVENT_CODE_MISSING)
 
-                event_code = timeline_event.get('event_code')
+                event_code = timeline_event.get("event_code")
 
                 if not event_code:
                     raise Exception(errors.EVENT_CODE_MISSING)
@@ -212,7 +215,8 @@ class EventController:
     @property
     def connected(self):
         """Get the Abode connection status."""
-        return self._connected
+        with self._connection_lock:
+            return self._connected
 
     @property
     def socketio(self):
@@ -246,9 +250,22 @@ class EventController:
             return
 
         # Schedule async session initialization on the event loop
+        # Seed cookies immediately from current session to avoid races
+        try:
+            cookie_str = _cookie_string(
+                getattr(self._client, "_session", None).cookie_jar
+            )
+            if cookie_str:
+                self._socketio.set_cookie(cookie_str)
+                log.debug("Seeded SocketIO cookies from existing session")
+        except Exception as exc:
+            log.debug("Unable to seed cookies from existing session: %s", exc)
+
         try:
             future = asyncio.run_coroutine_threadsafe(
-                asyncio.wait_for(self._async_get_session(), timeout=self.LONG_OPERATION_TIMEOUT),
+                asyncio.wait_for(
+                    self._async_get_session(), timeout=self.LONG_OPERATION_TIMEOUT
+                ),
                 self._event_loop,
             )
             # Don't block SocketIO thread - use callback instead
@@ -270,6 +287,7 @@ class EventController:
 
     async def _async_get_session(self):
         """Get session asynchronously."""
+        log.info("Attempting to fetch session cookies for SocketIO authentication")
         try:
             session = await self._client._get_session()
             # Set cookies from session
@@ -280,6 +298,8 @@ class EventController:
                     cookie_str = "; ".join(
                         f"{name}={morsel.value}" for name, morsel in cookies.items()
                     )
+                    if cookie_str:
+                        log.debug(f"Session cookies found: {len(cookies)} cookie(s)")
                 except Exception as exc:
                     log.debug("Cookie parsing fallback due to: %s", exc)
                     try:
@@ -292,19 +312,31 @@ class EventController:
                         cookie_str = ""
 
                 if cookie_str:
+                    log.debug(
+                        f"Setting cookie for SocketIO connection (length: {len(cookie_str)})"
+                    )
                     self._socketio.set_cookie(cookie_str)
+                else:
+                    log.warning(
+                        "No cookies found in session, SocketIO connection may fail"
+                    )
         except Exception as exc:
             log.warning("Failed to get session: %s", exc)
 
     def _on_socket_connected(self):
         """Socket IO connected callback."""
-        self._connected = True
+        with self._connection_lock:
+            self._connected = True
+        with contextlib.suppress(Exception):
+            self._client._set_connection_status("connected")
 
         # Schedule async refresh on the event loop
         if self._event_loop and self._event_loop.is_running():
             try:
                 future = asyncio.run_coroutine_threadsafe(
-                    asyncio.wait_for(self._async_refresh(), timeout=self.LONG_OPERATION_TIMEOUT),
+                    asyncio.wait_for(
+                        self._async_refresh(), timeout=self.LONG_OPERATION_TIMEOUT
+                    ),
                     self._event_loop,
                 )
                 # Don't block SocketIO thread - use callback
@@ -338,7 +370,10 @@ class EventController:
 
     def _on_socket_disconnected(self):
         """Socket IO disconnected callback."""
-        self._connected = False
+        with self._connection_lock:
+            self._connected = False
+        with contextlib.suppress(Exception):
+            self._client._set_connection_status("disconnected")
         self._execute_connection_callbacks()
 
     def _execute_connection_callbacks(self):
@@ -364,6 +399,25 @@ class EventController:
 
         log.debug("Device update event for device ID: %s", devid)
 
+        # If we have an event loop, refresh device state asynchronously before dispatching
+        if self._event_loop and self._event_loop.is_running():
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    asyncio.wait_for(
+                        self._async_refresh_device_and_dispatch(devid),
+                        timeout=self.LONG_OPERATION_TIMEOUT,
+                    ),
+                    self._event_loop,
+                )
+                future.add_done_callback(
+                    lambda f: self._log_future_result(
+                        f, "_async_refresh_device_and_dispatch"
+                    )
+                )
+            except Exception as exc:
+                log.error("Failed to schedule device refresh for %s: %s", devid, exc)
+            return
+
         device = self._client.get_device(devid, True)
 
         if not device:
@@ -376,7 +430,39 @@ class EventController:
 
         # Execute callbacks outside lock
         for callback in callbacks:
-            _execute_callback(callback, device, self._event_loop)
+            _execute_callback(callback, self._event_loop, device)
+
+    async def _async_refresh_device_and_dispatch(self, device_id):
+        """Refresh device state from Abode and dispatch callbacks on the HA loop."""
+        try:
+            await self._client.get_devices(refresh=True)
+        except Exception as exc:
+            log.warning(
+                "Failed to refresh devices after update for %s: %s", device_id, exc
+            )
+
+        device = self._client.get_device(device_id, False)
+
+        if not device:
+            log.debug(
+                "Got device update for unknown device after refresh: %s", device_id
+            )
+            return
+
+        with self._callback_lock:
+            callbacks = list(self._device_callbacks[device.id])
+
+        for callback in callbacks:
+            _execute_callback(callback, self._event_loop, device)
+
+    @staticmethod
+    def _log_future_result(future, label):
+        with contextlib.suppress(Exception):
+            future.result()
+        if future.cancelled():
+            log.warning("%s was cancelled", label)
+        elif future.exception():
+            log.warning("%s raised: %s", label, future.exception())
 
     def _on_mode_change(self, mode):
         """Mode change broadcast from Abode SocketIO server."""
@@ -398,7 +484,7 @@ class EventController:
         # At the time of development, refreshing after mode change notification
         # didn't seem to get the latest update immediately. As such, we will
         # force the mode status now to match the notification.
-        alarm_device._state['mode']['area_1'] = mode
+        alarm_device._state["mode"]["area_1"] = mode
 
         # Make defensive copy of callbacks under lock
         with self._callback_lock:
@@ -406,14 +492,14 @@ class EventController:
 
         # Execute callbacks outside lock
         for callback in callbacks:
-            _execute_callback(callback, alarm_device, self._event_loop)
+            _execute_callback(callback, self._event_loop, alarm_device)
 
     def _on_timeline_update(self, event):
         """Timeline update broadcast from Abode SocketIO server."""
         event = single(event)
 
-        event_type = event.get('event_type')
-        event_code = event.get('event_code')
+        event_type = event.get("event_type")
+        event_code = event.get("event_code")
 
         if not event_type or not event_code:
             log.warning("Invalid timeline update event: %s", event)
@@ -421,7 +507,7 @@ class EventController:
 
         log.debug(
             "Timeline event received: %s - %s (%s)",
-            event.get('event_name'),
+            event.get("event_name"),
             event_type,
             event_code,
         )
@@ -430,7 +516,7 @@ class EventController:
         with self._callback_lock:
             # Compress our callbacks into those that match this event_code
             # or ones registered to get callbacks for all events
-            codes = (event_code, timeline.ALL['event_code'])
+            codes = (event_code, timeline.ALL["event_code"])
             callbacks_to_execute = []
             for code in codes:
                 callbacks_to_execute.extend(self._timeline_callbacks[code])
@@ -441,7 +527,7 @@ class EventController:
 
         # Execute callbacks outside lock
         for callback in callbacks_to_execute:
-            _execute_callback(callback, event, self._event_loop)
+            _execute_callback(callback, self._event_loop, event)
 
     def _on_automation_update(self, event):
         """Automation update broadcast from Abode SocketIO server."""
@@ -454,7 +540,7 @@ class EventController:
 
         # Execute callbacks outside lock
         for callback in callbacks:
-            _execute_callback(callback, event, self._event_loop)
+            _execute_callback(callback, self._event_loop, event)
 
 
 def _execute_callback(callback, *args, **kwargs):
@@ -481,7 +567,7 @@ def _execute_callback(callback, *args, **kwargs):
     try:
         # If callback is a method from Home Assistant entity, schedule it on event loop
         # This handles methods like schedule_update_ha_state()
-        if event_loop and hasattr(callback, '__self__'):
+        if event_loop and hasattr(callback, "__self__"):
             # This is a bound method - likely from Home Assistant entity
             # Schedule it on the event loop to ensure thread safety
             future = asyncio.run_coroutine_threadsafe(
@@ -515,7 +601,7 @@ async def _run_callback_async(callback, args, kwargs):
     """
     # Determine timeout based on callback characteristics
     timeout = EventController.DEFAULT_CALLBACK_TIMEOUT
-    if hasattr(callback, '__name__') and 'setup' in callback.__name__.lower():
+    if hasattr(callback, "__name__") and "setup" in callback.__name__.lower():
         timeout = EventController.LONG_OPERATION_TIMEOUT
 
     try:
@@ -527,7 +613,7 @@ async def _run_callback_async(callback, args, kwargs):
     except TimeoutError:
         log.error(
             "Callback '%s' timed out after %d seconds",
-            getattr(callback, '__name__', str(callback)),
+            getattr(callback, "__name__", str(callback)),
             timeout,
         )
         raise

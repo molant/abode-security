@@ -15,6 +15,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 from requests.exceptions import (  # type: ignore[import-untyped]
     ConnectTimeout,
     HTTPError,
@@ -35,11 +36,10 @@ from .const import (
 CONF_MFA = "mfa_code"
 
 
-class AbodeFlowHandler(ConfigFlow):
+class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     """Config flow for Abode."""
 
     VERSION = 1
-    DOMAIN = DOMAIN
 
     def __init__(self) -> None:
         """Initialize."""
@@ -189,10 +189,10 @@ class AbodeFlowHandler(ConfigFlow):
     @staticmethod
     @callback
     def async_get_options_flow(
-        config_entry: ConfigEntry,
+        config_entry: ConfigEntry,  # noqa: ARG004
     ) -> AbodeOptionsFlowHandler:
         """Get the options flow."""
-        return AbodeOptionsFlowHandler(config_entry)
+        return AbodeOptionsFlowHandler()
 
 
 class AbodeOptionsFlowHandler(OptionsFlow):
@@ -218,12 +218,20 @@ class AbodeOptionsFlowHandler(OptionsFlow):
 
         options_schema = vol.Schema(
             {
-                vol.Optional(CONF_POLLING_INTERVAL, default=polling_interval): vol.All(
-                    vol.Coerce(int), vol.Range(min=15, max=120)
+                vol.Optional(
+                    CONF_POLLING_INTERVAL, default=polling_interval
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=15, max=120, unit_of_measurement="seconds"
+                    ),
                 ),
-                vol.Optional(CONF_ENABLE_EVENTS, default=enable_events): bool,
-                vol.Optional(CONF_RETRY_COUNT, default=retry_count): vol.All(
-                    vol.Coerce(int), vol.Range(min=1, max=5)
+                vol.Optional(
+                    CONF_ENABLE_EVENTS, default=enable_events
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_RETRY_COUNT, default=retry_count
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=1, max=5),
                 ),
             }
         )

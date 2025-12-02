@@ -94,8 +94,8 @@ class SocketIO:
     )
 
     def __init__(self, url, cookie=None, origin=None):
-        params = dict(EIO=3, transport='websocket')
-        self._url = url + '?' + urllib.parse.urlencode(params)
+        params = dict(EIO=3, transport="websocket")
+        self._url = url + "?" + urllib.parse.urlencode(params)
 
         self._cookie = cookie
         self._origin = origin
@@ -135,7 +135,7 @@ class SocketIO:
         log.info("Starting SocketIO thread...")
 
         self._thread = threading.Thread(
-            target=self._run, name='SocketIOThread', daemon=True
+            target=self._run, name="SocketIOThread", daemon=True
         )
         self._thread.start()
 
@@ -176,7 +176,7 @@ class SocketIO:
             if self._exit_event.wait(interval):
                 break
 
-        self._handle_event('stopped', None)
+        self._handle_event("stopped", None)
 
     def _add_header(self, name, value):
         if value is None:
@@ -184,13 +184,40 @@ class SocketIO:
         self._websocket.add_header(name.encode(), value.encode())
 
     def _step(self, intervals):
-        self._handle_event('started')
+        self._handle_event("started")
+
+        # Wait for cookies to be set by async callback; abort connect if none available
+        import time
+
+        max_attempts = 1500  # Up to 15 seconds (10ms * 1500)
+        for attempt in range(max_attempts):
+            if self._cookie:
+                log.debug(
+                    "Cookies obtained on attempt %d, proceeding with WebSocket connection",
+                    attempt + 1,
+                )
+                break
+            # Log progress at 5s and 10s milestones
+            if attempt == 500:
+                log.warning(
+                    "Still waiting for authentication cookies (5s elapsed, continuing...)"
+                )
+            elif attempt == 1000:
+                log.warning(
+                    "Still waiting for authentication cookies (10s elapsed, continuing...)"
+                )
+            time.sleep(0.01)
+        else:
+            raise SocketIOException(
+                ERRORS.SOCKETIO_ERROR,
+                details="Timeout waiting for authentication cookies before SocketIO connect (15s)",
+            )
 
         self._websocket = WebSocket(self._url)
         self._exit_event = threading.Event()
 
-        self._add_header('Cookie', self._cookie)
-        self._add_header('Origin', self._origin)
+        self._add_header("Cookie", self._cookie)
+        self._add_header("Origin", self._origin)
 
         for event in persist(
             self._websocket, ping_rate=0, poll=5.0, exit_event=self._exit_event
@@ -200,7 +227,7 @@ class SocketIO:
 
             name = event.__class__.__name__.lower()
             with contextlib.suppress(AttributeError):
-                handler = getattr(self, f'_on_websocket_{name}')
+                handler = getattr(self, f"_on_websocket_{name}")
                 handler(event)
 
             if self._running is False:
@@ -209,7 +236,7 @@ class SocketIO:
     def _on_websocket_connected(self, _event):
         self._websocket_connected = True
         log.info("Websocket Connected")
-        self._handle_event('connected')
+        self._handle_event("connected")
 
     def _on_websocket_disconnected(self, _event):
         self._websocket_connected = False
@@ -217,7 +244,7 @@ class SocketIO:
         self._socketio_connected = False
 
         log.info("Websocket Disconnected")
-        self._handle_event('disconnected')
+        self._handle_event("disconnected")
 
     def _on_websocket_poll(self, _event):
         last_packet_delta = datetime.datetime.now() - self._last_packet_time
@@ -230,12 +257,12 @@ class SocketIO:
         last_ping_delta = datetime.datetime.now() - self._last_ping_time
 
         if self._engineio_connected and last_ping_delta >= self._ping_interval:
-            self._websocket.send_text(str(EngineIO.codes['ping']))
+            self._websocket.send_text(str(EngineIO.codes["ping"]))
             self._last_ping_time = datetime.datetime.now()
             log.debug("Client Ping")
-            self._handle_event('ping')
+            self._handle_event("ping")
 
-        self._handle_event('poll')
+        self._handle_event("poll")
 
     def _on_websocket_text(self, _event):
         self._last_packet_time = datetime.datetime.now()
@@ -247,7 +274,7 @@ class SocketIO:
 
         try:
             name = EngineIO.codes[code]
-            handler = getattr(self, f'_on_engineio_{name}')
+            handler = getattr(self, f"_on_engineio_{name}")
             handler(message)
         except KeyError:
             log.debug("Ignoring unrecognized EngineIO packet")
@@ -258,10 +285,10 @@ class SocketIO:
     def _on_engineio_open(self, message):
         packet = json.loads(message)
 
-        self._ping_interval = datetime.timedelta(milliseconds=packet['pingInterval'])
+        self._ping_interval = datetime.timedelta(milliseconds=packet["pingInterval"])
         log.debug("Set ping interval to %s", self._ping_interval)
 
-        self._ping_timeout = datetime.timedelta(milliseconds=packet['pingTimeout'])
+        self._ping_timeout = datetime.timedelta(milliseconds=packet["pingTimeout"])
         log.debug("Set ping timeout to %s", self._ping_timeout)
 
         self._engineio_connected = True
@@ -274,7 +301,7 @@ class SocketIO:
 
     def _on_engineio_pong(self, message):
         log.debug("Server Pong")
-        self._handle_event('pong')
+        self._handle_event("pong")
 
     def _on_engineio_message(self, message):
         code = int(message[:1])
@@ -282,7 +309,7 @@ class SocketIO:
 
         try:
             name = SocketIO.codes[code]
-            handler = getattr(self, f'_on_socketio_{name}')
+            handler = getattr(self, f"_on_socketio_{name}")
             handler(data)
         except KeyError:
             log.debug("Ignoring SocketIO message: %s", message)
@@ -297,7 +324,7 @@ class SocketIO:
         self._websocket.close()
 
     def _on_socketio_error(self, _message_data):
-        self._handle_event('error', _message_data)
+        self._handle_event("error", _message_data)
         raise SocketIOException(ERRORS.SOCKETIO_ERROR, details=_message_data)
 
     def _on_socketio_event(self, _message_data):
@@ -306,7 +333,7 @@ class SocketIO:
         except ValueError:
             log.warning("Unable to find event [data]: %s", _message_data)
             return
-        self._handle_event('event', _message_data)
+        self._handle_event("event", _message_data)
         self._handle_event(json_data[0], json_data[1:])
 
     def _handle_event(self, event_name, *args):

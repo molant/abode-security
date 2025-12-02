@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import cast
@@ -12,11 +13,12 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import LIGHT_LUX, PERCENTAGE, UnitOfTemperature
+from homeassistant.const import CONF_USERNAME, LIGHT_LUX, PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .abode.devices.sensor import Sensor
+from .const import DOMAIN
 from .entity import AbodeDevice
 from .models import AbodeSystem
 
@@ -75,15 +77,37 @@ async def async_setup_entry(
 
     # Only add connection status sensor if it doesn't already exist
     entity_registry = er.async_get(hass)
-    connection_sensor_exists = any(
-        entity.config_entry_id == entry.entry_id
-        and entity.platform == "abode_security"
-        and "connection_status" in entity.entity_id
-        for entity in entity_registry.entities.values()
+    base_unique_id = data.abode.uuid or entry.data.get(CONF_USERNAME) or "abode"
+    connection_unique_id = f"{base_unique_id}-connection-status"
+
+    # Migrate legacy unique IDs (older versions used alarm ID or username)
+    legacy_unique_ids: list[str] = []
+    with contextlib.suppress(Exception):
+        alarm = data.abode.get_alarm()
+        if alarm:
+            legacy_unique_ids.append(f"{alarm.id}-connection-status")
+    if entry.data.get(CONF_USERNAME):
+        legacy_unique_ids.append(f"{entry.data[CONF_USERNAME]}-connection-status")
+
+    connection_sensor_exists = (
+        entity_registry.async_get_entity_id("sensor", DOMAIN, connection_unique_id)
+        is not None
     )
+    if not connection_sensor_exists:
+        for legacy_uid in legacy_unique_ids:
+            if legacy_uid == connection_unique_id:
+                continue
+            if entity_id := entity_registry.async_get_entity_id(
+                "sensor", DOMAIN, legacy_uid
+            ):
+                entity_registry.async_update_entity(
+                    entity_id, new_unique_id=connection_unique_id
+                )
+                connection_sensor_exists = True
+                break
 
     if not connection_sensor_exists:
-        entities.append(AbodeConnectionStatusSensor(data))
+        entities.append(AbodeConnectionStatusSensor(data, connection_unique_id))
 
     for description in SENSOR_TYPES:
         for device in devices:
@@ -126,11 +150,13 @@ class AbodeConnectionStatusSensor(SensorEntity):
 
     _attr_icon = "mdi:lan-connect"
     _attr_should_poll = True
+    _unique_id: str
 
-    def __init__(self, data: AbodeSystem) -> None:
+    def __init__(self, data: AbodeSystem, unique_id: str) -> None:
         """Initialize the connection status sensor."""
         self._data = data
-        self._attr_unique_id = f"{data.abode.uuid}-connection-status"
+        self._unique_id = unique_id
+        self._attr_unique_id = unique_id
         self._attr_name = "Abode Connection Status"
         self._attr_native_value = data.abode.connection_status
         self._attr_extra_state_attributes: dict[str, str] = {}

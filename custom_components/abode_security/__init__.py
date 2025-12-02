@@ -22,15 +22,6 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .abode.client import Client as Abode
-from .abode.exceptions import (
-    AuthenticationException as AbodeAuthenticationException,
-)
-from .abode.exceptions import Exception as AbodeException
-from .abode.exceptions import (
-    RateLimitException as AbodeRateLimitException,
-)
-from .abode.helpers.timeline import Groups as GROUPS  # noqa: N814
 from .const import (
     CONF_ENABLE_EVENTS,
     CONF_POLLING,
@@ -101,7 +92,20 @@ async def async_setup(hass: HomeAssistant, _config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Abode integration from a config entry."""
+    LOGGER.info(
+        "Starting Abode integration setup for user: %s",
+        entry.data.get(CONF_USERNAME, "unknown"),
+    )
+
     from . import abode
+    from .abode.client import Client as Abode
+    from .abode.exceptions import (
+        AuthenticationException as AbodeAuthenticationException,
+    )
+    from .abode.exceptions import Exception as AbodeException
+    from .abode.exceptions import (
+        RateLimitException as AbodeRateLimitException,
+    )
     from .models import AbodeSystem  # Avoid circular import
 
     username = entry.data[CONF_USERNAME]
@@ -154,8 +158,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await abode_client.cleanup()
         raise ConfigEntryNotReady(f"Unable to connect to Abode: {ex}") from ex
 
-    except Exception:
+    except Exception as ex:
         await abode_client.cleanup()
+        LOGGER.error("Unexpected error during Abode setup: %s", ex, exc_info=True)
         raise
 
     entry.runtime_data = AbodeSystem(
@@ -205,6 +210,7 @@ async def async_setup_hass_events(hass: HomeAssistant, entry: ConfigEntry) -> No
     from .models import AbodeSystem  # Avoid circular import
 
     abode_system: AbodeSystem = entry.runtime_data
+    LOGGER.info("Setting up Home Assistant events (polling=%s)", abode_system.polling)
 
     async def logout(_event: Event) -> None:
         """Logout of Abode."""
@@ -217,6 +223,7 @@ async def async_setup_hass_events(hass: HomeAssistant, entry: ConfigEntry) -> No
 
     if not abode_system.polling:
         # Start socket IO event listener (runs in separate thread)
+        LOGGER.info("Starting SocketIO thread for real-time events")
         abode_system.abode.events.start()
 
     abode_system.logout_listener = hass.bus.async_listen_once(
@@ -226,6 +233,7 @@ async def async_setup_hass_events(hass: HomeAssistant, entry: ConfigEntry) -> No
 
 def setup_abode_events(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Event callbacks."""
+    from .abode.helpers.timeline import Groups as GROUPS  # noqa: N814
     from .models import AbodeSystem  # Avoid circular import
 
     abode_system: AbodeSystem = entry.runtime_data

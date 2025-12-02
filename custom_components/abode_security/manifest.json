@@ -9,7 +9,7 @@
     "models": ["Abode", "Iota"]
   },
   "iot_class": "cloud_push",
-  "loggers": ["lomond"],
+  "loggers": ["lomond", "custom_components.abode_security"],
   "requirements": ["platformdirs", "keyring", "lomond", "aiohttp"],
   "single_config_entry": true,
   "version": "1.0.0",
