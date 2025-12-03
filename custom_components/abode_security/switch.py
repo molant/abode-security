@@ -464,7 +464,12 @@ class AbodeCMSSettingSwitch(SwitchEntity):
         try:
             getter = getattr(self._data, self._getter_name)
             self._is_on = await getter()
-            LOGGER.debug("Initial %s status fetched: %s", self._attr_name, self._is_on)
+            LOGGER.info(
+                "Initial %s status fetched: %s (CMS cache=%s)",
+                self._attr_name,
+                self._is_on,
+                getattr(self._data, "cms_settings_cache", None),
+            )
             self.async_write_ha_state()
 
             # Enable polling after first successful fetch

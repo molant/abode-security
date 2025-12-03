@@ -15,6 +15,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_USERNAME, LIGHT_LUX, PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .abode.devices.sensor import Sensor
@@ -89,10 +90,21 @@ async def async_setup_entry(
     if entry.data.get(CONF_USERNAME):
         legacy_unique_ids.append(f"{entry.data[CONF_USERNAME]}-connection-status")
 
-    connection_sensor_exists = (
-        entity_registry.async_get_entity_id("sensor", DOMAIN, connection_unique_id)
-        is not None
-    )
+    # Collapse any duplicate connection sensors by unique_id heuristic
+    all_connection_entities = [
+        entity
+        for entity in entity_registry.entities.values()
+        if entity.config_entry_id == entry.entry_id
+        and entity.platform == DOMAIN
+        and (
+            entity.unique_id.endswith("connection-status")
+            or "connection_status" in entity.entity_id
+        )
+    ]
+
+    connection_sensor_exists = False
+
+    # Attempt migration of legacy unique IDs
     if not connection_sensor_exists:
         for legacy_uid in legacy_unique_ids:
             if legacy_uid == connection_unique_id:
@@ -105,6 +117,11 @@ async def async_setup_entry(
                 )
                 connection_sensor_exists = True
                 break
+
+    # Remove any extra duplicate entities beyond the canonical one
+    for entity in all_connection_entities:
+        if entity.unique_id != connection_unique_id:
+            entity_registry.async_remove(entity.entity_id)
 
     if not connection_sensor_exists:
         entities.append(AbodeConnectionStatusSensor(data, connection_unique_id))
@@ -160,6 +177,11 @@ class AbodeConnectionStatusSensor(SensorEntity):
         self._attr_name = "Abode Connection Status"
         self._attr_native_value = data.abode.connection_status
         self._attr_extra_state_attributes: dict[str, str] = {}
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, "abode_system")},
+            name="Abode System",
+            manufacturer="Abode",
+        )
 
     async def async_update(self) -> None:
         """Update connection status."""

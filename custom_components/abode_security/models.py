@@ -229,9 +229,13 @@ class AbodeSystem:
     async def get_monitoring_active(self) -> bool:
         """Get monitoring active status with fallback."""
         try:
-            cms_settings = await self.abode.get_cms_settings()
+            cms_settings = await self.abode.get_cms_settings(
+                ttl_seconds=self.polling_interval
+            )
             result = cms_settings.get("monitoringActive", False)
-            LOGGER.debug("get_monitoring_active() returned: %s", result)
+            LOGGER.debug(
+                "get_monitoring_active() returned: %s (cms=%s)", result, cms_settings
+            )
             self.cms_settings_supported = True
             self.cms_settings_cache = cms_settings
             return bool(result)
@@ -256,7 +260,9 @@ class AbodeSystem:
     async def get_send_media(self) -> bool:
         """Get send media status with fallback."""
         try:
-            cms_settings = await self.abode.get_cms_settings()
+            cms_settings = await self.abode.get_cms_settings(
+                ttl_seconds=self.polling_interval
+            )
             result = cms_settings.get("sendMedia", False)
             LOGGER.debug("get_send_media() returned: %s", result)
             self.cms_settings_supported = True
@@ -283,7 +289,9 @@ class AbodeSystem:
     async def get_dispatch_without_verification(self) -> bool:
         """Get dispatch without verification status with fallback."""
         try:
-            cms_settings = await self.abode.get_cms_settings()
+            cms_settings = await self.abode.get_cms_settings(
+                ttl_seconds=self.polling_interval
+            )
             result = cms_settings.get("dispatchWithoutVerification", False)
             LOGGER.debug("get_dispatch_without_verification() returned: %s", result)
             self.cms_settings_supported = True
@@ -312,7 +320,9 @@ class AbodeSystem:
     async def get_dispatch_police(self) -> bool:
         """Get dispatch police status with fallback."""
         try:
-            cms_settings = await self.abode.get_cms_settings()
+            cms_settings = await self.abode.get_cms_settings(
+                ttl_seconds=self.polling_interval
+            )
             result = cms_settings.get("dispatchPolice", False)
             LOGGER.debug("get_dispatch_police() returned: %s", result)
             self.cms_settings_supported = True
@@ -339,7 +349,9 @@ class AbodeSystem:
     async def get_dispatch_fire(self) -> bool:
         """Get dispatch fire status with fallback."""
         try:
-            cms_settings = await self.abode.get_cms_settings()
+            cms_settings = await self.abode.get_cms_settings(
+                ttl_seconds=self.polling_interval
+            )
             result = cms_settings.get("dispatchFire", False)
             LOGGER.debug("get_dispatch_fire() returned: %s", result)
             self.cms_settings_supported = True
@@ -366,7 +378,9 @@ class AbodeSystem:
     async def get_dispatch_medical(self) -> bool:
         """Get dispatch medical status with fallback."""
         try:
-            cms_settings = await self.abode.get_cms_settings()
+            cms_settings = await self.abode.get_cms_settings(
+                ttl_seconds=self.polling_interval
+            )
             result = cms_settings.get("dispatchMedical", False)
             LOGGER.debug("get_dispatch_medical() returned: %s", result)
             self.cms_settings_supported = True

@@ -6,6 +6,7 @@ import asyncio
 import json as json_module
 import logging
 import uuid
+from datetime import datetime, timedelta
 
 import aiohttp
 
@@ -92,7 +93,7 @@ class Client:
 
         self._event_controller = EventController(self)
 
-        self._default_alarm_mode = 'away'
+        self._default_alarm_mode = "away"
 
         self._devices = None
         self._automations = None
@@ -103,6 +104,9 @@ class Client:
         self._connection_status = "disconnected"
         self._last_error = None
         self._test_mode_supported = True
+        self._cms_cache: dict[str, bool] | None = None
+        self._cms_cache_time: datetime | None = None
+        self._cms_lock: asyncio.Lock | None = None
 
         # These will be initialized during async initialization
         self._initialized = False
@@ -162,43 +166,45 @@ class Client:
             raise AuthenticationException(errors.PASSWORD)
 
         login_data = {
-            'id': username,
-            'password': password,
-            'uuid': self._cookies.get('uuid') or str(uuid.uuid1()),
+            "id": username,
+            "password": password,
+            "uuid": self._cookies.get("uuid") or str(uuid.uuid1()),
         }
 
         if mfa_code is not None:
-            login_data['mfa_code'] = mfa_code
-            login_data['remember_me'] = 1
+            login_data["mfa_code"] = mfa_code
+            login_data["remember_me"] = 1
 
         async with self._session.post(
-            f'{urls.BASE}{urls.LOGIN}', json=login_data
+            f"{urls.BASE}{urls.LOGIN}", json=login_data
         ) as response:
             await AuthenticationException.raise_for(response)
             response_object = await response.json()
 
         # Check for multi-factor authentication
-        if 'mfa_type' in response_object:
-            if response_object['mfa_type'] == "google_authenticator":
+        if "mfa_type" in response_object:
+            if response_object["mfa_type"] == "google_authenticator":
                 raise AuthenticationException(errors.MFA_CODE_REQUIRED)
 
             raise AuthenticationException(errors.UNKNOWN_MFA_TYPE)
 
-        async with self._session.get(f'{urls.BASE}{urls.OAUTH_TOKEN}') as oauth_response:
+        async with self._session.get(
+            f"{urls.BASE}{urls.OAUTH_TOKEN}"
+        ) as oauth_response:
             await AuthenticationException.raise_for(oauth_response)
             oauth_response_object = await oauth_response.json()
 
         log.debug("Login URL: %s", urls.LOGIN)
         log.debug("Login Response: %s", response_object)
 
-        self._token = response_object['token']
-        self._panel = response_object['panel']
-        self._user = response_object['user']
-        self._oauth_token = oauth_response_object['access_token']
+        self._token = response_object["token"]
+        self._panel = response_object["panel"]
+        self._user = response_object["user"]
+        self._oauth_token = oauth_response_object["access_token"]
 
         # Update cookies
-        if 'uuid' in login_data:
-            self._cookies['uuid'] = login_data['uuid']
+        if "uuid" in login_data:
+            self._cookies["uuid"] = login_data["uuid"]
 
         log.info("Login successful")
         self._set_connection_status("connected")
@@ -208,7 +214,7 @@ class Client:
         if not self._token:
             return
 
-        header_data = {'ABODE-API-KEY': self._token}
+        header_data = {"ABODE-API-KEY": self._token}
 
         self._token = None
         self._oauth_token = None
@@ -219,7 +225,7 @@ class Client:
 
         try:
             async with self._session.post(
-                f'{urls.BASE}{urls.LOGOUT}', headers=header_data
+                f"{urls.BASE}{urls.LOGOUT}", headers=header_data
             ) as response:
                 await AuthenticationException.raise_for(response)
                 log.debug("Logout URL: %s", urls.LOGOUT)
@@ -287,7 +293,7 @@ class Client:
         self._reuse_device(doc) or self._create_new_device(doc)
 
     def _reuse_device(self, doc):
-        device = self._devices.get(doc['id'])
+        device = self._devices.get(doc["id"])
 
         if not device:
             return
@@ -336,7 +342,10 @@ class Client:
         log.info("Updating all automations...")
         resp = await self.send_request("get", urls.AUTOMATION, raise_on_error=False)
         if resp is None or resp.status == 404:
-            log.info("Automations endpoint unavailable (status=%s); treating as zero automations", getattr(resp, "status", "unknown"))
+            log.info(
+                "Automations endpoint unavailable (status=%s); treating as zero automations",
+                getattr(resp, "status", "unknown"),
+            )
             resp_data = []
         else:
             resp_data = await resp.json()
@@ -345,7 +354,7 @@ class Client:
 
         for state in always_iterable(resp_data):
             # Attempt to reuse an existing automation object
-            automation = self._automations.get(str(state['id']))
+            automation = self._automations.get(str(state["id"]))
 
             # No existing automation, create a new one
             if automation:
@@ -364,28 +373,30 @@ class Client:
 
         return automation
 
-    def get_alarm(self, area='1', refresh=False):
+    def get_alarm(self, area="1", refresh=False):
         """Shortcut method to get the alarm device."""
         return self.get_device(alarm.id(area), refresh)
 
     def set_default_mode(self, default_mode):
         """Set the default mode when alarms are turned 'on'."""
-        if default_mode.lower() not in ('away', 'home'):
+        if default_mode.lower() not in ("away", "home"):
             raise Exception(errors.INVALID_DEFAULT_ALARM_MODE)
 
         self._default_alarm_mode = default_mode.lower()
 
-    async def set_setting(self, name, value, area='1'):
+    async def set_setting(self, name, value, area="1"):
         """Set an abode system setting to a given value."""
         setting = settings.Setting.load(name.lower(), value, area)
-        return await self.send_request(method="put", path=setting.path, data=setting.data)
+        return await self.send_request(
+            method="put", path=setting.path, data=setting.data
+        )
 
     async def acknowledge_timeline_event(self, timeline_id):
         """Acknowledge/verify a timeline alarm event."""
         return await self._process_timeline_event(
             timeline_id,
             urls.timeline_verify_alarm,
-            'acknowledged',
+            "acknowledged",
         )
 
     async def dismiss_timeline_event(self, timeline_id):
@@ -393,7 +404,7 @@ class Client:
         return await self._process_timeline_event(
             timeline_id,
             urls.timeline_ignore_alarm,
-            'dismissed',
+            "dismissed",
         )
 
     async def _process_timeline_event(self, timeline_id, url_func, action):
@@ -413,36 +424,36 @@ class Client:
         timeline_id = str(timeline_id)
         url = url_func(timeline_id)
 
-        response = await self._send_request('post', url, raise_on_error=False)
+        response = await self._send_request("post", url, raise_on_error=False)
 
         if response is None:
             raise Exception(errors.REQUEST)
 
-        log.debug('Timeline Event URL (post): %s', url)
-        log.debug('Timeline Event Response: %s', await response.text())
+        log.debug("Timeline Event URL (post): %s", url)
+        log.debug("Timeline Event Response: %s", await response.text())
 
         # Check if request was successful
         if response.status < 400:
             response_object = await response.json()
 
-            if not all(key in response_object for key in ('code', 'message', 'tid')):
+            if not all(key in response_object for key in ("code", "message", "tid")):
                 raise Exception(errors.ACK_TIMELINE_RESPONSE)
 
-            if str(response_object.get('tid')) != timeline_id:
+            if str(response_object.get("tid")) != timeline_id:
                 raise Exception(errors.ACK_TIMELINE_RESPONSE)
 
-            log.info('Timeline event %s %s', timeline_id, action)
+            log.info("Timeline event %s %s", timeline_id, action)
             return True
 
         # Handle error responses
         try:
             error_response = await response.json()
-            error_code = error_response.get('errorCode')
-            error_message = error_response.get('message', 'Unknown error')
+            error_code = error_response.get("errorCode")
+            error_message = error_response.get("message", "Unknown error")
 
             if error_code == errors.TIMELINE_EVENT_ALREADY_PROCESSED:
                 log.info(
-                    'Timeline event %s already %s: %s',
+                    "Timeline event %s already %s: %s",
                     timeline_id,
                     action,
                     error_message,
@@ -450,8 +461,8 @@ class Client:
                 return True
 
             log.error(
-                'Failed to %s timeline event %s (code %s): %s',
-                action.rstrip('ed'),
+                "Failed to %s timeline event %s (code %s): %s",
+                action.rstrip("ed"),
                 timeline_id,
                 error_code,
                 error_message,
@@ -459,8 +470,8 @@ class Client:
             raise Exception(errors.REQUEST)
         except (ValueError, KeyError):
             log.error(
-                'Failed to %s timeline event %s: unexpected response format',
-                action.rstrip('ed'),
+                "Failed to %s timeline event %s: unexpected response format",
+                action.rstrip("ed"),
                 timeline_id,
             )
             raise Exception(errors.REQUEST)
@@ -483,53 +494,36 @@ class Client:
         log.debug("Get Timeline Events Response: %s", timeline_events)
 
         if not isinstance(timeline_events, list):
-            log.warning('Unexpected timeline response format: %s', type(timeline_events))
+            log.warning(
+                "Unexpected timeline response format: %s", type(timeline_events)
+            )
             return []
 
-        log.info('Fetched %d recent timeline events', len(timeline_events))
+        log.info("Fetched %d recent timeline events", len(timeline_events))
         return timeline_events
 
     async def get_test_mode(self):
-        """Get the current test mode status.
+        """Get the current test mode status using unified CMS settings fetch.
 
-        Prefer SECURITY_PANEL endpoint (matches pre-async behavior); fallback to cached panel.
+        Uses get_cms_settings() to avoid code duplication and ensure consistent
+        caching behavior across all CMS setting reads.
         """
         if not self._test_mode_supported:
             raise Exception(errors.REQUEST)
 
-        # Prefer cached panel data if available
-        test_mode_active = None
-        if isinstance(self._panel, dict):
-            attributes = self._panel.get("attributes", {})
-            cms = attributes.get("cms", {})
-            test_mode_active = cms.get("testModeActive")
-
-        if test_mode_active is None:
-            response = await self.send_request("get", urls.SECURITY_PANEL, raise_on_error=False)
-            if response is None or response.status == 404:
-                log.info(
-                    "Test mode endpoint unavailable (status=%s); disabling test mode support",
-                    getattr(response, "status", "unknown"),
-                )
-                self._test_mode_supported = False
-                return False
-
-            response_data = await response.json()
-            log.debug("Get Test Mode URL (get): %s", urls.SECURITY_PANEL)
-            log.debug("Get Test Mode Response (parsed): %s", response_data)
-
-            test_mode_active = (
-                response_data.get("attributes", {})
-                .get("cms", {})
-                .get("testModeActive", False)
+        try:
+            cms_settings = await self.get_cms_settings()
+            test_mode_active = cms_settings.get("testModeActive", False)
+            log.info(
+                "Test mode is currently: %s",
+                "enabled" if test_mode_active else "disabled",
             )
-
-        log.info(
-            "Test mode is currently: %s",
-            "enabled" if test_mode_active else "disabled",
-        )
-
-        return bool(test_mode_active)
+            return bool(test_mode_active)
+        except Exception:
+            # If CMS settings unavailable, disable test mode support
+            log.info("Test mode endpoint unavailable; disabling test mode support")
+            self._test_mode_supported = False
+            return False
 
     async def set_test_mode(self, enabled):
         """Set the test mode for the monitoring service.
@@ -547,8 +541,8 @@ class Client:
             raise Exception(errors.INVALID_TEST_MODE_VALUE)
 
         try:
-            response_object = await self.set_cms_setting('testModeActive', enabled)
-            log.info('Test mode set to: %s', 'enabled' if enabled else 'disabled')
+            response_object = await self.set_cms_setting("testModeActive", enabled)
+            log.info("Test mode set to: %s", "enabled" if enabled else "disabled")
             return response_object
         except Exception as err:
             # If the error is specifically about test mode, wrap it appropriately
@@ -556,7 +550,7 @@ class Client:
                 raise Exception(errors.SET_TEST_MODE_RESPONSE)
             raise
 
-    async def get_cms_settings(self):
+    async def get_cms_settings(self, ttl_seconds: int | None = 300):
         """Get all CMS settings from the panel.
 
         Returns a dictionary with all available CMS settings:
@@ -568,26 +562,133 @@ class Client:
         - dispatchFire
         - dispatchMedical
         """
-        # Prefer cached panel data if available
-        if isinstance(self._panel, dict):
-            attributes = self._panel.get("attributes", {})
-            cms = attributes.get("cms", {})
-            if cms:
-                log.debug("Using cached CMS settings: %s", cms)
-                return cms
+        # Lazily initialize a lock to dedupe concurrent fetches
+        if self._cms_lock is None:
+            self._cms_lock = asyncio.Lock()
 
-        # Fallback to fetching from SECURITY_PANEL endpoint
-        response = await self.send_request("get", urls.SECURITY_PANEL, raise_on_error=False)
+        async with self._cms_lock:
+            ttl = ttl_seconds or 300
+            # Return cached CMS if fresh to avoid hammering Abode
+            if self._cms_cache and self._cms_cache_time:
+                age = (datetime.now() - self._cms_cache_time).total_seconds()
+                if age < ttl:
+                    log.debug("Using cached CMS settings (age=%.1fs)", age)
+                    return self._cms_cache
+
+            combined: dict[str, bool] = {}
+
+            # Cached panel CMS values (may be incomplete)
+            if isinstance(self._panel, dict):
+                panel_cms = self._panel.get("attributes", {}).get("cms", {})
+                panel_norm = self._normalize_cms_settings(panel_cms)
+                log.debug("CMS settings (panel cache): %s", panel_norm)
+                combined.update(panel_norm)
+
+            # Primary: dedicated CMS settings endpoint
+            cms_resp = await self._fetch_cms_settings()
+            cms_norm = self._normalize_cms_settings(cms_resp)
+            log.debug("CMS settings (cms/settings): %s", cms_norm)
+            combined.update(cms_norm)
+
+            # Secondary: SECURITY_PANEL endpoint (fallback)
+            sec_panel = await self._fetch_cms_from_security_panel()
+            if sec_panel:
+                sec_norm = self._normalize_cms_settings(sec_panel)
+                log.debug("CMS settings (security-panel): %s", sec_norm)
+                for key, value in sec_norm.items():
+                    combined.setdefault(key, value)
+
+            log.info("CMS settings (combined): %s", combined)
+            self._cms_cache = combined
+            self._cms_cache_time = datetime.now()
+            return combined
+
+    async def _fetch_cms_from_security_panel(self):
+        response = await self.send_request(
+            "get", urls.SECURITY_PANEL, raise_on_error=False
+        )
         if response is None or response.status == 404:
-            log.warning("CMS settings endpoint unavailable (status=%s)", getattr(response, "status", "unknown"))
+            log.debug(
+                "CMS settings endpoint unavailable (status=%s)",
+                getattr(response, "status", "unknown"),
+            )
             return {}
 
         response_data = await response.json()
         log.debug("Get CMS Settings URL (get): %s", urls.SECURITY_PANEL)
         log.debug("Get CMS Settings Response (parsed): %s", response_data)
 
-        cms_settings = response_data.get("attributes", {}).get("cms", {})
-        return cms_settings if isinstance(cms_settings, dict) else {}
+        return response_data.get("attributes", {}).get("cms", {}) or {}
+
+    async def _fetch_cms_settings(self):
+        """Fetch CMS settings from dedicated endpoint."""
+        response = await self.send_request(
+            "get", urls.CMS_SETTINGS, raise_on_error=False
+        )
+        if response is None:
+            log.warning("CMS settings endpoint returned no response object")
+            return {}
+
+        status = getattr(response, "status", "unknown")
+        if status == 404:
+            log.warning("CMS settings endpoint unavailable (status=404)")
+            return {}
+
+        # Attempt JSON, fall back to raw text for debugging
+        try:
+            response_data = await response.json()
+        except Exception as exc:
+            raw_text = await response.text()
+            log.warning(
+                "CMS settings response not JSON (status=%s): %s (exc=%s)",
+                status,
+                raw_text,
+                exc,
+            )
+            return {}
+
+        log.debug("Get CMS Settings URL (get): %s", urls.CMS_SETTINGS)
+        log.debug("Get CMS Settings Response (parsed): %s", response_data)
+        return response_data if isinstance(response_data, dict) else {}
+
+    @staticmethod
+    def _normalize_cms_settings(raw):
+        """Normalize CMS settings keys to camelCase booleans."""
+        if not isinstance(raw, dict):
+            return {}
+
+        key_map = {
+            "monitoringactive": "monitoringActive",
+            "monitoring_active": "monitoringActive",
+            "monitoringActive": "monitoringActive",
+            "testmodeactive": "testModeActive",
+            "test_mode_active": "testModeActive",
+            "testModeActive": "testModeActive",
+            "sendmedia": "sendMedia",
+            "send_media": "sendMedia",
+            "sendMedia": "sendMedia",
+            "dispatchwithoutverification": "dispatchWithoutVerification",
+            "dispatch_without_verification": "dispatchWithoutVerification",
+            "dispatchWithoutVerification": "dispatchWithoutVerification",
+            "dispatchpolice": "dispatchPolice",
+            "dispatch_police": "dispatchPolice",
+            "dispatchPolice": "dispatchPolice",
+            "dispatchfire": "dispatchFire",
+            "dispatch_fire": "dispatchFire",
+            "dispatchFire": "dispatchFire",
+            "dispatchmedical": "dispatchMedical",
+            "dispatch_medical": "dispatchMedical",
+            "dispatchMedical": "dispatchMedical",
+        }
+
+        normalized = {}
+        for key, value in raw.items():
+            norm_key = key_map.get(str(key))
+            if not norm_key:
+                continue
+            normalized[norm_key] = bool(value)
+
+        return normalized
 
     async def set_cms_setting(self, key, value):
         """Set a specific CMS setting.
@@ -603,31 +704,40 @@ class Client:
             log.error("CMS setting value must be boolean, got %s", type(value))
             raise Exception(errors.REQUEST)
 
-        log.debug('Set CMS Setting Request - key=%s, value=%s', key, value)
-        response = await self.send_request(
-            'post', urls.CMS_SETTINGS, data={key: value}
-        )
+        log.debug("Set CMS Setting Request - key=%s, value=%s", key, value)
+        response = await self.send_request("post", urls.CMS_SETTINGS, data={key: value})
         response_object = await response.json()
 
-        log.debug('Set CMS Setting URL (post): %s', urls.CMS_SETTINGS)
-        log.debug('Set CMS Setting Response (parsed): %s', response_object)
+        log.debug("Set CMS Setting URL (post): %s", urls.CMS_SETTINGS)
+        log.debug("Set CMS Setting Response (parsed): %s", response_object)
 
         response_object = response_object if isinstance(response_object, dict) else {}
 
         # Validate response contains the setting we just changed
         if key not in response_object:
-            log.error('%s field missing from response: %s', key, response_object)
+            log.error("%s field missing from response: %s", key, response_object)
             raise Exception(errors.REQUEST)
 
         if response_object.get(key) != value:
-            log.error('Set %s failed - expected %s, got %s', key, value, response_object.get(key))
+            log.error(
+                "Set %s failed - expected %s, got %s",
+                key,
+                value,
+                response_object.get(key),
+            )
             raise Exception(errors.REQUEST)
 
-        log.info('CMS setting %s set to: %s', key, value)
+        log.info("CMS setting %s set to: %s", key, value)
+
+        # Invalidate cache to ensure fresh data on next read
+        self._cms_cache = None
+        self._cms_cache_time = None
 
         return response_object
 
-    async def send_request(self, method, path, headers=None, data=None, raise_on_error=True):
+    async def send_request(
+        self, method, path, headers=None, data=None, raise_on_error=True
+    ):
         """Send requests to Abode with retry and exponential backoff.
 
         Args:
@@ -649,7 +759,9 @@ class Client:
 
         for attempt in range(max_attempts):
             try:
-                return await self._send_request(method, path, headers, data, raise_on_error=raise_on_error)
+                return await self._send_request(
+                    method, path, headers, data, raise_on_error=raise_on_error
+                )
             except RateLimitException as exc:
                 # Start rate-limit backoff at 30s (or Retry-After if provided)
                 wait_seconds = max(30, exc.retry_after or 30)
@@ -697,7 +809,9 @@ class Client:
                 # Exponential backoff for next retry
                 retry_delay = min(retry_delay * 2, 30)  # Max 30 seconds
 
-    async def _send_request(self, method, path, headers=None, data=None, raise_on_error=True):
+    async def _send_request(
+        self, method, path, headers=None, data=None, raise_on_error=True
+    ):
         await self._async_initialize()
 
         if not self._token:
@@ -706,14 +820,18 @@ class Client:
         if not headers:
             headers = {}
 
-        headers['Authorization'] = f'Bearer {self._oauth_token}' if self._oauth_token else ''
-        headers['ABODE-API-KEY'] = self._token
+        headers["Authorization"] = (
+            f"Bearer {self._oauth_token}" if self._oauth_token else ""
+        )
+        headers["ABODE-API-KEY"] = self._token
 
         try:
-            url = f'{urls.BASE}{path}'
+            url = f"{urls.BASE}{path}"
             log.debug("API Request - method=%s, path=%s, data=%s", method, url, data)
 
-            async with getattr(self._session, method)(url, headers=headers, json=data) as response:
+            async with getattr(self._session, method)(
+                url, headers=headers, json=data
+            ) as response:
                 log.debug("API Response - status=%s", response.status)
 
                 # Extract all data INSIDE the context manager before response is closed
@@ -723,7 +841,16 @@ class Client:
                 if status < 400:
                     await AuthenticationException.raise_for(response)
                     # Extract body while response is still valid
-                    body = await response.json()
+                    try:
+                        body = await response.json()
+                    except Exception as exc:
+                        log.debug(
+                            "Response JSON decode failed for %s %s (%s), falling back to text",
+                            method.upper(),
+                            path,
+                            exc,
+                        )
+                        body = await response.text()
                     # Return wrapper with extracted data (safe to use outside context)
                     self._set_connection_status("connected")
                     return ResponseWrapper(body, status, headers_dict)
@@ -763,7 +890,7 @@ class Client:
     @property
     def uuid(self):
         """Get the UUID."""
-        return self._cookies.get('uuid', '')
+        return self._cookies.get("uuid", "")
 
     @property
     def connection_status(self) -> str:
