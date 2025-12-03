@@ -31,6 +31,26 @@
       }
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Abode Options",
+        "description": "Configure options for the Abode Security integration",
+        "data": {
+          "polling_interval": "Polling Interval (seconds)",
+          "enable_events": "Enable Events",
+          "retry_count": "Retry Count",
+          "debug_logging": "Debug Logging"
+        },
+        "data_description": {
+          "polling_interval": "How often to check Abode for updates. Lower values check more frequently but use more resources.",
+          "enable_events": "Receive real-time event notifications from Abode when available",
+          "retry_count": "Number of times to retry failed API requests before giving up",
+          "debug_logging": "Enable detailed logging for troubleshooting"
+        }
+      }
+    }
+  },
   "services": {
     "capture_image": {
       "description": "Requests a new image capture from a camera device.",

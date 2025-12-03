@@ -22,6 +22,7 @@ from requests.exceptions import (  # type: ignore[import-untyped]
 )
 
 from .const import (
+    CONF_DEBUG_LOGGING,
     CONF_ENABLE_EVENTS,
     CONF_POLLING,
     CONF_POLLING_INTERVAL,
@@ -215,15 +216,14 @@ class AbodeOptionsFlowHandler(OptionsFlow):
         retry_count = self.config_entry.options.get(
             CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT
         )
+        debug_logging = self.config_entry.options.get(CONF_DEBUG_LOGGING, False)
 
         options_schema = vol.Schema(
             {
                 vol.Optional(
                     CONF_POLLING_INTERVAL, default=polling_interval
                 ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=15, max=120, unit_of_measurement="seconds"
-                    ),
+                    selector.NumberSelectorConfig(min=15, max=120, mode="box"),
                 ),
                 vol.Optional(
                     CONF_ENABLE_EVENTS, default=enable_events
@@ -231,8 +231,11 @@ class AbodeOptionsFlowHandler(OptionsFlow):
                 vol.Optional(
                     CONF_RETRY_COUNT, default=retry_count
                 ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=1, max=5),
+                    selector.NumberSelectorConfig(min=1, max=5, mode="box"),
                 ),
+                vol.Optional(
+                    CONF_DEBUG_LOGGING, default=debug_logging
+                ): selector.BooleanSelector(),
             }
         )
 

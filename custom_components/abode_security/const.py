@@ -13,6 +13,7 @@ CONF_POLLING_INTERVAL = "polling_interval"
 CONF_ENABLE_EVENTS = "enable_events"
 CONF_RETRY_COUNT = "retry_count"
 CONF_EVENT_FILTER = "event_filter"
+CONF_DEBUG_LOGGING = "debug_logging"
 
 # Default configuration values
 DEFAULT_POLLING_INTERVAL = 30  # seconds
