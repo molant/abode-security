@@ -111,7 +111,9 @@ class Client:
         # Auth and session health tracking
         self._auth_count = 0  # Total authentications
         self._last_auth_time: datetime | None = None  # Last successful auth
-        self._last_successful_request: datetime | None = None  # Last successful API call
+        self._last_successful_request: datetime | None = (
+            None  # Last successful API call
+        )
         self._consecutive_failures = 0  # Track failures for session health
         self._session_recreate_count = 0  # Track session recreations
         self._session_created_time: datetime | None = None  # When session was created
@@ -288,10 +290,15 @@ class Client:
         # Clear token to force fresh auth
         self._token = None
         self._oauth_token = None
+
+        # Clear CMS cache to force fresh fetch after session recreation
+        self._cms_cache = None
+        self._cms_cache_time = None
+
         await self.login()
 
         # Sync cookies to SocketIO if available
-        if hasattr(self, '_sync_socketio_cookies'):
+        if hasattr(self, "_sync_socketio_cookies"):
             try:
                 await self._sync_socketio_cookies()
             except Exception as exc:
@@ -341,7 +348,9 @@ class Client:
 
                     # Check if session is getting too old
                     if self._session_created_time:
-                        session_age = (datetime.now() - self._session_created_time).total_seconds()
+                        session_age = (
+                            datetime.now() - self._session_created_time
+                        ).total_seconds()
 
                         if session_age > self._session_max_age_seconds:
                             log.warning(
@@ -759,7 +768,9 @@ class Client:
 
             # Empty response often indicates expired auth - trigger re-auth
             if not raw_text or raw_text.strip() == "":
-                log.warning("Empty response detected - likely expired auth, triggering re-authentication")
+                log.warning(
+                    "Empty response detected - likely expired auth, triggering re-authentication"
+                )
                 # Clear token to force re-login on next request
                 self._token = None
                 self._oauth_token = None
@@ -767,14 +778,19 @@ class Client:
                     # Try one more time with fresh auth
                     await self.login()
                     # Retry the security panel fetch
-                    retry_response = await self.send_request("get", urls.SECURITY_PANEL, raise_on_error=False)
+                    retry_response = await self.send_request(
+                        "get", urls.SECURITY_PANEL, raise_on_error=False
+                    )
                     if retry_response:
                         try:
                             return await retry_response.json()
                         except Exception:
                             pass
                 except Exception as login_exc:
-                    log.error("Re-authentication failed during security panel fetch retry: %s", login_exc)
+                    log.error(
+                        "Re-authentication failed during security panel fetch retry: %s",
+                        login_exc,
+                    )
 
             return {}
 
@@ -811,7 +827,9 @@ class Client:
 
             # Empty response often indicates expired auth - trigger re-auth
             if not raw_text or raw_text.strip() == "":
-                log.warning("Empty response detected - likely expired auth, triggering re-authentication")
+                log.warning(
+                    "Empty response detected - likely expired auth, triggering re-authentication"
+                )
                 # Clear token to force re-login on next request
                 self._token = None
                 self._oauth_token = None
@@ -819,14 +837,18 @@ class Client:
                     # Try one more time with fresh auth
                     await self.login()
                     # Retry the CMS settings fetch
-                    retry_response = await self.send_request("get", urls.CMS_SETTINGS, raise_on_error=False)
+                    retry_response = await self.send_request(
+                        "get", urls.CMS_SETTINGS, raise_on_error=False
+                    )
                     if retry_response:
                         try:
                             return await retry_response.json()
                         except Exception:
                             pass
                 except Exception as login_exc:
-                    log.error("Re-authentication failed during CMS fetch retry: %s", login_exc)
+                    log.error(
+                        "Re-authentication failed during CMS fetch retry: %s", login_exc
+                    )
 
             return {}
 
@@ -1067,12 +1089,17 @@ class Client:
 
                         # Empty or minimal response often indicates expired auth
                         if not raw_text or len(raw_text.strip()) < 10:
-                            log.error("Empty/minimal response detected - expired auth likely")
+                            log.error(
+                                "Empty/minimal response detected - expired auth likely"
+                            )
                             # Clear token and raise auth exception to trigger retry with re-login
                             self._token = None
                             self._oauth_token = None
                             raise AuthenticationException(
-                                (status, "Empty response - authentication likely expired")
+                                (
+                                    status,
+                                    "Empty response - authentication likely expired",
+                                )
                             )
 
                         # Not an auth issue - return text as fallback
@@ -1147,7 +1174,7 @@ class Client:
 
     async def _sync_socketio_cookies(self):
         """Sync cookies from main session to SocketIO."""
-        if not self._session or not hasattr(self._session, 'cookie_jar'):
+        if not self._session or not hasattr(self._session, "cookie_jar"):
             log.debug("No session or cookie jar available for sync")
             return
 
@@ -1158,7 +1185,11 @@ class Client:
                 f"{name}={morsel.value}" for name, morsel in cookies.items()
             )
 
-            if cookie_str and self._event_controller and hasattr(self._event_controller, '_socketio'):
+            if (
+                cookie_str
+                and self._event_controller
+                and hasattr(self._event_controller, "_socketio")
+            ):
                 log.info("Syncing cookies to SocketIO (%d chars)", len(cookie_str))
                 # Update SocketIO with fresh cookies
                 self._event_controller._socketio.set_cookie(cookie_str)
@@ -1172,17 +1203,25 @@ class Client:
         """Get connection health diagnostics."""
         session_age = None
         if self._session_created_time:
-            session_age = int((datetime.now() - self._session_created_time).total_seconds())
+            session_age = int(
+                (datetime.now() - self._session_created_time).total_seconds()
+            )
 
         return {
             "connection_status": self._connection_status,
             "authenticated": bool(self._token or self._oauth_token),
             "auth_count": self._auth_count,
-            "last_auth_time": self._last_auth_time.isoformat() if self._last_auth_time else None,
-            "last_successful_request": self._last_successful_request.isoformat() if self._last_successful_request else None,
+            "last_auth_time": self._last_auth_time.isoformat()
+            if self._last_auth_time
+            else None,
+            "last_successful_request": self._last_successful_request.isoformat()
+            if self._last_successful_request
+            else None,
             "consecutive_failures": self._consecutive_failures,
             "session_recreate_count": self._session_recreate_count,
             "session_age_seconds": session_age,
             "session_max_age_seconds": self._session_max_age_seconds,
-            "socketio_connected": self._event_controller._socketio_connected if self._event_controller else False,
+            "socketio_connected": self._event_controller._socketio_connected
+            if self._event_controller
+            else False,
         }
