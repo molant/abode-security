@@ -112,6 +112,7 @@ class AbodeDevice(AbodeEntity):
             manufacturer="Abode",
             model=self._device.type,
             name=self._device.name,
+            sw_version="1.0.0",
         )
 
     def _update_callback(self, _device: AbodeDev) -> None:

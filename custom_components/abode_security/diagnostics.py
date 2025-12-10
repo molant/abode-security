@@ -69,12 +69,20 @@ async def async_get_config_entry_diagnostics(
     except AttributeError:
         pass
 
+    # Collect connection health diagnostics
+    connection_diagnostics = {}
+    try:
+        connection_diagnostics = abode_system.abode.connection_diagnostics
+    except (AttributeError, TypeError):
+        connection_diagnostics = {"status": "unavailable"}
+
     return {
         "polling": abode_system.polling,
         "polling_interval": abode_system.polling_interval,
         "enable_events": abode_system.enable_events,
         "retry_count": abode_system.retry_count,
         "connection_status": connection_status,
+        "connection_diagnostics": connection_diagnostics,
         "device_count": device_count,
         "device_types": device_types,
         "automation_count": automation_count,

@@ -235,6 +235,7 @@ class AbodeManualAlarmSwitch(SwitchEntity):
             "manufacturer": "Abode",
             "model": self._device.type,
             "name": self._device.name,
+            "sw_version": "1.0.0",
         }
 
     async def _subscribe_to_events(
@@ -437,6 +438,7 @@ class AbodeCMSSettingSwitch(SwitchEntity):
         self._setter_name = setter_name
         self._is_on = False
         self._last_state_change: datetime | None = None
+        self._error_count = 0
         # Use alarm device ID and setting name for unique ID
         self._attr_unique_id = f"{alarm.id}-{getter_name.lower().replace('_', '-')}"
         self._attr_available = True
@@ -451,6 +453,7 @@ class AbodeCMSSettingSwitch(SwitchEntity):
             "manufacturer": "Abode",
             "model": self._alarm.type,
             "name": self._alarm.name,
+            "sw_version": "1.0.0",
         }
 
     async def async_added_to_hass(self) -> None:
@@ -499,6 +502,14 @@ class AbodeCMSSettingSwitch(SwitchEntity):
                 LOGGER.debug("Skipping %s poll (waiting for API)", self._attr_name)
                 return
 
+        # Skip polling if not connected - prevents flapping unavailable state
+        if (
+            hasattr(self._data.abode, "_connection_status")
+            and self._data.abode._connection_status != "connected"
+        ):
+            LOGGER.debug("Skipping %s poll (not connected)", self._attr_name)
+            return
+
         try:
             previous_state = self._is_on
             getter = getattr(self._data, self._getter_name)
@@ -518,6 +529,11 @@ class AbodeCMSSettingSwitch(SwitchEntity):
                     previous_state,
                     self._is_on,
                 )
+            # Mark available on successful poll and reset error count
+            self._error_count = 0
+            if not self._attr_available:
+                self._attr_available = True
+                self.async_write_ha_state()
         except AbodeException as ex:
             if not self._data.cms_settings_supported:
                 LOGGER.info("%s unsupported; disabling switch", self._attr_name)
@@ -525,9 +541,41 @@ class AbodeCMSSettingSwitch(SwitchEntity):
                 self._attr_should_poll = False
                 self.async_write_ha_state()
                 return
-            LOGGER.error("Failed to update %s status: %s", self._attr_name, ex)
+            # Only mark unavailable after multiple consecutive errors
+            self._error_count += 1
+            if self._error_count >= 3:
+                LOGGER.warning(
+                    "Marking %s unavailable after %d errors",
+                    self._attr_name,
+                    self._error_count,
+                )
+                self._attr_available = False
+                self.async_write_ha_state()
+            else:
+                LOGGER.debug(
+                    "Failed to update %s (attempt %d): %s",
+                    self._attr_name,
+                    self._error_count,
+                    ex,
+                )
         except Exception as ex:
-            LOGGER.error("Unexpected error updating %s status: %s", self._attr_name, ex)
+            # Only mark unavailable after multiple consecutive errors
+            self._error_count += 1
+            if self._error_count >= 3:
+                LOGGER.warning(
+                    "Marking %s unavailable after %d errors",
+                    self._attr_name,
+                    self._error_count,
+                )
+                self._attr_available = False
+                self.async_write_ha_state()
+            else:
+                LOGGER.debug(
+                    "Unexpected error updating %s (attempt %d): %s",
+                    self._attr_name,
+                    self._error_count,
+                    ex,
+                )
 
     @handle_abode_errors("enable CMS setting")
     async def async_turn_on(self, **_kwargs: Any) -> None:

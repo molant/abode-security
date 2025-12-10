@@ -108,6 +108,19 @@ class Client:
         self._cms_cache_time: datetime | None = None
         self._cms_lock: asyncio.Lock | None = None
 
+        # Auth and session health tracking
+        self._auth_count = 0  # Total authentications
+        self._last_auth_time: datetime | None = None  # Last successful auth
+        self._last_successful_request: datetime | None = None  # Last successful API call
+        self._consecutive_failures = 0  # Track failures for session health
+        self._session_recreate_count = 0  # Track session recreations
+        self._session_created_time: datetime | None = None  # When session was created
+        self._session_max_age_seconds = 1800  # Recreate session every 30 minutes (well before 1h 30s server timeout)
+
+        # Background task for proactive session monitoring
+        self._session_monitor_task: asyncio.Task | None = None
+        self._session_monitor_running = False
+
         # These will be initialized during async initialization
         self._initialized = False
         self._auto_login = auto_login
@@ -123,7 +136,11 @@ class Client:
         timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=10)
         connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
         self._session = aiohttp.ClientSession(timeout=timeout, connector=connector)
+        self._session_created_time = datetime.now()
         self._initialized = True
+
+        # Start background session monitor task
+        self._start_session_monitor()
 
         if self._auto_login:
             await self.login()
@@ -145,6 +162,9 @@ class Client:
 
     async def cleanup(self):
         """Clean up async resources."""
+        # Stop background session monitor
+        self._stop_session_monitor()
+
         if self._session:
             await self._session.close()
             self._session = None
@@ -206,8 +226,19 @@ class Client:
         if "uuid" in login_data:
             self._cookies["uuid"] = login_data["uuid"]
 
-        log.info("Login successful")
+        # Track authentication
+        self._auth_count += 1
+        self._last_auth_time = datetime.now()
+        self._consecutive_failures = 0
+
+        log.info("Login successful (auth count: %d)", self._auth_count)
         self._set_connection_status("connected")
+
+        # Sync cookies to SocketIO after successful login
+        try:
+            await self._sync_socketio_cookies()
+        except Exception as exc:
+            log.warning("Failed to sync cookies after login: %s", exc)
 
     async def logout(self):
         """Explicit Abode logout."""
@@ -236,6 +267,107 @@ class Client:
 
         log.info("Logout successful")
         self._set_connection_status("disconnected")
+
+    async def _recreate_session(self):
+        """Recreate aiohttp session to clear stale connections."""
+        log.info("Recreating aiohttp session due to connection issues")
+        self._session_recreate_count += 1
+
+        if self._session:
+            try:
+                await self._session.close()
+            except Exception as exc:
+                log.warning("Error closing old session: %s", exc)
+
+        # Create fresh session
+        timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=10)
+        connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
+        self._session = aiohttp.ClientSession(timeout=timeout, connector=connector)
+        self._session_created_time = datetime.now()
+
+        # Clear token to force fresh auth
+        self._token = None
+        self._oauth_token = None
+        await self.login()
+
+        # Sync cookies to SocketIO if available
+        if hasattr(self, '_sync_socketio_cookies'):
+            try:
+                await self._sync_socketio_cookies()
+            except Exception as exc:
+                log.warning("Failed to sync cookies after session recreation: %s", exc)
+
+    def _start_session_monitor(self):
+        """Start background task to monitor session age and recreate proactively."""
+        if self._session_monitor_running:
+            return
+
+        self._session_monitor_running = True
+        try:
+            # Get current event loop - if this fails, we can't start the monitor
+            loop = asyncio.get_event_loop()
+            self._session_monitor_task = loop.create_task(self._session_monitor_loop())
+            log.debug("Session monitor background task started")
+        except RuntimeError as exc:
+            log.warning("Could not start session monitor: %s", exc)
+            self._session_monitor_running = False
+
+    def _stop_session_monitor(self):
+        """Stop background session monitor task."""
+        if not self._session_monitor_running:
+            return
+
+        self._session_monitor_running = False
+        if self._session_monitor_task:
+            self._session_monitor_task.cancel()
+            log.debug("Session monitor background task stopped")
+
+    async def _session_monitor_loop(self):
+        """Background task that proactively recreates sessions before server timeout.
+
+        This runs independently of API requests, so it works even when using SocketIO
+        events without polling. The Abode server closes idle connections after 3630 seconds,
+        so we proactively recreate the session every 1800 seconds (30 minutes).
+        """
+        monitor_interval = 60  # Check session age every 60 seconds
+
+        try:
+            while self._session_monitor_running:
+                try:
+                    await asyncio.sleep(monitor_interval)
+
+                    if not self._session_monitor_running:
+                        break
+
+                    # Check if session is getting too old
+                    if self._session_created_time:
+                        session_age = (datetime.now() - self._session_created_time).total_seconds()
+
+                        if session_age > self._session_max_age_seconds:
+                            log.warning(
+                                "Background monitor: Session age (%d seconds) exceeds max age (%d seconds) - recreating",
+                                int(session_age),
+                                self._session_max_age_seconds,
+                            )
+                            await self._recreate_session()
+                        else:
+                            log.debug(
+                                "Background monitor: Session age %d seconds (max %d)",
+                                int(session_age),
+                                self._session_max_age_seconds,
+                            )
+
+                except asyncio.CancelledError:
+                    log.debug("Session monitor loop cancelled")
+                    break
+                except Exception as exc:
+                    log.warning("Error in session monitor loop: %s", exc)
+                    # Continue monitoring even if there's an error
+                    await asyncio.sleep(monitor_interval)
+
+        finally:
+            log.debug("Session monitor loop exited")
+            self._session_monitor_running = False
 
     async def refresh(self):
         """Do a full refresh of all devices and automations."""
@@ -614,7 +746,38 @@ class Client:
             )
             return {}
 
-        response_data = await response.json()
+        try:
+            response_data = await response.json()
+        except Exception as exc:
+            raw_text = await response.text()
+            log.warning(
+                "Security panel response not JSON (status=%s): %s (exc=%s)",
+                getattr(response, "status", "unknown"),
+                raw_text[:100] if raw_text else "<empty>",
+                exc,
+            )
+
+            # Empty response often indicates expired auth - trigger re-auth
+            if not raw_text or raw_text.strip() == "":
+                log.warning("Empty response detected - likely expired auth, triggering re-authentication")
+                # Clear token to force re-login on next request
+                self._token = None
+                self._oauth_token = None
+                try:
+                    # Try one more time with fresh auth
+                    await self.login()
+                    # Retry the security panel fetch
+                    retry_response = await self.send_request("get", urls.SECURITY_PANEL, raise_on_error=False)
+                    if retry_response:
+                        try:
+                            return await retry_response.json()
+                        except Exception:
+                            pass
+                except Exception as login_exc:
+                    log.error("Re-authentication failed during security panel fetch retry: %s", login_exc)
+
+            return {}
+
         log.debug("Get CMS Settings URL (get): %s", urls.SECURITY_PANEL)
         log.debug("Get CMS Settings Response (parsed): %s", response_data)
 
@@ -642,9 +805,29 @@ class Client:
             log.warning(
                 "CMS settings response not JSON (status=%s): %s (exc=%s)",
                 status,
-                raw_text,
+                raw_text[:100] if raw_text else "<empty>",
                 exc,
             )
+
+            # Empty response often indicates expired auth - trigger re-auth
+            if not raw_text or raw_text.strip() == "":
+                log.warning("Empty response detected - likely expired auth, triggering re-authentication")
+                # Clear token to force re-login on next request
+                self._token = None
+                self._oauth_token = None
+                try:
+                    # Try one more time with fresh auth
+                    await self.login()
+                    # Retry the CMS settings fetch
+                    retry_response = await self.send_request("get", urls.CMS_SETTINGS, raise_on_error=False)
+                    if retry_response:
+                        try:
+                            return await retry_response.json()
+                        except Exception:
+                            pass
+                except Exception as login_exc:
+                    log.error("Re-authentication failed during CMS fetch retry: %s", login_exc)
+
             return {}
 
         log.debug("Get CMS Settings URL (get): %s", urls.CMS_SETTINGS)
@@ -775,6 +958,22 @@ class Client:
                 await asyncio.sleep(wait_seconds)
                 retry_delay = min(wait_seconds * 2, 300)
             except (TimeoutError, aiohttp.ClientError) as exc:
+                # Track consecutive failures to detect session staleness
+                self._consecutive_failures += 1
+                log.info(
+                    "Abode connection error (consecutive failures: %d): %s",
+                    self._consecutive_failures,
+                    exc,
+                )
+
+                # If 3+ consecutive failures, session likely stale - recreate it
+                if self._consecutive_failures >= 3:
+                    log.warning("Multiple consecutive failures - recreating session")
+                    try:
+                        await self._recreate_session()
+                    except Exception as recreate_exc:
+                        log.error("Session recreation failed: %s", recreate_exc)
+
                 # Only retry on connection errors, not on auth errors
                 if attempt == max_attempts - 1:
                     # Last attempt failed
@@ -825,6 +1024,17 @@ class Client:
         )
         headers["ABODE-API-KEY"] = self._token
 
+        # Proactively recreate session if it's getting too old (prevent server idle timeout)
+        if self._session_created_time:
+            session_age = (datetime.now() - self._session_created_time).total_seconds()
+            if session_age > self._session_max_age_seconds:
+                log.warning(
+                    "Session age (%d seconds) exceeds max age (%d seconds) - recreating session proactively",
+                    int(session_age),
+                    self._session_max_age_seconds,
+                )
+                await self._recreate_session()
+
         try:
             url = f"{urls.BASE}{path}"
             log.debug("API Request - method=%s, path=%s, data=%s", method, url, data)
@@ -844,15 +1054,33 @@ class Client:
                     try:
                         body = await response.json()
                     except Exception as exc:
-                        log.debug(
-                            "Response JSON decode failed for %s %s (%s), falling back to text",
+                        # JSON parsing failure - check if it's an auth issue
+                        raw_text = await response.text()
+                        log.warning(
+                            "Response JSON decode failed for %s %s (status=%s, text=%s): %s",
                             method.upper(),
                             path,
+                            status,
+                            raw_text[:100] if raw_text else "<empty>",
                             exc,
                         )
-                        body = await response.text()
+
+                        # Empty or minimal response often indicates expired auth
+                        if not raw_text or len(raw_text.strip()) < 10:
+                            log.error("Empty/minimal response detected - expired auth likely")
+                            # Clear token and raise auth exception to trigger retry with re-login
+                            self._token = None
+                            self._oauth_token = None
+                            raise AuthenticationException(
+                                (status, "Empty response - authentication likely expired")
+                            )
+
+                        # Not an auth issue - return text as fallback
+                        body = raw_text
                     # Return wrapper with extracted data (safe to use outside context)
                     self._set_connection_status("connected")
+                    self._last_successful_request = datetime.now()
+                    self._consecutive_failures = 0
                     return ResponseWrapper(body, status, headers_dict)
 
                 if status == 429:
@@ -916,3 +1144,45 @@ class Client:
         """Get the session after ensuring login."""
         await self.send_request("get", urls.PANEL)
         return self._session
+
+    async def _sync_socketio_cookies(self):
+        """Sync cookies from main session to SocketIO."""
+        if not self._session or not hasattr(self._session, 'cookie_jar'):
+            log.debug("No session or cookie jar available for sync")
+            return
+
+        try:
+            cookie_str = ""
+            cookies = self._session.cookie_jar.filter_cookies(urls.BASE)
+            cookie_str = "; ".join(
+                f"{name}={morsel.value}" for name, morsel in cookies.items()
+            )
+
+            if cookie_str and self._event_controller and hasattr(self._event_controller, '_socketio'):
+                log.info("Syncing cookies to SocketIO (%d chars)", len(cookie_str))
+                # Update SocketIO with fresh cookies
+                self._event_controller._socketio.set_cookie(cookie_str)
+            else:
+                log.debug("No cookies to sync to SocketIO or SocketIO not available")
+        except Exception as exc:
+            log.warning("Failed to sync cookies to SocketIO: %s", exc)
+
+    @property
+    def connection_diagnostics(self):
+        """Get connection health diagnostics."""
+        session_age = None
+        if self._session_created_time:
+            session_age = int((datetime.now() - self._session_created_time).total_seconds())
+
+        return {
+            "connection_status": self._connection_status,
+            "authenticated": bool(self._token or self._oauth_token),
+            "auth_count": self._auth_count,
+            "last_auth_time": self._last_auth_time.isoformat() if self._last_auth_time else None,
+            "last_successful_request": self._last_successful_request.isoformat() if self._last_successful_request else None,
+            "consecutive_failures": self._consecutive_failures,
+            "session_recreate_count": self._session_recreate_count,
+            "session_age_seconds": session_age,
+            "session_max_age_seconds": self._session_max_age_seconds,
+            "socketio_connected": self._event_controller._socketio_connected if self._event_controller else False,
+        }
