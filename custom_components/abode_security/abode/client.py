@@ -766,18 +766,15 @@ class Client:
                 exc,
             )
 
-            # Empty response often indicates expired auth - trigger re-auth
+            # Empty response indicates stale session - recreate entire session
             if not raw_text or raw_text.strip() == "":
                 log.warning(
-                    "Empty response detected - likely expired auth, triggering re-authentication"
+                    "Empty security panel response detected - session likely stale, recreating session"
                 )
-                # Clear token to force re-login on next request
-                self._token = None
-                self._oauth_token = None
                 try:
-                    # Try one more time with fresh auth
-                    await self.login()
-                    # Retry the security panel fetch
+                    # Recreate session (closes old connections, creates new ones, re-authenticates)
+                    await self._recreate_session()
+                    # Retry the security panel fetch with fresh session
                     retry_response = await self.send_request(
                         "get", urls.SECURITY_PANEL, raise_on_error=False
                     )
@@ -786,10 +783,10 @@ class Client:
                             return await retry_response.json()
                         except Exception:
                             pass
-                except Exception as login_exc:
+                except Exception as exc_retry:
                     log.error(
-                        "Re-authentication failed during security panel fetch retry: %s",
-                        login_exc,
+                        "Session recreation or security panel fetch retry failed: %s",
+                        exc_retry,
                     )
 
             return {}
@@ -825,18 +822,15 @@ class Client:
                 exc,
             )
 
-            # Empty response often indicates expired auth - trigger re-auth
+            # Empty response indicates stale session - recreate entire session
             if not raw_text or raw_text.strip() == "":
                 log.warning(
-                    "Empty response detected - likely expired auth, triggering re-authentication"
+                    "Empty CMS response detected - session likely stale, recreating session"
                 )
-                # Clear token to force re-login on next request
-                self._token = None
-                self._oauth_token = None
                 try:
-                    # Try one more time with fresh auth
-                    await self.login()
-                    # Retry the CMS settings fetch
+                    # Recreate session (closes old connections, creates new ones, re-authenticates)
+                    await self._recreate_session()
+                    # Retry the CMS settings fetch with fresh session
                     retry_response = await self.send_request(
                         "get", urls.CMS_SETTINGS, raise_on_error=False
                     )
@@ -845,9 +839,9 @@ class Client:
                             return await retry_response.json()
                         except Exception:
                             pass
-                except Exception as login_exc:
+                except Exception as exc_retry:
                     log.error(
-                        "Re-authentication failed during CMS fetch retry: %s", login_exc
+                        "Session recreation or CMS fetch retry failed: %s", exc_retry
                     )
 
             return {}
