@@ -1,5 +1,0 @@
-Abode integration fixes (Dec 2025)
-
-- Problem: CMS settings switches (dispatch/send media/test mode) were stuck off/unavailable because we only used the security-panel endpoint, which omits dispatch flags. Also, the CMS fetch spammed logs and hit the endpoint repeatedly.
-- Fixes: Call the dedicated /integrations/v1/cms/settings endpoint, merge with panel cache and security-panel fallback, normalize keys, and cache results for 30s to avoid hammering Abode. Reduced logging to debug for per-endpoint values, keeping a single combined info log.
-- Additional: Removed legacy /api/v1/panel/setting fallback and added DeviceInfo for the connection sensor earlier; SocketIO cookie/auth fixes were made in earlier commits.
