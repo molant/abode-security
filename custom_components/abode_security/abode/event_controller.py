@@ -63,8 +63,6 @@ class EventController:
 
         # Event loop reference for scheduling callbacks
         self._event_loop = None
-        # Track failed callbacks for debugging
-        self._failed_callbacks = []
 
         # Setup SocketIO
         self._socketio = sio.SocketIO(url=url, origin=urls.BASE)
@@ -280,10 +278,8 @@ class EventController:
             log.debug("Session initialized successfully")
         except TimeoutError:
             log.error("Session initialization timed out")
-            self._failed_callbacks.append(("_async_get_session", "timeout"))
         except Exception as exc:
             log.warning("Session initialization failed: %s", exc)
-            self._failed_callbacks.append(("_async_get_session", str(exc)))
 
     async def _async_get_session(self):
         """Get session asynchronously."""
@@ -357,7 +353,6 @@ class EventController:
             log.debug("Abode refresh completed successfully")
         except TimeoutError:
             log.error("Abode refresh timed out")
-            self._failed_callbacks.append(("_async_refresh", "timeout"))
         except Exception as exc:
             log.warning("Abode refresh failed: %s", exc)
 
