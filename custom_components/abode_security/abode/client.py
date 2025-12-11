@@ -318,6 +318,41 @@ class Client:
             log.warning("Could not start session monitor: %s", exc)
             self._session_monitor_running = False
 
+    async def _handle_empty_response_and_retry(
+        self,
+        url: str,
+        context: str,
+    ) -> dict | None:
+        """Handle empty response by recreating session and retrying.
+
+        When an endpoint returns an empty response, it indicates the session
+        is stale. Recreate the session and retry the request with fresh auth.
+
+        Args:
+            url: The endpoint URL to retry
+            context: Context string for logging (e.g., "security panel", "CMS")
+
+        Returns:
+            Parsed JSON response dict, or None if retry failed
+        """
+        log.warning(
+            "Empty %s response detected - session likely stale, recreating session",
+            context,
+        )
+        try:
+            await self._recreate_session()
+            retry_response = await self.send_request("get", url, raise_on_error=False)
+            if retry_response:
+                try:
+                    return await retry_response.json()
+                except Exception:
+                    pass
+        except Exception as exc:
+            log.error(
+                "Session recreation or %s fetch retry failed: %s", context, exc
+            )
+        return None
+
     def _stop_session_monitor(self):
         """Stop background session monitor task."""
         if not self._session_monitor_running:
@@ -767,26 +802,11 @@ class Client:
 
             # Empty response indicates stale session - recreate entire session
             if not raw_text or raw_text.strip() == "":
-                log.warning(
-                    "Empty security panel response detected - session likely stale, recreating session"
+                result = await self._handle_empty_response_and_retry(
+                    urls.SECURITY_PANEL, "security panel"
                 )
-                try:
-                    # Recreate session (closes old connections, creates new ones, re-authenticates)
-                    await self._recreate_session()
-                    # Retry the security panel fetch with fresh session
-                    retry_response = await self.send_request(
-                        "get", urls.SECURITY_PANEL, raise_on_error=False
-                    )
-                    if retry_response:
-                        try:
-                            return await retry_response.json()
-                        except Exception:
-                            pass
-                except Exception as exc_retry:
-                    log.error(
-                        "Session recreation or security panel fetch retry failed: %s",
-                        exc_retry,
-                    )
+                if result is not None:
+                    return result
 
             return {}
 
@@ -823,27 +843,12 @@ class Client:
 
             # Empty response indicates stale session - recreate entire session
             if not raw_text or raw_text.strip() == "":
-                log.warning(
-                    "Empty CMS response detected - session likely stale, recreating session"
+                result = await self._handle_empty_response_and_retry(
+                    urls.CMS_SETTINGS, "CMS"
                 )
-                try:
-                    # Recreate session (closes old connections, creates new ones, re-authenticates)
-                    await self._recreate_session()
-                    # Retry the CMS settings fetch with fresh session
-                    retry_response = await self.send_request(
-                        "get", urls.CMS_SETTINGS, raise_on_error=False
-                    )
-                    if retry_response:
-                        try:
-                            return await retry_response.json()
-                        except Exception:
-                            pass
-                except Exception as exc_retry:
-                    log.error(
-                        "Session recreation or CMS fetch retry failed: %s", exc_retry
-                    )
-
-            return {}
+                if result is not None:
+                    return result
+                return {}
 
         log.debug("Get CMS Settings URL (get): %s", urls.CMS_SETTINGS)
         log.debug("Get CMS Settings Response (parsed): %s", response_data)
