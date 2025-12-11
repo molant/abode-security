@@ -1044,7 +1044,10 @@ class Client:
         )
         headers["ABODE-API-KEY"] = self._token
 
-        # Proactively recreate session if it's getting too old (prevent server idle timeout)
+        # Failsafe: Proactively recreate session if it's getting too old
+        # This is a backup to the background session monitor. It ensures the session
+        # is recreated even if the monitor task fails or is not running, preventing
+        # the Abode server from timing out idle connections after ~1h 30m.
         if self._session_created_time:
             session_age = (datetime.now() - self._session_created_time).total_seconds()
             if session_age > self._session_max_age_seconds:
