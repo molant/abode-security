@@ -298,11 +298,10 @@ class Client:
         await self.login()
 
         # Sync cookies to SocketIO if available
-        if hasattr(self, "_sync_socketio_cookies"):
-            try:
-                await self._sync_socketio_cookies()
-            except Exception as exc:
-                log.warning("Failed to sync cookies after session recreation: %s", exc)
+        try:
+            await self._sync_socketio_cookies()
+        except Exception as exc:
+            log.warning("Failed to sync cookies after session recreation: %s", exc)
 
     def _start_session_monitor(self):
         """Start background task to monitor session age and recreate proactively."""
