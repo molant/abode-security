@@ -283,7 +283,7 @@ class EventController:
 
     async def _async_get_session(self):
         """Get session asynchronously."""
-        log.info("Attempting to fetch session cookies for SocketIO authentication")
+        log.debug("Attempting to fetch session cookies for SocketIO authentication")
         try:
             session = await self._client._get_session()
             # Set cookies from session
@@ -295,7 +295,7 @@ class EventController:
                         f"{name}={morsel.value}" for name, morsel in cookies.items()
                     )
                     if cookie_str:
-                        log.debug(f"Session cookies found: {len(cookies)} cookie(s)")
+                        log.debug("Session cookies found: %d cookie(s)", len(cookies))
                 except Exception as exc:
                     log.debug("Cookie parsing fallback due to: %s", exc)
                     try:
@@ -309,7 +309,8 @@ class EventController:
 
                 if cookie_str:
                     log.debug(
-                        f"Setting cookie for SocketIO connection (length: {len(cookie_str)})"
+                        "Setting cookie for SocketIO connection (length: %d)",
+                        len(cookie_str),
                     )
                     self._socketio.set_cookie(cookie_str)
                 else:
