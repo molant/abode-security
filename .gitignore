@@ -142,3 +142,18 @@ Thumbs.db
 tmp/
 claude.md
 .claude/plans/*.md
+
+# Home Assistant runtime files (don't commit these)
+config/*
+config/.storage/*
+config/.cloud/
+config/deps/
+config/tts/
+
+# Keep templates (do commit these)
+!config/configuration.yaml
+!config/.storage/
+!config/.storage/auth
+!config/.storage/auth_provider.homeassistant
+!config/.storage/onboarding
+!config/.storage/lovelace

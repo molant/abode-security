@@ -1,0 +1,14 @@
+{
+  "data": {
+    "config": {
+      "views": [
+        {
+          "title": "Home",
+          "cards": []
+        }
+      ]
+    }
+  },
+  "key": "lovelace",
+  "version": 1
+}

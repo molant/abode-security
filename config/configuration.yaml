@@ -1,0 +1,9 @@
+default_config:
+
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 172.16.0.0/12
+
+# Note: abode_security uses config_flow (UI-based setup)
+# Configuration will be added via .storage in Phase 2
