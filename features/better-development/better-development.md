@@ -52,14 +52,26 @@
 
 ## Phase 5: Frontend Dev Workflow
 
-- [ ] Evaluate current rollup setup in frontend/
-- [ ] Add/update package.json scripts:
-- [ ] build - production build to www/
-- [ ] watch - rebuild on changes
-- [ ] dev - watch with source maps
-- [ ] Add frontend dev container to docker-compose.yml (or document local workflow)
-- [ ] Test hot reload: change TS → rebuild → refresh dashboard → see changes
-- [ ] Add .nvmrc or engines field for Node version consistency
+**Note:** Creating new frontend infrastructure from scratch. Initial implementation will be a sidebar panel showing "Abode Configuration" text.
+
+- [ ] Create frontend/ source structure:
+  - [ ] src/ directory for TypeScript source files
+  - [ ] package.json with build scripts and dependencies
+  - [ ] rollup.config.js with cache busting configuration
+  - [ ] tsconfig.json for TypeScript compilation
+  - [ ] .nvmrc for Node version consistency
+- [ ] Implement initial panel component:
+  - [ ] Simple Lit component showing "Abode Configuration"
+  - [ ] Proper Home Assistant panel registration
+  - [ ] Basic styling with HA design system
+- [ ] Add package.json scripts:
+  - [ ] build - production build to custom_components/abode_security/www/ with cache busting
+  - [ ] watch - rebuild on changes for development
+  - [ ] dev - watch with source maps for debugging
+- [ ] Test hot reload workflow:
+  - [ ] Change TS source → auto rebuild → refresh dashboard → see changes
+  - [ ] Verify cache busting works (no stale JS after rebuild)
+- [ ] Document local frontend development workflow
 
 ## Phase 6: Playwright Testing Setup
 
@@ -70,6 +82,8 @@
     - [ ] tests/e2e/fixtures/auth.ts - HA login helper
     - [ ] tests/e2e/fixtures/mock-api.ts - mock server state control
 - [ ] Implement core e2e tests:
+    - [ ] Abode panel appears in sidebar
+    - [ ] Panel shows correct content ("Abode Configuration" text initially)
     - [ ] Dashboard loads with sensor data
     - [ ] Alarm mode display is correct
     - [ ] Arm/disarm interactions work
