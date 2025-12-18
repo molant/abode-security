@@ -34,9 +34,16 @@ def pytest_collection_modifyitems(config, items):
     skip_marker = pytest.mark.skip(
         reason="Test infrastructure complete but test needs updates - see phase-4-5.md"
     )
-    # Skip tests with hass fixture except test_one_config_allowed (our proof of concept)
+    # Tests enabled for Phase 4.5.1: Config flow tests
+    enabled_tests = {
+        "test_one_config_allowed",
+        "test_user_flow",
+        "test_step_mfa",
+        "test_step_reauth",
+    }
+    # Skip tests with hass fixture except enabled tests
     for item in items:
-        if "hass" in item.fixturenames and item.name != "test_one_config_allowed":
+        if "hass" in item.fixturenames and item.name not in enabled_tests:
             item.add_marker(skip_marker)
 
 
