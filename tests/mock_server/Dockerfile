@@ -1,9 +1,17 @@
-# Placeholder Dockerfile for mock Abode server
-# This will be implemented in Phase 2
-
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# For now, just create a container that exits
-CMD ["echo", "Mock server not implemented yet - see Phase 2"]
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY main.py .
+
+# Fixtures will be mounted as volume
+
+EXPOSE 8000
+
+# Run server
+CMD ["python", "main.py"]

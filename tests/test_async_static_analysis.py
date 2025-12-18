@@ -36,7 +36,7 @@ class AsyncAwaitStaticAnalyzer:
     def function_contains_await(self, func_name: str) -> bool:
         """Check if a function contains any await statements."""
         for node in ast.walk(self.tree):
-            if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)):  # noqa: SIM102
+            if isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef):  # noqa: SIM102
                 if node.name == func_name:
                     for child in ast.walk(node):
                         if isinstance(child, ast.Await):

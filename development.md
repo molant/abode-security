@@ -10,14 +10,33 @@ This guide will help you get started with developing the Abode Security custom i
 
 ## Quick Start
 
-### 1. Start Docker
+### 1. Set Up Python Virtual Environment
+
+Create and activate a virtual environment:
+```bash
+# Create virtual environment
+python3 -m venv .venv
+
+# Activate it (macOS/Linux)
+source .venv/bin/activate
+
+# Install development dependencies
+./scripts/setup-dev.sh
+```
+
+**Note**: You need to activate the virtual environment each time you open a new terminal:
+```bash
+source .venv/bin/activate
+```
+
+### 2. Start Docker
 
 If using Colima on macOS:
 ```bash
 colima start
 ```
 
-### 2. Launch Development Environment
+### 3. Launch Development Environment
 
 ```bash
 ./scripts/dev.sh
@@ -111,9 +130,11 @@ abode-security/
   - Config: `./config`
   - Integration: `./custom_components/abode_security`
 
-- **mock-abode**: Mock Abode API server (Phase 2+)
+- **mock-abode**: Mock Abode API server
   - Port: 8000
-  - Status: Placeholder (exits immediately)
+  - Status: Running on port 8000
+  - Test credentials: test@example.com / testpassword
+  - API docs: http://localhost:8000/docs
 
 ### Logs
 
@@ -136,7 +157,11 @@ The Abode Security integration uses config_flow (UI-based configuration):
 3. Search for "Abode Security"
 4. Follow the setup wizard
 
-**Note:** Currently requires a live Abode account. Mock server support coming in Phase 2.
+**Note:** Mock server is available for local development. Use test credentials:
+- Username: `test@example.com`
+- Password: `testpassword`
+
+The mock server provides all core Abode API endpoints without requiring a real Abode account.
 
 ## Common Tasks
 

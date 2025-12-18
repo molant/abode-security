@@ -1,0 +1,92 @@
+# Abode Mock API Server
+
+FastAPI-based mock server for Abode API endpoints used by the Home Assistant integration.
+
+## Running Locally
+
+### With Docker Compose (recommended)
+```bash
+docker-compose up mock-abode
+```
+
+### Standalone
+```bash
+cd tests/mock_server
+pip install -r requirements.txt
+python main.py
+```
+
+Server starts on http://localhost:8000
+
+## API Documentation
+
+FastAPI auto-generates docs at:
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+## Test Credentials
+
+- **Username**: `test@example.com`
+- **Password**: `testpassword`
+
+## Key Endpoints
+
+### Authentication
+- `POST /api/auth2/login` - Login and get session
+- `GET /api/auth2/claims` - Get OAuth token
+- `POST /api/v1/logout` - Logout
+
+### Panel
+- `GET /api/v1/panel` - Get panel status
+- `PUT /api/v1/panel/mode/{area}/{mode}` - Set alarm mode (standby/home/away)
+- `POST /integrations/v1/panel/alarm` - Trigger manual alarm
+
+### Devices
+- `GET /api/v1/devices` - List all devices
+- `GET /api/v1/devices/{id}` - Get specific device
+- `PUT /api/v1/devices/{id}` - Update device
+
+### Timeline
+- `GET /api/v1/timeline?size=10` - Get recent events
+
+### CMS Settings
+- `GET /integrations/v1/cms/settings` - Get monitoring settings
+- `POST /integrations/v1/cms/settings` - Update monitoring settings
+
+### Test Utilities
+- `POST /api/test/reset` - Reset all state to defaults
+- `GET /api/test/state` - View current server state (debugging)
+
+## State Management
+
+The server maintains in-memory state for:
+- Panel mode (standby/home/away)
+- Devices (loaded from `tests/fixtures/devices.json`)
+- Timeline events
+- CMS settings
+
+Use `POST /api/test/reset` to reset state between tests.
+
+## Example Usage
+
+### Login
+```bash
+curl -X POST http://localhost:8000/api/auth2/login \
+  -H "Content-Type: application/json" \
+  -d '{"id":"test@example.com","password":"testpassword"}'
+```
+
+### Set Panel Mode
+```bash
+curl -X PUT http://localhost:8000/api/v1/panel/mode/area_1/away
+```
+
+### Get Devices
+```bash
+curl http://localhost:8000/api/v1/devices
+```
+
+### Reset State
+```bash
+curl -X POST http://localhost:8000/api/test/reset
+```

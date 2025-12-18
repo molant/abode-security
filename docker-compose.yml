@@ -19,6 +19,8 @@ services:
   mock-abode:
     container_name: abode-dev-mock
     build: ./tests/mock_server
+    volumes:
+      - ./tests/fixtures:/app/fixtures:ro
     ports:
       - "8000:8000"
     networks:
