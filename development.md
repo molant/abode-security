@@ -82,12 +82,13 @@ git commit -m "your message"
 This will execute:
 - **Ruff** - Code linting and formatting
 - **MyPy** - Type checking
-- **Pytest** - Unit and integration tests
+- **Pytest** - Unit tests only (integration tests excluded)
 
-To run tests manually:
+#### Test Types
 
+**Unit Tests** (default):
 ```bash
-# Run all tests
+# Run unit tests (fast, no Docker required)
 pytest
 
 # Run with coverage
@@ -96,6 +97,24 @@ pytest --cov=custom_components/abode_security
 # Run specific test file
 pytest tests/test_advanced_features.py
 ```
+
+**Integration Tests** (require mock server):
+```bash
+# Integration tests use the mock Abode API server
+# They are marked with @pytest.mark.integration
+
+# Run integration tests only
+pytest -m integration
+
+# Run all tests (unit + integration)
+pytest -m ""
+```
+
+**Test Organization**:
+- `tests/test_*.py` - Unit tests with mocked responses
+- `tests/integration/test_*.py` - Integration tests using mock server
+- Current status: 87 passing unit tests, 136 tests skipped (HA environment dependent)
+- See `features/better-development/test-audit.md` for test categorization
 
 ### Code Quality
 

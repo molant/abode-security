@@ -24,16 +24,27 @@ from tests.common import load_fixture  # noqa: E402
 URL = url
 
 
-def pytest_collection_modifyitems(config, items):  # noqa: E402
-    """Skip tests that require full Home Assistant integration setup."""
+# Configure pytest-homeassistant-custom-component to load our integration
+pytest_plugins = "pytest_homeassistant_custom_component"
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip tests that aren't ready yet."""
     del config  # Unused parameter required by pytest hook
     skip_marker = pytest.mark.skip(
-        reason="Requires full Home Assistant integration setup"
+        reason="Test infrastructure complete but test needs updates - see phase-4-5.md"
     )
-    # Tests that use the 'hass' fixture need full HA environment
+    # Skip tests with hass fixture except test_one_config_allowed (our proof of concept)
     for item in items:
-        if "hass" in item.fixturenames:
+        if "hass" in item.fixturenames and item.name != "test_one_config_allowed":
             item.add_marker(skip_marker)
+
+
+@pytest.fixture(autouse=True)
+def auto_enable_custom_integrations(enable_custom_integrations):
+    """Enable custom integrations for all tests."""
+    del enable_custom_integrations  # Fixture dependency, not used directly
+    yield
 
 
 @pytest.fixture
