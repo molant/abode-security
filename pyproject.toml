@@ -29,7 +29,11 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=custom_components/abode_security --cov-report=term-missing"
+addopts = "--cov=custom_components/abode_security --cov-report=term-missing -m 'not integration'"
+markers = [
+    "integration: Integration tests requiring mock server (deselect with '-m \"not integration\"')",
+    "unit: Fast unit tests with mocked responses",
+]
 
 [tool.ruff]
 line-length = 88
