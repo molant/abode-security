@@ -4,6 +4,7 @@ import asyncio
 import collections
 import contextlib
 import logging
+import os
 import threading
 
 from . import socketio as sio
@@ -15,7 +16,31 @@ from .helpers import errors, timeline, urls
 
 log = logging.getLogger(__name__)
 
-SOCKETIO_URL = "wss://my.goabode.com/socket.io/"
+
+def _get_socketio_url():
+    """
+    Get Socket.IO URL derived from base URL.
+
+    Production: wss://my.goabode.com/socket.io/
+    Development: ws://mock-abode:8000/socket.io/
+
+    Derives from ABODE_BASE_URL environment variable or uses production default.
+    """
+    base = os.environ.get('ABODE_BASE_URL', 'https://my.goabode.com')
+
+    # Convert http(s) to ws(s)
+    if base.startswith('https://'):
+        ws_url = base.replace('https://', 'wss://')
+    elif base.startswith('http://'):
+        ws_url = base.replace('http://', 'ws://')
+    else:
+        # Assume it's a host without protocol, default to wss
+        ws_url = f'wss://{base}'
+
+    return f"{ws_url.rstrip('/')}/socket.io/"
+
+
+SOCKETIO_URL = _get_socketio_url()
 
 
 def _cookie_string(cookies):

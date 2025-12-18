@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import socketio
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -12,6 +13,11 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 app = FastAPI(title="Abode Mock API", version="1.0.0")
+
+# Create Socket.IO server
+sio = socketio.AsyncServer(
+    async_mode="asgi", cors_allowed_origins="*", logger=True, engineio_logger=False
+)
 
 # Load fixtures from existing test fixtures
 # Fixtures are mounted at /app/fixtures in the container
@@ -53,6 +59,48 @@ try:
 except FileNotFoundError:
     log.warning("devices.json fixture not found, using empty device list")
     state["devices"] = []
+
+
+# ===== Socket.IO Event Handlers =====
+
+
+@sio.event
+async def connect(sid, _environ):
+    """Handle client connection."""
+    log.info(f"Socket.IO client connected: {sid}")
+    return True
+
+
+@sio.event
+async def disconnect(sid):
+    """Handle client disconnection."""
+    log.info(f"Socket.IO client disconnected: {sid}")
+
+
+@sio.event
+async def subscribe(sid, data):
+    """
+    Handle subscription requests.
+
+    Abode clients subscribe to device/panel updates.
+    """
+    log.info(f"Socket.IO client {sid} subscribed to: {data}")
+    # In real Abode, this would register interest in specific device updates
+    # For mock, we'll just acknowledge
+    return {"status": "subscribed"}
+
+
+async def emit_state_change(event_type: str, data: dict):
+    """
+    Emit state change event to all connected clients.
+
+    Args:
+        event_type: Type of event (e.g., 'com.goabode.states')
+        data: Event data
+    """
+    log.info(f"Emitting Socket.IO event: {event_type} - {data}")
+    await sio.emit(event_type, data)
+
 
 # ===== Authentication Endpoints =====
 
@@ -149,6 +197,17 @@ async def set_panel_mode(area: str, mode: str):
     state["panel_mode"] = mode
     log.info(f"Panel mode changed to {mode} for {area}")
 
+    # Emit Socket.IO event for panel mode change
+    await emit_state_change(
+        "com.goabode.states",
+        {
+            "id": "alarm1",
+            "type_tag": "device_type.alarm",
+            "mode": mode,
+            "area": area,
+        },
+    )
+
     return {
         "success": True,
         "area": area,
@@ -223,6 +282,10 @@ async def update_device(device_id: str, request: Request):
         if device.get("id") == device_id:
             device.update(body)
             log.info(f"Device {device_id} updated")
+
+            # Emit Socket.IO event for device update
+            await emit_state_change("com.goabode.states", device)
+
             return device
 
     raise HTTPException(status_code=404, detail="Device not found")
@@ -353,8 +416,12 @@ async def root():
             "devices": "/api/v1/devices",
             "test": "/api/test/reset",
         },
+        "websocket": "Socket.IO available at /socket.io/",
     }
 
 
+# Wrap FastAPI app with Socket.IO
+socket_app = socketio.ASGIApp(sio, app)
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(socket_app, host="0.0.0.0", port=8000, log_level="info")
