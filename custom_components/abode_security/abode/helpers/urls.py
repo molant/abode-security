@@ -1,4 +1,10 @@
-BASE = 'https://my.goabode.com'
+import os
+
+# Base URL for Abode API
+# Production default: https://my.goabode.com
+# Development: Override with ABODE_BASE_URL environment variable
+# Example: ABODE_BASE_URL=http://mock-abode:8000 for local mock server
+BASE = os.environ.get('ABODE_BASE_URL', 'https://my.goabode.com').rstrip('/')
 
 LOGIN = '/api/auth2/login'
 LOGOUT = '/api/v1/logout'

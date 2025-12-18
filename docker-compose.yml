@@ -7,7 +7,7 @@ services:
       - ./custom_components/abode_security:/config/custom_components/abode_security
     environment:
       - TZ=America/New_York
-      - ABODE_API_URL=http://mock-abode:8000
+      - ABODE_BASE_URL=http://mock-abode:8000
     ports:
       - "8123:8123"
     restart: unless-stopped
