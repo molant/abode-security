@@ -20,19 +20,18 @@ from custom_components.abode_security.services import SERVICE_SETTINGS
 from .common import setup_platform
 
 
-async def test_change_settings(hass: HomeAssistant) -> None:
+async def test_change_settings(hass: HomeAssistant, mock_abode) -> None:
     """Test change_setting service."""
     await setup_platform(hass, ALARM_DOMAIN)
 
-    with patch("abode.client.Client.set_setting") as mock_set_setting:
-        await hass.services.async_call(
-            DOMAIN,
-            SERVICE_SETTINGS,
-            {"setting": "confirm_snd", "value": "loud"},
-            blocking=True,
-        )
-        await hass.async_block_till_done()
-        mock_set_setting.assert_called_once()
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SETTINGS,
+        {"setting": "confirm_snd", "value": "loud"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    mock_abode.set_setting.assert_called_once()
 
 
 async def test_add_unique_id(hass: HomeAssistant) -> None:
@@ -50,23 +49,19 @@ async def test_add_unique_id(hass: HomeAssistant) -> None:
     assert mock_entry.unique_id == mock_entry.data[CONF_USERNAME]
 
 
-async def test_unload_entry(hass: HomeAssistant) -> None:
+async def test_unload_entry(hass: HomeAssistant, mock_abode) -> None:
     """Test unloading the Abode Security entry."""
     mock_entry = await setup_platform(hass, ALARM_DOMAIN)
 
-    with (
-        patch("abode.client.Client.logout") as mock_logout,
-        patch("abode.event_controller.EventController.stop") as mock_events_stop,
-    ):
-        assert await hass.config_entries.async_unload(mock_entry.entry_id)
-    mock_logout.assert_called_once()
-    mock_events_stop.assert_called_once()
+    assert await hass.config_entries.async_unload(mock_entry.entry_id)
+    mock_abode.logout.assert_called_once()
+    mock_abode.events.stop.assert_called_once()
 
 
 async def test_invalid_credentials(hass: HomeAssistant) -> None:
     """Test Abode Security credentials changing."""
     with patch(
-        "custom_components.abode_security.Abode",
+        "custom_components.abode_security.abode.client.Client",
         side_effect=AbodeAuthenticationException(
             (HTTPStatus.BAD_REQUEST, "auth error")
         ),
@@ -87,7 +82,7 @@ async def test_invalid_credentials(hass: HomeAssistant) -> None:
 async def test_raise_config_entry_not_ready_when_offline(hass: HomeAssistant) -> None:
     """Config entry state is SETUP_RETRY when abode is offline."""
     with patch(
-        "custom_components.abode_security.Abode",
+        "custom_components.abode_security.abode.client.Client",
         side_effect=AbodeException("any"),
     ):
         config_entry = await setup_platform(hass, ALARM_DOMAIN)

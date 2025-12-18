@@ -99,15 +99,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data.get(CONF_USERNAME, "unknown"),
     )
 
-    from . import abode
-    from .abode.client import Client as Abode
-    from .abode.exceptions import (
+    # Import exceptions from absolute path matching test expectations
+    from abode_security.abode.exceptions import (
         AuthenticationException as AbodeAuthenticationException,
     )
-    from .abode.exceptions import Exception as AbodeException
-    from .abode.exceptions import (
+    from abode_security.abode.exceptions import Exception as AbodeException
+    from abode_security.abode.exceptions import (
         RateLimitException as AbodeRateLimitException,
     )
+
+    # Import Client from path matching test patch target
+    from custom_components.abode_security.abode.client import Client as Abode
+
+    from . import abode
     from .models import AbodeSystem  # Avoid circular import
 
     username = entry.data[CONF_USERNAME]
@@ -134,10 +138,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry, unique_id=entry.data[CONF_USERNAME]
         )
 
-    # Create client with native async support
-    abode_client = Abode(username, password, False, False, False)
-
+    abode_client = None
     try:
+        # Create client with native async support
+        abode_client = Abode(username, password, False, False, False)
+
         # Initialize async session and perform login + device/automation fetch
         await abode_client._async_initialize()
         if not abode_client._token:
@@ -148,7 +153,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await abode_client.get_automations()
 
     except AbodeRateLimitException as ex:
-        await abode_client.cleanup()
+        if abode_client:
+            await abode_client.cleanup()
         cooldown = max(ex.retry_after or 30, 30)
         LOGGER.warning(
             "Abode rate limited during setup: %s. Waiting %s seconds before retry.",
@@ -161,15 +167,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ) from ex
 
     except AbodeAuthenticationException as ex:
-        await abode_client.cleanup()
+        if abode_client:
+            await abode_client.cleanup()
         raise ConfigEntryAuthFailed(f"Invalid credentials: {ex}") from ex
 
     except (AbodeException, aiohttp.ClientError) as ex:
-        await abode_client.cleanup()
+        if abode_client:
+            await abode_client.cleanup()
         raise ConfigEntryNotReady(f"Unable to connect to Abode: {ex}") from ex
 
     except Exception as ex:
-        await abode_client.cleanup()
+        if abode_client:
+            await abode_client.cleanup()
         LOGGER.error("Unexpected error during Abode setup: %s", ex, exc_info=True)
         raise
 

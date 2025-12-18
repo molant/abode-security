@@ -34,12 +34,19 @@ def pytest_collection_modifyitems(config, items):
     skip_marker = pytest.mark.skip(
         reason="Test infrastructure complete but test needs updates - see phase-4-5.md"
     )
-    # Tests enabled for Phase 4.5.1: Config flow tests
+    # Tests enabled for Phase 4.5.1-4.5.2: Config flow + init tests
     enabled_tests = {
+        # Config flow tests (Phase 4.5.1)
         "test_one_config_allowed",
         "test_user_flow",
         "test_step_mfa",
         "test_step_reauth",
+        # Init tests (Phase 4.5.2)
+        "test_change_settings",
+        "test_add_unique_id",
+        "test_unload_entry",
+        "test_invalid_credentials",
+        "test_raise_config_entry_not_ready_when_offline",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:
@@ -71,6 +78,12 @@ def mock_abode() -> Generator[Mock]:
     mock_client.get_devices = AsyncMock(return_value=[])
     mock_client.get_automations = AsyncMock(return_value=[])
     mock_client.get_test_mode = AsyncMock(return_value=False)
+    mock_client._async_initialize = AsyncMock()
+    mock_client._token = "mock_token"
+    mock_client._devices = []
+    mock_client._automations = []
+    mock_client.cleanup = AsyncMock()
+    mock_client.set_setting = AsyncMock()
 
     # CMS settings methods
     cms_settings = {
@@ -87,13 +100,16 @@ def mock_abode() -> Generator[Mock]:
     mock_client.set_test_mode = AsyncMock(return_value=cms_settings)
 
     mock_client.events = Mock()
-    mock_client.events.add_event_callback = AsyncMock()
-    mock_client.events.remove_event_callback = AsyncMock()
+    mock_client.events.add_event_callback = Mock()
+    mock_client.events.remove_event_callback = Mock()
+    mock_client.events.set_event_loop = Mock()
+    mock_client.events.stop = Mock()
+    mock_client.events.start = Mock()
     mock_client.logout = AsyncMock()
-    mock_client.event_controller = Mock()
-    mock_client.event_controller.stop = Mock()
 
-    with patch("custom_components.abode_security.Abode", return_value=mock_client):
+    with patch(
+        "custom_components.abode_security.abode.client.Client", return_value=mock_client
+    ):
         yield mock_client
 
 

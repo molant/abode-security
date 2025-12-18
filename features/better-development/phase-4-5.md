@@ -10,9 +10,10 @@ Phase 4 successfully completed the test infrastructure. This document outlines t
 ## Current State (2024-12-18)
 
 - ✅ **Infrastructure**: Complete and proven working
-- ✅ **Tests enabled**: 4 of 136 (config flow tests)
-- ⏳ **Tests remaining**: 132
+- ✅ **Tests enabled**: 9 of 136 (config flow + init tests)
+- ⏳ **Tests remaining**: 127
 - ✅ **Phase 4.5.1**: Complete (config flow exception handling)
+- ✅ **Phase 4.5.2**: Complete (init exception handling)
 
 ## Challenges Identified
 
@@ -257,13 +258,31 @@ async def _async_abode_login(self, step_id: str) -> FlowResult:
 - Client must be imported from path that matches test patch target (`custom_components.abode_security.abode.client`)
 - Mock compatibility requires checking `hasattr(result, "__await__")` before awaiting
 
-### Phase 4.5.2: Fix Init Exception Handling
+### Phase 4.5.2: Fix Init Exception Handling ✅ COMPLETE
 
-**Status**: ⏳ Pending
+**Status**: ✅ Complete (2024-12-18)
+**Tests enabled**: 5 (test_change_settings, test_add_unique_id, test_unload_entry, test_invalid_credentials, test_raise_config_entry_not_ready_when_offline)
 
-Similar approach for `__init__.py`
+**Files modified**:
+1. `custom_components/abode_security/__init__.py`:
+   - Updated exception imports to use absolute paths matching test expectations
+   - Moved Client instantiation inside try block to catch exceptions during construction
+   - Added null checks for abode_client in cleanup code
+2. `tests/test_init.py`:
+   - Fixed patch targets to use correct paths (custom_components.abode_security.abode.client.Client)
+   - Updated tests to use mock_abode fixture instead of patching
+3. `tests/common.py`:
+   - Updated event_controller.sio patch to use absolute path
+4. `tests/conftest.py`:
+   - Updated mock_abode fixture to patch correct Client location
+   - Added missing mock methods (_async_initialize, cleanup, set_setting, etc.)
+   - Enabled 5 init tests in enabled_tests set
 
-**Expected tests to pass**: 5 init tests
+**Key learnings**:
+- Exception handling must wrap Client instantiation, not just initialization methods
+- Tests that need full integration setup should use the mock_abode fixture
+- MockConfigEntry needs runtime_data to be properly set during setup
+- All 9 tests (4 config flow + 5 init) now passing
 
 ### Phase 4.5.3: Enable Platform Tests
 
@@ -273,7 +292,7 @@ Review and enable platform tests one file at a time.
 
 ## Success Metrics
 
-- ✅ **Minimum**: Enable config flow + init tests (8 tests total) - **4/8 complete**
+- ✅ **Minimum**: Enable config flow + init tests (9 tests total) - **9/9 complete**
 - ⏳ **Good**: Enable simple platforms too (18 tests total)
 - ⏳ **Excellent**: Enable all platforms (80+ tests total)
 - ⏳ **Outstanding**: Enable integration tests too (100+ tests total)
@@ -283,7 +302,7 @@ Review and enable platform tests one file at a time.
 | Phase | Tests | Status | Date |
 |-------|-------|--------|------|
 | 4.5.1 | Config Flow (3) | ✅ Complete | 2024-12-18 |
-| 4.5.2 | Init (5) | ⏳ Pending | - |
+| 4.5.2 | Init (5) | ✅ Complete | 2024-12-18 |
 | 4.5.3 | Platform Tests | ⏳ Pending | - |
 
 ## Notes

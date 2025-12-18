@@ -33,7 +33,7 @@ async def setup_platform(hass: HomeAssistant, platform: str) -> MockConfigEntry:
 
     with (
         patch("custom_components.abode_security.PLATFORMS", [platform]),
-        patch("abode.event_controller.sio"),
+        patch("abode_security.abode.event_controller.sio"),
     ):
         assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
