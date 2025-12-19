@@ -4,16 +4,16 @@ from http import HTTPStatus
 from unittest.mock import patch
 
 import pytest
-from abode_security.abode.exceptions import (
-    AuthenticationException as AbodeAuthenticationException,
-)
-from abode_security.abode.helpers.errors import MFA_CODE_REQUIRED
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from requests.exceptions import ConnectTimeout
 
+from custom_components.abode_security.abode.exceptions import (
+    AuthenticationException as AbodeAuthenticationException,
+)
+from custom_components.abode_security.abode.helpers.errors import MFA_CODE_REQUIRED
 from custom_components.abode_security.const import CONF_POLLING, DOMAIN
 from tests.common import MockConfigEntry
 

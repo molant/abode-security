@@ -1,7 +1,7 @@
 """Root conftest for pytest-homeassistant-custom-component."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 # Setup paths for custom_components and vendored libraries FIRST
 # This must run before any imports from custom_components

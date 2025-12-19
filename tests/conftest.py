@@ -2,23 +2,15 @@
 
 import contextlib
 import json
-import sys
 from collections.abc import Generator
-from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
-# Ensure custom_components directory is in sys.path for Home Assistant to find integrations
-_CUSTOM_COMPONENTS_PATH = Path(__file__).resolve().parents[1] / "custom_components"
-if (custom_components_path_str := str(_CUSTOM_COMPONENTS_PATH)) not in sys.path:
-    sys.path.insert(0, custom_components_path_str)
-
-# Vendored abode library is now in custom_components/abode_security/abode
-# and will be imported as abode_security.abode via the sys.path setup above
-
-import pytest  # noqa: E402
-from abode_security.abode.helpers import urls as url  # noqa: E402, N812
+# Vendored abode library is in custom_components/abode_security/abode
+# Use proper absolute imports for test code
+import pytest
 from aioresponses import aioresponses  # noqa: E402
 
+from custom_components.abode_security.abode.helpers import urls as url  # noqa: N812
 from tests.common import load_fixture  # noqa: E402
 
 URL = url
@@ -284,7 +276,7 @@ async def abode_with_mock_server(
 
     Useful for integration tests that need a real client instance.
     """
-    from abode_security.abode.client import Client as Abode
+    from custom_components.abode_security.abode.client import Client as Abode
 
     # Set environment variable for this test
     original_url = os.environ.get("ABODE_BASE_URL")

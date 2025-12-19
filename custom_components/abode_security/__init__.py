@@ -99,19 +99,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data.get(CONF_USERNAME, "unknown"),
     )
 
-    # Import exceptions from absolute path matching test expectations
-    from abode_security.abode.exceptions import (
+    # Import using relative imports (proper pattern for production code)
+    from . import abode
+    from .abode.client import Client as Abode
+    from .abode.exceptions import (
         AuthenticationException as AbodeAuthenticationException,
     )
-    from abode_security.abode.exceptions import Exception as AbodeException
-    from abode_security.abode.exceptions import (
+    from .abode.exceptions import Exception as AbodeException
+    from .abode.exceptions import (
         RateLimitException as AbodeRateLimitException,
     )
-
-    # Import Client from path matching test patch target
-    from custom_components.abode_security.abode.client import Client as Abode
-
-    from . import abode
     from .models import AbodeSystem  # Avoid circular import
 
     username = entry.data[CONF_USERNAME]

@@ -21,12 +21,11 @@ from requests.exceptions import (  # type: ignore[import-untyped]
     HTTPError,
 )
 
-# Import using absolute path to match test imports and avoid class identity issues
-from abode_security.abode.exceptions import (
+# Import using relative imports (proper pattern for production code)
+from .abode.exceptions import (
     AuthenticationException as AbodeAuthenticationException,
 )
-from abode_security.abode.helpers.errors import MFA_CODE_REQUIRED
-
+from .abode.helpers.errors import MFA_CODE_REQUIRED
 from .const import (
     CONF_DEBUG_LOGGING,
     CONF_ENABLE_EVENTS,
@@ -66,8 +65,7 @@ class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     async def _async_abode_login(self, step_id: str) -> ConfigFlowResult:
         """Handle login with Abode."""
         # Import Client inside function so test mocks can intercept it
-        # Using custom_components path to match test patch target
-        from custom_components.abode_security.abode.client import Client as Abode
+        from .abode.client import Client as Abode
 
         errors = {}
 
@@ -116,8 +114,7 @@ class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     async def _async_abode_mfa_login(self) -> ConfigFlowResult:
         """Handle multi-factor authentication (MFA) login with Abode."""
         # Import Client inside function so test mocks can intercept it
-        # Using custom_components path to match test patch target
-        from custom_components.abode_security.abode.client import Client as Abode
+        from .abode.client import Client as Abode
 
         try:
             # Create instance to access login method for passing MFA code

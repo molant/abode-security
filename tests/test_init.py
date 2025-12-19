@@ -3,17 +3,17 @@
 from http import HTTPStatus
 from unittest.mock import patch
 
-from abode_security.abode.exceptions import (
-    AuthenticationException as AbodeAuthenticationException,
-)
-from abode_security.abode.exceptions import (
-    Exception as AbodeException,
-)
 from homeassistant.components.alarm_control_panel import DOMAIN as ALARM_DOMAIN
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_USERNAME
 from homeassistant.core import HomeAssistant
 
+from custom_components.abode_security.abode.exceptions import (
+    AuthenticationException as AbodeAuthenticationException,
+)
+from custom_components.abode_security.abode.exceptions import (
+    Exception as AbodeException,
+)
 from custom_components.abode_security.const import DOMAIN
 from custom_components.abode_security.services import SERVICE_SETTINGS
 

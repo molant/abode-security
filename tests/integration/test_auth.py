@@ -3,7 +3,8 @@
 import os
 
 import pytest
-from abode_security.abode.client import Client as Abode
+
+from custom_components.abode_security.abode.client import Client as Abode
 
 
 @pytest.mark.integration
