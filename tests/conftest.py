@@ -48,6 +48,11 @@ def pytest_collection_modifyitems(config, items):
         "test_cover_attributes",
         "test_cover_open",
         "test_cover_close",
+        # Lock (4/4)
+        "test_lock_entity_registry",
+        "test_lock_attributes",
+        "test_lock_lock",
+        "test_lock_unlock",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:

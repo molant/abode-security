@@ -351,7 +351,11 @@ async def test_PLATFORM_SPECIFIC_NAME(
   - test_cover_attributes ✅
   - test_cover_open ✅
   - test_cover_close ✅
-- [ ] Lock (4 tests)
+- [x] Lock (4/4 tests) ✅ Complete - 2025-12-18 - 100% coverage
+  - test_lock_entity_registry ✅
+  - test_lock_attributes ✅
+  - test_lock_lock ✅
+  - test_lock_unlock ✅
 
 **Phase 2**: Medium Platforms (Priority 2 - 13 tests)
 - [ ] Sensor (2 tests)
