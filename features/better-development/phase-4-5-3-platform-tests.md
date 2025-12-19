@@ -362,7 +362,14 @@ async def test_PLATFORM_SPECIFIC_NAME(
   - test_sensor_entity_registry ✅
   - test_sensor_attributes ✅
 - [ ] Alarm control panel (6 tests)
-- [ ] Light (7 tests)
+- [x] Light (7/7 tests) ✅ Complete - 2025-12-19 - 93% coverage
+  - test_light_entity_registry ✅
+  - test_light_attributes ✅
+  - test_light_switch_off ✅
+  - test_light_switch_on ✅
+  - test_light_set_brightness ✅
+  - test_light_set_color ✅
+  - test_light_set_color_temp ✅
 
 **Phase 3**: Complex Platforms (Priority 3 - 65 tests)
 - [ ] Camera (5 tests)

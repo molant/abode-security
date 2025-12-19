@@ -56,6 +56,14 @@ def pytest_collection_modifyitems(config, items):
         # Sensor (2/2)
         "test_sensor_entity_registry",
         "test_sensor_attributes",
+        # Light (7/7)
+        "test_light_entity_registry",
+        "test_light_attributes",
+        "test_light_switch_off",
+        "test_light_switch_on",
+        "test_light_set_brightness",
+        "test_light_set_color",
+        "test_light_set_color_temp",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:
