@@ -212,7 +212,7 @@ Run tests with different configurations:
 pytest
 
 # All tests (unit + integration with mock server)
-./run_all_tests.sh
+./scripts/run_all_tests.sh
 
 # Integration tests only (requires mock server)
 docker-compose up -d
