@@ -345,8 +345,12 @@ async def test_PLATFORM_SPECIFIC_NAME(
 **Phase 1**: Simple Platforms (Priority 1 - 10 tests)
 - [x] Binary sensor (2/2 tests) ✅ Complete - 2025-12-18
   - test_binary_sensor_with_mock_server ✅
-  - test_attributes ✅
-- [ ] Cover (4 tests)
+  - test_binary_sensor_attributes ✅
+- [x] Cover (4/4 tests) ✅ Complete - 2025-12-18 - 100% coverage
+  - test_cover_entity_registry ✅
+  - test_cover_attributes ✅
+  - test_cover_open ✅
+  - test_cover_close ✅
 - [ ] Lock (4 tests)
 
 **Phase 2**: Medium Platforms (Priority 2 - 13 tests)

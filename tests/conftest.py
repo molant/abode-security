@@ -40,8 +40,14 @@ def pytest_collection_modifyitems(config, items):
         "test_invalid_credentials",
         "test_raise_config_entry_not_ready_when_offline",
         # Platform tests with mock server (Phase 4.5.3)
+        # Binary sensor (2/2)
         "test_binary_sensor_with_mock_server",
         "test_binary_sensor_attributes",
+        # Cover (4/4)
+        "test_cover_entity_registry",
+        "test_cover_attributes",
+        "test_cover_open",
+        "test_cover_close",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:

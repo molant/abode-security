@@ -401,6 +401,12 @@ async def get_state():
 # ===== Server Setup =====
 
 
+@app.get("/health")
+async def health():
+    """Health check endpoint."""
+    return {"status": "ok"}
+
+
 @app.get("/")
 async def root():
     """
