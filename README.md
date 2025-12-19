@@ -203,11 +203,28 @@ This integration includes:
 - **Error Handling** - Consistent error handling with decorators
 - **Async Foundation** - Foundation for non-blocking operations
 
+### Testing
+
+Run tests with different configurations:
+
+```bash
+# Fast unit tests (pre-commit default)
+pytest
+
+# All tests (unit + integration with mock server)
+./run_all_tests.sh
+
+# Integration tests only (requires mock server)
+docker-compose up -d
+pytest -m integration
+docker-compose down
+```
+
 See [DEVELOPMENT.md](DEVELOPMENT.md) for:
 - Architecture overview
 - Contributing guidelines
 - Development setup
-- Testing instructions
+- Detailed testing instructions
 - Building and deployment
 
 ## Architecture & Implementation
