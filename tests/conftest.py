@@ -53,6 +53,9 @@ def pytest_collection_modifyitems(config, items):
         "test_lock_attributes",
         "test_lock_lock",
         "test_lock_unlock",
+        # Sensor (2/2)
+        "test_sensor_entity_registry",
+        "test_sensor_attributes",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:

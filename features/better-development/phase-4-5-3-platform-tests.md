@@ -358,7 +358,9 @@ async def test_PLATFORM_SPECIFIC_NAME(
   - test_lock_unlock ✅
 
 **Phase 2**: Medium Platforms (Priority 2 - 13 tests)
-- [ ] Sensor (2 tests)
+- [x] Sensor (2/2 tests) ✅ Complete - 2025-12-18 - 89% coverage
+  - test_sensor_entity_registry ✅
+  - test_sensor_attributes ✅
 - [ ] Alarm control panel (6 tests)
 - [ ] Light (7 tests)
 
