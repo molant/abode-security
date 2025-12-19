@@ -271,16 +271,66 @@ async def health():
     return {"status": "ok"}
 ```
 
-**2. Proof-of-Concept Test** (tests/test_binary_sensor.py:55-102)
-- Added integration test `test_binary_sensor_with_mock_server`
+**2. Binary Sensor Tests** (tests/test_binary_sensor.py)
+- `test_binary_sensor_with_mock_server` - Entity registry validation
+- `test_binary_sensor_attributes` - Entity attributes validation
 - Key patterns demonstrated:
   - Import and reload urls module to pick up environment variable
   - Use `@pytest.mark.integration` and `@pytest.mark.enable_socket`
   - Include `CONF_POLLING` in config entry data
   - Restore environment in `finally` block
+  - **IMPORTANT**: Use platform-specific test names (e.g., `test_binary_sensor_attributes` not just `test_attributes`) to avoid conflicts
 
-**3. Test Configuration** (tests/conftest.py:43)
-- Added `test_binary_sensor_with_mock_server` to `enabled_tests` set
+**3. Test Configuration** (tests/conftest.py:43-44)
+- Added both binary sensor tests to `enabled_tests` set
+
+### Test Conversion Pattern
+
+When converting platform tests to use mock server:
+
+```python
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_PLATFORM_SPECIFIC_NAME(
+    hass: HomeAssistant,
+    mock_server_client: dict[str, str]
+) -> None:
+    """Test description."""
+    import importlib
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Your test assertions here
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
+```
+
+**Critical Requirements:**
+1. Test name must include platform prefix (e.g., `test_cover_attributes` not `test_attributes`)
+2. Add test name to `enabled_tests` in conftest.py
+3. Use both markers: `@pytest.mark.integration` and `@pytest.mark.enable_socket`
+4. Always reload urls module after setting environment variable
+5. Always restore environment in finally block
 
 ## Next Steps
 
