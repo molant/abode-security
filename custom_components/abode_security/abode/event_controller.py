@@ -67,7 +67,9 @@ class EventController:
     DEFAULT_CALLBACK_TIMEOUT = 10  # seconds for normal callbacks
     LONG_OPERATION_TIMEOUT = 30  # seconds for setup/initialization callbacks
 
-    def __init__(self, client, url=SOCKETIO_URL):
+    def __init__(self, client, url=None):
+        if url is None:
+            url = _get_socketio_url()
         self._client = client
         self._thread = None
         self._running = False
@@ -218,6 +220,9 @@ class EventController:
         """Register a callback for a specific timeline event."""
         if not timeline_events:
             return False
+
+        if isinstance(timeline_events, dict):
+            timeline_events = [timeline_events]
 
         with self._callback_lock:
             for timeline_event in always_iterable(timeline_events):

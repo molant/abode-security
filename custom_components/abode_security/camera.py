@@ -60,8 +60,10 @@ class AbodeCamera(AbodeDevice, Camera):
         # Wrap the async callback since add_timeline_callback expects sync callbacks
         def sync_capture_wrapper(capture: Any) -> None:
             """Sync wrapper to schedule async capture callback."""
-            # Use Home Assistant's async_create_task for proper cleanup on removal
-            self.hass.async_create_task(self._capture_callback(capture))
+            # Schedule on the event loop even if invoked from the SocketIO thread.
+            self.hass.loop.call_soon_threadsafe(
+                self.hass.async_create_task, self._capture_callback(capture)
+            )
 
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(
@@ -78,8 +80,10 @@ class AbodeCamera(AbodeDevice, Camera):
 
     def capture(self) -> bool:
         """Request a new image capture."""
-        # Use Home Assistant's async_create_task for proper cleanup on removal
-        self.hass.async_create_task(self._async_capture())
+        # Schedule on the event loop even if invoked from an executor thread.
+        self.hass.loop.call_soon_threadsafe(
+            self.hass.async_create_task, self._async_capture()
+        )
         return True  # Return True to indicate task was scheduled
 
     async def _async_capture(self) -> None:
@@ -92,9 +96,10 @@ class AbodeCamera(AbodeDevice, Camera):
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
     def refresh_image(self) -> None:
         """Find a new image on the timeline."""
-        # Use Home Assistant's async_create_task for proper cleanup on removal
-        # This returns immediately while the coroutine runs in the event loop
-        self.hass.async_create_task(self._async_refresh_image())
+        # Schedule on the event loop even if invoked from an executor thread.
+        self.hass.loop.call_soon_threadsafe(
+            self.hass.async_create_task, self._async_refresh_image()
+        )
 
     async def _async_refresh_image(self) -> None:
         """Async version of refresh_image."""
@@ -134,15 +139,13 @@ class AbodeCamera(AbodeDevice, Camera):
 
         return None
 
-    def turn_on(self) -> None:
+    async def async_turn_on(self) -> None:
         """Turn on camera."""
-        # Use Home Assistant's async_create_task for proper cleanup on removal
-        self.hass.async_create_task(self._async_privacy_mode(False))
+        await self._async_privacy_mode(False)
 
-    def turn_off(self) -> None:
+    async def async_turn_off(self) -> None:
         """Turn off camera."""
-        # Use Home Assistant's async_create_task for proper cleanup on removal
-        self.hass.async_create_task(self._async_privacy_mode(True))
+        await self._async_privacy_mode(True)
 
     async def _async_privacy_mode(self, enable: bool) -> None:
         """Set privacy mode asynchronously."""

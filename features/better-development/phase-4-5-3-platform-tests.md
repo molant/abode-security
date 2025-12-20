@@ -284,6 +284,12 @@ async def health():
 **3. Test Configuration** (tests/conftest.py:43-44)
 - Added both binary sensor tests to `enabled_tests` set
 
+**4. Camera Platform Enablement** (2025-12-19)
+- Added thread-safe scheduling for camera capture/refresh callbacks
+- Converted camera services to async dispatcher usage to avoid thread violations
+- Made timeline callback registration accept a dict event payload
+- Ensured Socket.IO URL respects `ABODE_BASE_URL` at runtime
+
 ### Test Conversion Pattern
 
 When converting platform tests to use mock server:
@@ -372,7 +378,12 @@ async def test_PLATFORM_SPECIFIC_NAME(
   - test_light_set_color_temp ✅
 
 **Phase 3**: Complex Platforms (Priority 3 - 65 tests)
-- [ ] Camera (5 tests)
+- [x] Camera (5/5 tests) ✅ Complete - 2025-12-19
+  - test_camera_entity_registry ✅
+  - test_camera_attributes ✅
+  - test_camera_capture_image ✅
+  - test_camera_on ✅
+  - test_camera_off ✅
 - [ ] Switch (23 tests)
 - [ ] CMS settings switches (35 tests)
 

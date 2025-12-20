@@ -9,7 +9,7 @@ import voluptuous as vol
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.dispatcher import dispatcher_send
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .abode.exceptions import Exception as AbodeException
 from .const import DOMAIN, LOGGER
@@ -111,11 +111,10 @@ async def _change_setting(call: ServiceCall) -> None:
         LOGGER.warning(ex)
 
 
-def _capture_image(call: ServiceCall) -> None:
+async def _capture_image(call: ServiceCall) -> None:
     """Capture a new image.
 
-    This is a sync function (not async) because it only sends dispatcher signals
-    via dispatcher_send(), which is a pure synchronous operation with no I/O.
+    This is async so signals are sent from the event loop for thread safety.
     """
     entity_ids = call.data[ATTR_ENTITY_ID]
 
@@ -130,14 +129,13 @@ def _capture_image(call: ServiceCall) -> None:
 
     for entity_id in target_entities:
         signal = f"abode_camera_capture_{entity_id}"
-        dispatcher_send(call.hass, signal)
+        async_dispatcher_send(call.hass, signal)
 
 
-def _trigger_automation(call: ServiceCall) -> None:
+async def _trigger_automation(call: ServiceCall) -> None:
     """Trigger an Abode automation.
 
-    This is a sync function (not async) because it only sends dispatcher signals
-    via dispatcher_send(), which is a pure synchronous operation with no I/O.
+    This is async so signals are sent from the event loop for thread safety.
     """
     entity_ids = call.data[ATTR_ENTITY_ID]
 
@@ -152,7 +150,7 @@ def _trigger_automation(call: ServiceCall) -> None:
 
     for entity_id in target_entities:
         signal = f"abode_trigger_automation_{entity_id}"
-        dispatcher_send(call.hass, signal)
+        async_dispatcher_send(call.hass, signal)
 
 
 async def _trigger_alarm_handler(call: ServiceCall) -> None:

@@ -71,6 +71,12 @@ def pytest_collection_modifyitems(config, items):
         "test_alarm_arm_away",
         "test_alarm_arm_home",
         "test_alarm_disarm",
+        # Camera (5/5) - Phase 4.5.3
+        "test_camera_entity_registry",
+        "test_camera_attributes",
+        "test_camera_capture_image",
+        "test_camera_on",
+        "test_camera_off",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:
