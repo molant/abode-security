@@ -99,6 +99,55 @@ def pytest_collection_modifyitems(config, items):
         "test_abode_switch_error_handling",
         "test_automation_switch_error_handling",
         "test_automation_trigger_error_handling",
+        # CMS Settings Switches (42/42) - Phase 4.5.3
+        # Monitoring Active (7)
+        "test_monitoring_active_entity_registry",
+        "test_monitoring_active_attributes",
+        "test_monitoring_active_initial_status_on",
+        "test_monitoring_active_initial_status_off",
+        "test_monitoring_active_turn_on",
+        "test_monitoring_active_turn_off",
+        "test_monitoring_active_error_handling",
+        # Send Media (7)
+        "test_send_media_entity_registry",
+        "test_send_media_attributes",
+        "test_send_media_initial_status_on",
+        "test_send_media_initial_status_off",
+        "test_send_media_turn_on",
+        "test_send_media_turn_off",
+        "test_send_media_error_handling",
+        # Dispatch Without Verification (7)
+        "test_dispatch_without_verification_entity_registry",
+        "test_dispatch_without_verification_attributes",
+        "test_dispatch_without_verification_initial_status_on",
+        "test_dispatch_without_verification_initial_status_off",
+        "test_dispatch_without_verification_turn_on",
+        "test_dispatch_without_verification_turn_off",
+        "test_dispatch_without_verification_error_handling",
+        # Dispatch Police (7)
+        "test_dispatch_police_entity_registry",
+        "test_dispatch_police_attributes",
+        "test_dispatch_police_initial_status_on",
+        "test_dispatch_police_initial_status_off",
+        "test_dispatch_police_turn_on",
+        "test_dispatch_police_turn_off",
+        "test_dispatch_police_error_handling",
+        # Dispatch Fire (7)
+        "test_dispatch_fire_entity_registry",
+        "test_dispatch_fire_attributes",
+        "test_dispatch_fire_initial_status_on",
+        "test_dispatch_fire_initial_status_off",
+        "test_dispatch_fire_turn_on",
+        "test_dispatch_fire_turn_off",
+        "test_dispatch_fire_error_handling",
+        # Dispatch Medical (7)
+        "test_dispatch_medical_entity_registry",
+        "test_dispatch_medical_attributes",
+        "test_dispatch_medical_initial_status_on",
+        "test_dispatch_medical_initial_status_off",
+        "test_dispatch_medical_turn_on",
+        "test_dispatch_medical_turn_off",
+        "test_dispatch_medical_error_handling",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:

@@ -288,7 +288,7 @@ async def _async_abode_login(self, step_id: str) -> FlowResult:
 
 Review and enable platform tests one file at a time.
 
-**Current test status**: 59 passed, 167 skipped
+**Current test status**: 101 passed, 125 skipped
 
 **Enabled so far**:
 - Binary sensor (2/2)
@@ -299,6 +299,7 @@ Review and enable platform tests one file at a time.
 - Alarm control panel (5/6)
 - Camera (5/5)
 - Switch (21/21)
+- CMS Settings Switches (42/42)
 
 **Tests that will pass**: 10-75 tests (depending on effort)
 

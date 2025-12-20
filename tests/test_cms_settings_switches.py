@@ -1,10 +1,14 @@
 """Tests for CMS Settings configuration switches."""
 
+import os
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
 from homeassistant.const import (
     ATTR_ENTITY_ID,
+    CONF_PASSWORD,
+    CONF_USERNAME,
     SERVICE_TURN_OFF,
     SERVICE_TURN_ON,
     STATE_OFF,
@@ -12,8 +16,11 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from .common import setup_platform
+from custom_components.abode_security import DOMAIN
+from custom_components.abode_security.const import CONF_POLLING
+
 from .test_constants import (
     DISPATCH_FIRE_ENTITY_ID,
     DISPATCH_FIRE_UID,
@@ -34,113 +41,330 @@ from .test_constants import (
 # ============================================================================
 
 
+@pytest.mark.integration
+@pytest.mark.enable_socket
 async def test_monitoring_active_entity_registry(
-    hass: HomeAssistant, entity_registry: er.EntityRegistry
+    hass: HomeAssistant,
+    mock_server_client: dict[str, str],
+    entity_registry: er.EntityRegistry,
 ) -> None:
     """Test that monitoring_active is registered with correct unique_id."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    entry = entity_registry.async_get(MONITORING_ACTIVE_ENTITY_ID)
-    assert entry is not None
-    assert entry.unique_id == MONITORING_ACTIVE_UID
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        entry = entity_registry.async_get(MONITORING_ACTIVE_ENTITY_ID)
+        assert entry is not None
+        assert entry.unique_id == MONITORING_ACTIVE_UID
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_monitoring_active_attributes(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_monitoring_active_attributes(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the monitoring_active switch attributes are correct."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    state = hass.states.get(MONITORING_ACTIVE_ENTITY_ID)
-    assert state is not None
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        state = hass.states.get(MONITORING_ACTIVE_ENTITY_ID)
+        assert state is not None
+        # Mock server default: sendMedia = True
+        assert state.state == STATE_ON
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_monitoring_active_initial_status_on(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_monitoring_active_initial_status_on(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that monitoring_active switch pulls initial status when enabled."""
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.get_monitoring_active",
-        new_callable=AsyncMock,
-    ) as mock_get:
-        mock_get.return_value = True
-        await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
+
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        # Mock server default has monitoringActive: True
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
         state = hass.states.get(MONITORING_ACTIVE_ENTITY_ID)
         assert state is not None
         assert state.state == STATE_ON
 
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
-async def test_monitoring_active_initial_status_off(hass: HomeAssistant) -> None:
+
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_monitoring_active_initial_status_off(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that monitoring_active switch pulls initial status when disabled."""
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.get_monitoring_active",
-        new_callable=AsyncMock,
-    ) as mock_get:
-        mock_get.return_value = False
-        await setup_platform(hass, SWITCH_DOMAIN)
-        await hass.async_block_till_done()
+    import importlib
 
-        state = hass.states.get(MONITORING_ACTIVE_ENTITY_ID)
-        assert state is not None
-        assert state.state == STATE_OFF
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        # Use hybrid approach - mock get method to return False
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.get_monitoring_active",
+            new_callable=AsyncMock,
+        ) as mock_get:
+            mock_get.return_value = False
+            config_entry = MockConfigEntry(
+                domain=DOMAIN,
+                data={
+                    CONF_USERNAME: mock_server_client["username"],
+                    CONF_PASSWORD: mock_server_client["password"],
+                    CONF_POLLING: False,
+                },
+            )
+            config_entry.add_to_hass(hass)
+            await hass.config_entries.async_setup(config_entry.entry_id)
+            await hass.async_block_till_done()
+
+            state = hass.states.get(MONITORING_ACTIVE_ENTITY_ID)
+            assert state is not None
+            assert state.state == STATE_OFF
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_monitoring_active_turn_on(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_monitoring_active_turn_on(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the monitoring_active switch can be turned on."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_monitoring_active",
-        new_callable=AsyncMock,
-    ) as mock:
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: MONITORING_ACTIVE_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        mock.assert_called_once_with(True)
+        # Mock the set method to verify it's called
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_monitoring_active",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_ON,
+                {ATTR_ENTITY_ID: MONITORING_ACTIVE_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            mock_set.assert_called_once_with(True)
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_monitoring_active_turn_off(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_monitoring_active_turn_off(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the monitoring_active switch can be turned off."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_monitoring_active",
-        new_callable=AsyncMock,
-    ) as mock:
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_OFF,
-            {ATTR_ENTITY_ID: MONITORING_ACTIVE_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        mock.assert_called_once_with(False)
+        # Mock the set method to verify it's called
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_monitoring_active",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_OFF,
+                {ATTR_ENTITY_ID: MONITORING_ACTIVE_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            mock_set.assert_called_once_with(False)
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_monitoring_active_error_handling(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_monitoring_active_error_handling(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that monitoring_active handles errors gracefully."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_monitoring_active",
-        new_callable=AsyncMock,
-    ) as mock:
-        mock.side_effect = Exception("API Error")
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: MONITORING_ACTIVE_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Entity should still exist despite error
-        state = hass.states.get(MONITORING_ACTIVE_ENTITY_ID)
-        assert state is not None
+        # Mock set method to raise exception
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_monitoring_active",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            mock_set.side_effect = Exception("API Error")
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_ON,
+                {ATTR_ENTITY_ID: MONITORING_ACTIVE_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            # Entity should still exist despite error
+            state = hass.states.get(MONITORING_ACTIVE_ENTITY_ID)
+            assert state is not None
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
 # ============================================================================
@@ -148,572 +372,1658 @@ async def test_monitoring_active_error_handling(hass: HomeAssistant) -> None:
 # ============================================================================
 
 
+@pytest.mark.integration
+@pytest.mark.enable_socket
 async def test_send_media_entity_registry(
-    hass: HomeAssistant, entity_registry: er.EntityRegistry
+    hass: HomeAssistant,
+    mock_server_client: dict[str, str],
+    entity_registry: er.EntityRegistry,
 ) -> None:
     """Test that send_media is registered with correct unique_id."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    entry = entity_registry.async_get(SEND_MEDIA_ENTITY_ID)
-    assert entry is not None
-    assert entry.unique_id == SEND_MEDIA_UID
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        entry = entity_registry.async_get(SEND_MEDIA_ENTITY_ID)
+        assert entry is not None
+        assert entry.unique_id == SEND_MEDIA_UID
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_send_media_attributes(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_send_media_attributes(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the send_media switch attributes are correct."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    state = hass.states.get(SEND_MEDIA_ENTITY_ID)
-    assert state is not None
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        state = hass.states.get(SEND_MEDIA_ENTITY_ID)
+        assert state is not None
+        # Mock server default: sendMedia = True
+        assert state.state == STATE_ON
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_send_media_initial_status_on(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_send_media_initial_status_on(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that send_media switch pulls initial status when enabled."""
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.get_send_media",
-        new_callable=AsyncMock,
-    ) as mock_get:
-        mock_get.return_value = True
-        await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
+
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        # Mock server default has sendMedia: True
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
         state = hass.states.get(SEND_MEDIA_ENTITY_ID)
         assert state is not None
         assert state.state == STATE_ON
 
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
-async def test_send_media_initial_status_off(hass: HomeAssistant) -> None:
+
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_send_media_initial_status_off(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that send_media switch pulls initial status when disabled."""
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.get_send_media",
-        new_callable=AsyncMock,
-    ) as mock_get:
-        mock_get.return_value = False
-        await setup_platform(hass, SWITCH_DOMAIN)
-        await hass.async_block_till_done()
+    import importlib
 
-        state = hass.states.get(SEND_MEDIA_ENTITY_ID)
-        assert state is not None
-        assert state.state == STATE_OFF
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        # Use hybrid approach - mock get method to return False
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.get_send_media",
+            new_callable=AsyncMock,
+        ) as mock_get:
+            mock_get.return_value = False
+            config_entry = MockConfigEntry(
+                domain=DOMAIN,
+                data={
+                    CONF_USERNAME: mock_server_client["username"],
+                    CONF_PASSWORD: mock_server_client["password"],
+                    CONF_POLLING: False,
+                },
+            )
+            config_entry.add_to_hass(hass)
+            await hass.config_entries.async_setup(config_entry.entry_id)
+            await hass.async_block_till_done()
+
+            state = hass.states.get(SEND_MEDIA_ENTITY_ID)
+            assert state is not None
+            assert state.state == STATE_OFF
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_send_media_turn_on(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_send_media_turn_on(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the send_media switch can be turned on."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_send_media",
-        new_callable=AsyncMock,
-    ) as mock:
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: SEND_MEDIA_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        mock.assert_called_once_with(True)
+        # Mock the set method to verify it's called
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_send_media",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_ON,
+                {ATTR_ENTITY_ID: SEND_MEDIA_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            mock_set.assert_called_once_with(True)
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_send_media_turn_off(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_send_media_turn_off(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the send_media switch can be turned off."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_send_media",
-        new_callable=AsyncMock,
-    ) as mock:
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_OFF,
-            {ATTR_ENTITY_ID: SEND_MEDIA_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        mock.assert_called_once_with(False)
+        # Mock the set method to verify it's called
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_send_media",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_OFF,
+                {ATTR_ENTITY_ID: SEND_MEDIA_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            mock_set.assert_called_once_with(False)
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_send_media_error_handling(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_send_media_error_handling(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that send_media handles errors gracefully."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_send_media",
-        new_callable=AsyncMock,
-    ) as mock:
-        mock.side_effect = Exception("API Error")
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: SEND_MEDIA_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Entity should still exist despite error
-        state = hass.states.get(SEND_MEDIA_ENTITY_ID)
-        assert state is not None
+        # Mock set method to raise exception
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_send_media",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            mock_set.side_effect = Exception("API Error")
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_ON,
+                {ATTR_ENTITY_ID: SEND_MEDIA_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            # Entity should still exist despite error
+            state = hass.states.get(SEND_MEDIA_ENTITY_ID)
+            assert state is not None
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
 # ============================================================================
+
 # DISPATCH_WITHOUT_VERIFICATION Tests
 # ============================================================================
 
 
+@pytest.mark.integration
+@pytest.mark.enable_socket
 async def test_dispatch_without_verification_entity_registry(
-    hass: HomeAssistant, entity_registry: er.EntityRegistry
+    hass: HomeAssistant,
+    mock_server_client: dict[str, str],
+    entity_registry: er.EntityRegistry,
 ) -> None:
     """Test that dispatch_without_verification is registered with correct unique_id."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    entry = entity_registry.async_get(DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID)
-    assert entry is not None
-    assert entry.unique_id == DISPATCH_WITHOUT_VERIFICATION_UID
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        entry = entity_registry.async_get(DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID)
+        assert entry is not None
+        assert entry.unique_id == DISPATCH_WITHOUT_VERIFICATION_UID
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_without_verification_attributes(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_without_verification_attributes(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the dispatch_without_verification switch attributes are correct."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    state = hass.states.get(DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID)
-    assert state is not None
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        state = hass.states.get(DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID)
+        assert state is not None
+        # Mock server default: dispatchWithoutVerification = False
+        assert state.state == STATE_ON
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
+@pytest.mark.integration
+@pytest.mark.enable_socket
 async def test_dispatch_without_verification_initial_status_on(
-    hass: HomeAssistant,
+    hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
     """Test that dispatch_without_verification switch pulls initial status when enabled."""
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.get_dispatch_without_verification",
-        new_callable=AsyncMock,
-    ) as mock_get:
-        mock_get.return_value = True
-        await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
+
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        # Mock server default has dispatchWithoutVerification: True
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
         state = hass.states.get(DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID)
         assert state is not None
         assert state.state == STATE_ON
 
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
+
+@pytest.mark.integration
+@pytest.mark.enable_socket
 async def test_dispatch_without_verification_initial_status_off(
-    hass: HomeAssistant,
+    hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
     """Test that dispatch_without_verification switch pulls initial status when disabled."""
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.get_dispatch_without_verification",
-        new_callable=AsyncMock,
-    ) as mock_get:
-        mock_get.return_value = False
-        await setup_platform(hass, SWITCH_DOMAIN)
-        await hass.async_block_till_done()
+    import importlib
 
-        state = hass.states.get(DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID)
-        assert state is not None
-        assert state.state == STATE_OFF
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        # Use hybrid approach - mock get method to return False
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.get_dispatch_without_verification",
+            new_callable=AsyncMock,
+        ) as mock_get:
+            mock_get.return_value = False
+            config_entry = MockConfigEntry(
+                domain=DOMAIN,
+                data={
+                    CONF_USERNAME: mock_server_client["username"],
+                    CONF_PASSWORD: mock_server_client["password"],
+                    CONF_POLLING: False,
+                },
+            )
+            config_entry.add_to_hass(hass)
+            await hass.config_entries.async_setup(config_entry.entry_id)
+            await hass.async_block_till_done()
+
+            state = hass.states.get(DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID)
+            assert state is not None
+            assert state.state == STATE_OFF
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_without_verification_turn_on(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_without_verification_turn_on(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the dispatch_without_verification switch can be turned on."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_dispatch_without_verification",
-        new_callable=AsyncMock,
-    ) as mock:
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        mock.assert_called_once_with(True)
+        # Mock the set method to verify it's called
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_dispatch_without_verification",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_ON,
+                {ATTR_ENTITY_ID: DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            mock_set.assert_called_once_with(True)
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_without_verification_turn_off(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_without_verification_turn_off(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the dispatch_without_verification switch can be turned off."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_dispatch_without_verification",
-        new_callable=AsyncMock,
-    ) as mock:
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_OFF,
-            {ATTR_ENTITY_ID: DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        mock.assert_called_once_with(False)
+        # Mock the set method to verify it's called
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_dispatch_without_verification",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_OFF,
+                {ATTR_ENTITY_ID: DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            mock_set.assert_called_once_with(False)
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
+@pytest.mark.integration
+@pytest.mark.enable_socket
 async def test_dispatch_without_verification_error_handling(
-    hass: HomeAssistant,
+    hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
     """Test that dispatch_without_verification handles errors gracefully."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_dispatch_without_verification",
-        new_callable=AsyncMock,
-    ) as mock:
-        mock.side_effect = Exception("API Error")
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Entity should still exist despite error
-        state = hass.states.get(DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID)
-        assert state is not None
+        # Mock set method to raise exception
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_dispatch_without_verification",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            mock_set.side_effect = Exception("API Error")
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_ON,
+                {ATTR_ENTITY_ID: DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            # Entity should still exist despite error
+            state = hass.states.get(DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID)
+            assert state is not None
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
 # ============================================================================
+
 # DISPATCH_POLICE Tests
 # ============================================================================
 
 
+@pytest.mark.integration
+@pytest.mark.enable_socket
 async def test_dispatch_police_entity_registry(
-    hass: HomeAssistant, entity_registry: er.EntityRegistry
+    hass: HomeAssistant,
+    mock_server_client: dict[str, str],
+    entity_registry: er.EntityRegistry,
 ) -> None:
     """Test that dispatch_police is registered with correct unique_id."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    entry = entity_registry.async_get(DISPATCH_POLICE_ENTITY_ID)
-    assert entry is not None
-    assert entry.unique_id == DISPATCH_POLICE_UID
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        entry = entity_registry.async_get(DISPATCH_POLICE_ENTITY_ID)
+        assert entry is not None
+        assert entry.unique_id == DISPATCH_POLICE_UID
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_police_attributes(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_police_attributes(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the dispatch_police switch attributes are correct."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    state = hass.states.get(DISPATCH_POLICE_ENTITY_ID)
-    assert state is not None
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        state = hass.states.get(DISPATCH_POLICE_ENTITY_ID)
+        assert state is not None
+        # Mock server default: dispatchWithoutVerification = False
+        assert state.state == STATE_ON
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_police_initial_status_on(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_police_initial_status_on(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that dispatch_police switch pulls initial status when enabled."""
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.get_dispatch_police",
-        new_callable=AsyncMock,
-    ) as mock_get:
-        mock_get.return_value = True
-        await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
+
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        # Mock server default has dispatchPolice: True
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
         state = hass.states.get(DISPATCH_POLICE_ENTITY_ID)
         assert state is not None
         assert state.state == STATE_ON
 
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
-async def test_dispatch_police_initial_status_off(hass: HomeAssistant) -> None:
+
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_police_initial_status_off(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that dispatch_police switch pulls initial status when disabled."""
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.get_dispatch_police",
-        new_callable=AsyncMock,
-    ) as mock_get:
-        mock_get.return_value = False
-        await setup_platform(hass, SWITCH_DOMAIN)
-        await hass.async_block_till_done()
+    import importlib
 
-        state = hass.states.get(DISPATCH_POLICE_ENTITY_ID)
-        assert state is not None
-        assert state.state == STATE_OFF
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        # Use hybrid approach - mock get method to return False
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.get_dispatch_police",
+            new_callable=AsyncMock,
+        ) as mock_get:
+            mock_get.return_value = False
+            config_entry = MockConfigEntry(
+                domain=DOMAIN,
+                data={
+                    CONF_USERNAME: mock_server_client["username"],
+                    CONF_PASSWORD: mock_server_client["password"],
+                    CONF_POLLING: False,
+                },
+            )
+            config_entry.add_to_hass(hass)
+            await hass.config_entries.async_setup(config_entry.entry_id)
+            await hass.async_block_till_done()
+
+            state = hass.states.get(DISPATCH_POLICE_ENTITY_ID)
+            assert state is not None
+            assert state.state == STATE_OFF
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_police_turn_on(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_police_turn_on(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the dispatch_police switch can be turned on."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_dispatch_police",
-        new_callable=AsyncMock,
-    ) as mock:
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: DISPATCH_POLICE_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        mock.assert_called_once_with(True)
+        # Mock the set method to verify it's called
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_dispatch_police",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_ON,
+                {ATTR_ENTITY_ID: DISPATCH_POLICE_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            mock_set.assert_called_once_with(True)
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_police_turn_off(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_police_turn_off(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the dispatch_police switch can be turned off."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_dispatch_police",
-        new_callable=AsyncMock,
-    ) as mock:
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_OFF,
-            {ATTR_ENTITY_ID: DISPATCH_POLICE_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        mock.assert_called_once_with(False)
+        # Mock the set method to verify it's called
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_dispatch_police",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_OFF,
+                {ATTR_ENTITY_ID: DISPATCH_POLICE_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            mock_set.assert_called_once_with(False)
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_police_error_handling(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_police_error_handling(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that dispatch_police handles errors gracefully."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_dispatch_police",
-        new_callable=AsyncMock,
-    ) as mock:
-        mock.side_effect = Exception("API Error")
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: DISPATCH_POLICE_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Entity should still exist despite error
-        state = hass.states.get(DISPATCH_POLICE_ENTITY_ID)
-        assert state is not None
+        # Mock set method to raise exception
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_dispatch_police",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            mock_set.side_effect = Exception("API Error")
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_ON,
+                {ATTR_ENTITY_ID: DISPATCH_POLICE_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            # Entity should still exist despite error
+            state = hass.states.get(DISPATCH_POLICE_ENTITY_ID)
+            assert state is not None
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
 # ============================================================================
+
 # DISPATCH_FIRE Tests
 # ============================================================================
 
 
+@pytest.mark.integration
+@pytest.mark.enable_socket
 async def test_dispatch_fire_entity_registry(
-    hass: HomeAssistant, entity_registry: er.EntityRegistry
+    hass: HomeAssistant,
+    mock_server_client: dict[str, str],
+    entity_registry: er.EntityRegistry,
 ) -> None:
     """Test that dispatch_fire is registered with correct unique_id."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    entry = entity_registry.async_get(DISPATCH_FIRE_ENTITY_ID)
-    assert entry is not None
-    assert entry.unique_id == DISPATCH_FIRE_UID
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        entry = entity_registry.async_get(DISPATCH_FIRE_ENTITY_ID)
+        assert entry is not None
+        assert entry.unique_id == DISPATCH_FIRE_UID
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_fire_attributes(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_fire_attributes(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the dispatch_fire switch attributes are correct."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    state = hass.states.get(DISPATCH_FIRE_ENTITY_ID)
-    assert state is not None
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        state = hass.states.get(DISPATCH_FIRE_ENTITY_ID)
+        assert state is not None
+        # Mock server default: dispatchPolice = True
+        assert state.state == STATE_ON
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_fire_initial_status_on(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_fire_initial_status_on(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that dispatch_fire switch pulls initial status when enabled."""
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.get_dispatch_fire",
-        new_callable=AsyncMock,
-    ) as mock_get:
-        mock_get.return_value = True
-        await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
+
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        # Mock server default has dispatchFire: True
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
         state = hass.states.get(DISPATCH_FIRE_ENTITY_ID)
         assert state is not None
         assert state.state == STATE_ON
 
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
-async def test_dispatch_fire_initial_status_off(hass: HomeAssistant) -> None:
+
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_fire_initial_status_off(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that dispatch_fire switch pulls initial status when disabled."""
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.get_dispatch_fire",
-        new_callable=AsyncMock,
-    ) as mock_get:
-        mock_get.return_value = False
-        await setup_platform(hass, SWITCH_DOMAIN)
-        await hass.async_block_till_done()
+    import importlib
 
-        state = hass.states.get(DISPATCH_FIRE_ENTITY_ID)
-        assert state is not None
-        assert state.state == STATE_OFF
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        # Use hybrid approach - mock get method to return False
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.get_dispatch_fire",
+            new_callable=AsyncMock,
+        ) as mock_get:
+            mock_get.return_value = False
+            config_entry = MockConfigEntry(
+                domain=DOMAIN,
+                data={
+                    CONF_USERNAME: mock_server_client["username"],
+                    CONF_PASSWORD: mock_server_client["password"],
+                    CONF_POLLING: False,
+                },
+            )
+            config_entry.add_to_hass(hass)
+            await hass.config_entries.async_setup(config_entry.entry_id)
+            await hass.async_block_till_done()
+
+            state = hass.states.get(DISPATCH_FIRE_ENTITY_ID)
+            assert state is not None
+            assert state.state == STATE_OFF
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_fire_turn_on(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_fire_turn_on(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the dispatch_fire switch can be turned on."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_dispatch_fire",
-        new_callable=AsyncMock,
-    ) as mock:
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: DISPATCH_FIRE_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        mock.assert_called_once_with(True)
+        # Mock the set method to verify it's called
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_dispatch_fire",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_ON,
+                {ATTR_ENTITY_ID: DISPATCH_FIRE_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            mock_set.assert_called_once_with(True)
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_fire_turn_off(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_fire_turn_off(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the dispatch_fire switch can be turned off."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_dispatch_fire",
-        new_callable=AsyncMock,
-    ) as mock:
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_OFF,
-            {ATTR_ENTITY_ID: DISPATCH_FIRE_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        mock.assert_called_once_with(False)
+        # Mock the set method to verify it's called
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_dispatch_fire",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_OFF,
+                {ATTR_ENTITY_ID: DISPATCH_FIRE_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            mock_set.assert_called_once_with(False)
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_fire_error_handling(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_fire_error_handling(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that dispatch_fire handles errors gracefully."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_dispatch_fire",
-        new_callable=AsyncMock,
-    ) as mock:
-        mock.side_effect = Exception("API Error")
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: DISPATCH_FIRE_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Entity should still exist despite error
-        state = hass.states.get(DISPATCH_FIRE_ENTITY_ID)
-        assert state is not None
+        # Mock set method to raise exception
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_dispatch_fire",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            mock_set.side_effect = Exception("API Error")
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_ON,
+                {ATTR_ENTITY_ID: DISPATCH_FIRE_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            # Entity should still exist despite error
+            state = hass.states.get(DISPATCH_FIRE_ENTITY_ID)
+            assert state is not None
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
 # ============================================================================
+
 # DISPATCH_MEDICAL Tests
 # ============================================================================
 
 
+@pytest.mark.integration
+@pytest.mark.enable_socket
 async def test_dispatch_medical_entity_registry(
-    hass: HomeAssistant, entity_registry: er.EntityRegistry
+    hass: HomeAssistant,
+    mock_server_client: dict[str, str],
+    entity_registry: er.EntityRegistry,
 ) -> None:
     """Test that dispatch_medical is registered with correct unique_id."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    entry = entity_registry.async_get(DISPATCH_MEDICAL_ENTITY_ID)
-    assert entry is not None
-    assert entry.unique_id == DISPATCH_MEDICAL_UID
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        entry = entity_registry.async_get(DISPATCH_MEDICAL_ENTITY_ID)
+        assert entry is not None
+        assert entry.unique_id == DISPATCH_MEDICAL_UID
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_medical_attributes(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_medical_attributes(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the dispatch_medical switch attributes are correct."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    state = hass.states.get(DISPATCH_MEDICAL_ENTITY_ID)
-    assert state is not None
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        state = hass.states.get(DISPATCH_MEDICAL_ENTITY_ID)
+        assert state is not None
+        # Mock server default: dispatchFire = True
+        assert state.state == STATE_ON
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_medical_initial_status_on(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_medical_initial_status_on(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that dispatch_medical switch pulls initial status when enabled."""
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.get_dispatch_medical",
-        new_callable=AsyncMock,
-    ) as mock_get:
-        mock_get.return_value = True
-        await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
+
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        # Mock server default has dispatchMedical: True
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
+        )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
         state = hass.states.get(DISPATCH_MEDICAL_ENTITY_ID)
         assert state is not None
         assert state.state == STATE_ON
 
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
-async def test_dispatch_medical_initial_status_off(hass: HomeAssistant) -> None:
+
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_medical_initial_status_off(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that dispatch_medical switch pulls initial status when disabled."""
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.get_dispatch_medical",
-        new_callable=AsyncMock,
-    ) as mock_get:
-        mock_get.return_value = False
-        await setup_platform(hass, SWITCH_DOMAIN)
-        await hass.async_block_till_done()
+    import importlib
 
-        state = hass.states.get(DISPATCH_MEDICAL_ENTITY_ID)
-        assert state is not None
-        assert state.state == STATE_OFF
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        # Use hybrid approach - mock get method to return False
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.get_dispatch_medical",
+            new_callable=AsyncMock,
+        ) as mock_get:
+            mock_get.return_value = False
+            config_entry = MockConfigEntry(
+                domain=DOMAIN,
+                data={
+                    CONF_USERNAME: mock_server_client["username"],
+                    CONF_PASSWORD: mock_server_client["password"],
+                    CONF_POLLING: False,
+                },
+            )
+            config_entry.add_to_hass(hass)
+            await hass.config_entries.async_setup(config_entry.entry_id)
+            await hass.async_block_till_done()
+
+            state = hass.states.get(DISPATCH_MEDICAL_ENTITY_ID)
+            assert state is not None
+            assert state.state == STATE_OFF
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_medical_turn_on(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_medical_turn_on(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the dispatch_medical switch can be turned on."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_dispatch_medical",
-        new_callable=AsyncMock,
-    ) as mock:
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: DISPATCH_MEDICAL_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        mock.assert_called_once_with(True)
+        # Mock the set method to verify it's called
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_dispatch_medical",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_ON,
+                {ATTR_ENTITY_ID: DISPATCH_MEDICAL_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            mock_set.assert_called_once_with(True)
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_medical_turn_off(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_medical_turn_off(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test the dispatch_medical switch can be turned off."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_dispatch_medical",
-        new_callable=AsyncMock,
-    ) as mock:
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_OFF,
-            {ATTR_ENTITY_ID: DISPATCH_MEDICAL_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        mock.assert_called_once_with(False)
+        # Mock the set method to verify it's called
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_dispatch_medical",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_OFF,
+                {ATTR_ENTITY_ID: DISPATCH_MEDICAL_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            mock_set.assert_called_once_with(False)
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
 
 
-async def test_dispatch_medical_error_handling(hass: HomeAssistant) -> None:
+@pytest.mark.integration
+@pytest.mark.enable_socket
+async def test_dispatch_medical_error_handling(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
     """Test that dispatch_medical handles errors gracefully."""
-    await setup_platform(hass, SWITCH_DOMAIN)
+    import importlib
 
-    with patch(
-        "custom_components.abode_security.models.AbodeSystem.set_dispatch_medical",
-        new_callable=AsyncMock,
-    ) as mock:
-        mock.side_effect = Exception("API Error")
-        await hass.services.async_call(
-            SWITCH_DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: DISPATCH_MEDICAL_ENTITY_ID},
-            blocking=True,
+    from custom_components.abode_security.abode import event_controller
+    from custom_components.abode_security.abode.helpers import urls
+
+    original_url = os.environ.get("ABODE_BASE_URL")
+    os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
+    importlib.reload(urls)
+    importlib.reload(event_controller)
+
+    try:
+        config_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_USERNAME: mock_server_client["username"],
+                CONF_PASSWORD: mock_server_client["password"],
+                CONF_POLLING: False,
+            },
         )
+        config_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Entity should still exist despite error
-        state = hass.states.get(DISPATCH_MEDICAL_ENTITY_ID)
-        assert state is not None
+        # Mock set method to raise exception
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.set_dispatch_medical",
+            new_callable=AsyncMock,
+        ) as mock_set:
+            mock_set.side_effect = Exception("API Error")
+            await hass.services.async_call(
+                SWITCH_DOMAIN,
+                SERVICE_TURN_ON,
+                {ATTR_ENTITY_ID: DISPATCH_MEDICAL_ENTITY_ID},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+            # Entity should still exist despite error
+            state = hass.states.get(DISPATCH_MEDICAL_ENTITY_ID)
+            assert state is not None
+
+    finally:
+        if original_url is not None:
+            os.environ["ABODE_BASE_URL"] = original_url
+        elif "ABODE_BASE_URL" in os.environ:
+            del os.environ["ABODE_BASE_URL"]
+
+
+# ============================================================================
