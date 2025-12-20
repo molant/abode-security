@@ -77,6 +77,28 @@ def pytest_collection_modifyitems(config, items):
         "test_camera_capture_image",
         "test_camera_on",
         "test_camera_off",
+        # Switch (21/21) - Phase 4.5.3
+        "test_switch_entity_registry",
+        "test_switch_attributes",
+        "test_switch_on",
+        "test_switch_off",
+        "test_automation_attributes",
+        "test_turn_automation_off",
+        "test_turn_automation_on",
+        "test_trigger_automation",
+        "test_manual_alarm_switch_attributes",
+        "test_manual_alarm_switch_turn_on",
+        "test_test_mode_switch_attributes",
+        "test_test_mode_switch_initial_status_on",
+        "test_test_mode_switch_initial_status_off",
+        "test_test_mode_switch_turn_on",
+        "test_test_mode_switch_turn_off",
+        "test_trigger_alarm_service",
+        "test_acknowledge_alarm_service",
+        "test_dismiss_alarm_service",
+        "test_abode_switch_error_handling",
+        "test_automation_switch_error_handling",
+        "test_automation_trigger_error_handling",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:
