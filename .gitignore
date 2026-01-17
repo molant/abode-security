@@ -143,8 +143,8 @@ Thumbs.db
 
 # Others
 tmp/
-claude.md
 .claude/plans/*.md
+*.local.md
 
 # Home Assistant runtime files (don't commit these)
 config/*
