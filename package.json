@@ -1,0 +1,34 @@
+{
+  "name": "abode-security",
+  "version": "1.0.0",
+  "description": "A powerful Home Assistant integration for the Abode Security System, providing real-time control and monitoring of your security system with full type safety, comprehensive error handling, and extensive diagnostics.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/molant/abode-security.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/molant/abode-security/issues"
+  },
+  "homepage": "https://github.com/molant/abode-security#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "axios": "^1.13.2"
+  }
+}

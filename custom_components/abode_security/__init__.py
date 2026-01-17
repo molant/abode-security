@@ -204,22 +204,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register frontend panel for configuration
     # Note: This may fail in test environments where http/frontend aren't available
     try:
+        from homeassistant.components.http import StaticPathConfig
+
         panel_url = "/abode_security_panel"
 
         # Register static path for panel JavaScript
-        hass.http.register_static_path(
-            panel_url,
-            str(Path(__file__).parent / "www"),
-            cache_headers=False,  # Disable caching during development
+        await hass.http.async_register_static_paths(
+            [
+                StaticPathConfig(
+                    url_path=panel_url,
+                    path=str(Path(__file__).parent / "www"),
+                    cache_headers=False,  # Disable caching during development
+                )
+            ]
         )
 
         # Register the panel in sidebar
-        hass.components.frontend.async_register_built_in_panel(
+        from homeassistant.components.frontend import async_register_built_in_panel
+
+        async_register_built_in_panel(
+            hass,
             "custom",
-            "Abode",
-            "mdi:shield-home",
-            "abode_security",
-            {
+            sidebar_title="Abode",
+            sidebar_icon="mdi:shield-home",
+            frontend_url_path="abode_security",
+            config={
                 "_panel_custom": {
                     "name": "abode-configuration-panel",
                     "module_url": f"{panel_url}/abode-security-panel.js",

@@ -162,3 +162,11 @@ config/tts/
 frontend/node_modules/
 frontend/dist/
 frontend/*.log
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
+
+# Root node_modules (for Playwright)
+/node_modules/
