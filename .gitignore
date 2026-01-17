@@ -157,3 +157,8 @@ config/tts/
 !config/.storage/auth_provider.homeassistant
 !config/.storage/onboarding
 !config/.storage/lovelace
+
+# Frontend build
+frontend/node_modules/
+frontend/dist/
+frontend/*.log

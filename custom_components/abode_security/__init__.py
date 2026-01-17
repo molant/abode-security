@@ -201,6 +201,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # setup_abode_events is synchronous - just call it directly
     setup_abode_events(hass, entry)
 
+    # Register frontend panel for configuration
+    # Note: This may fail in test environments where http/frontend aren't available
+    try:
+        panel_url = "/abode_security_panel"
+
+        # Register static path for panel JavaScript
+        hass.http.register_static_path(
+            panel_url,
+            str(Path(__file__).parent / "www"),
+            cache_headers=False,  # Disable caching during development
+        )
+
+        # Register the panel in sidebar
+        hass.components.frontend.async_register_built_in_panel(
+            "custom",
+            "Abode",
+            "mdi:shield-home",
+            "abode_security",
+            {
+                "_panel_custom": {
+                    "name": "abode-configuration-panel",
+                    "module_url": f"{panel_url}/abode-security-panel.js",
+                }
+            },
+            require_admin=False,
+        )
+        LOGGER.debug("Registered Abode frontend panel")
+    except Exception as ex:
+        # Panel registration is optional - don't fail setup if it fails
+        LOGGER.warning("Could not register frontend panel: %s", ex)
+
     return True
 
 
