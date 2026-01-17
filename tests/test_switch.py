@@ -20,6 +20,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.abode_security import DOMAIN
 from custom_components.abode_security.const import CONF_POLLING
+from custom_components.abode_security.exceptions import AbodeError
 from custom_components.abode_security.services import (
     SERVICE_ACKNOWLEDGE_ALARM,
     SERVICE_DISMISS_ALARM,
@@ -872,7 +873,7 @@ async def test_abode_switch_error_handling(
         with patch(
             "custom_components.abode_security.abode.devices.switch.Switch.switch_on"
         ) as mock_switch_on:
-            mock_switch_on.side_effect = Exception("API Error")
+            mock_switch_on.side_effect = AbodeError("API Error")
             await hass.services.async_call(
                 SWITCH_DOMAIN,
                 SERVICE_TURN_ON,
@@ -910,7 +911,7 @@ async def test_automation_switch_error_handling(
         with patch(
             "custom_components.abode_security.abode.automation.Automation.enable"
         ) as mock_enable:
-            mock_enable.side_effect = Exception("API Error")
+            mock_enable.side_effect = AbodeError("API Error")
             config_entry = MockConfigEntry(
                 domain=DOMAIN,
                 data={
@@ -972,7 +973,7 @@ async def test_automation_trigger_error_handling(
         with patch(
             "custom_components.abode_security.abode.automation.Automation.trigger"
         ) as mock_trigger:
-            mock_trigger.side_effect = Exception("API Error")
+            mock_trigger.side_effect = AbodeError("API Error")
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_TRIGGER_AUTOMATION,

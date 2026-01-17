@@ -20,6 +20,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.abode_security import DOMAIN
 from custom_components.abode_security.const import CONF_POLLING
+from custom_components.abode_security.exceptions import AbodeError
 
 from .test_constants import (
     DISPATCH_FIRE_ENTITY_ID,
@@ -347,7 +348,7 @@ async def test_monitoring_active_error_handling(
             "custom_components.abode_security.models.AbodeSystem.set_monitoring_active",
             new_callable=AsyncMock,
         ) as mock_set:
-            mock_set.side_effect = Exception("API Error")
+            mock_set.side_effect = AbodeError("API Error")
             await hass.services.async_call(
                 SWITCH_DOMAIN,
                 SERVICE_TURN_ON,
@@ -678,7 +679,7 @@ async def test_send_media_error_handling(
             "custom_components.abode_security.models.AbodeSystem.set_send_media",
             new_callable=AsyncMock,
         ) as mock_set:
-            mock_set.side_effect = Exception("API Error")
+            mock_set.side_effect = AbodeError("API Error")
             await hass.services.async_call(
                 SWITCH_DOMAIN,
                 SERVICE_TURN_ON,
@@ -778,7 +779,7 @@ async def test_dispatch_without_verification_attributes(
         state = hass.states.get(DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID)
         assert state is not None
         # Mock server default: dispatchWithoutVerification = False
-        assert state.state == STATE_ON
+        assert state.state == STATE_OFF
 
     finally:
         if original_url is not None:
@@ -804,22 +805,27 @@ async def test_dispatch_without_verification_initial_status_on(
     importlib.reload(event_controller)
 
     try:
-        # Mock server default has dispatchWithoutVerification: True
-        config_entry = MockConfigEntry(
-            domain=DOMAIN,
-            data={
-                CONF_USERNAME: mock_server_client["username"],
-                CONF_PASSWORD: mock_server_client["password"],
-                CONF_POLLING: False,
-            },
-        )
-        config_entry.add_to_hass(hass)
-        await hass.config_entries.async_setup(config_entry.entry_id)
-        await hass.async_block_till_done()
+        # Use hybrid approach - mock get method to return True
+        with patch(
+            "custom_components.abode_security.models.AbodeSystem.get_dispatch_without_verification",
+            new_callable=AsyncMock,
+        ) as mock_get:
+            mock_get.return_value = True
+            config_entry = MockConfigEntry(
+                domain=DOMAIN,
+                data={
+                    CONF_USERNAME: mock_server_client["username"],
+                    CONF_PASSWORD: mock_server_client["password"],
+                    CONF_POLLING: False,
+                },
+            )
+            config_entry.add_to_hass(hass)
+            await hass.config_entries.async_setup(config_entry.entry_id)
+            await hass.async_block_till_done()
 
-        state = hass.states.get(DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID)
-        assert state is not None
-        assert state.state == STATE_ON
+            state = hass.states.get(DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID)
+            assert state is not None
+            assert state.state == STATE_ON
 
     finally:
         if original_url is not None:
@@ -1010,7 +1016,7 @@ async def test_dispatch_without_verification_error_handling(
             "custom_components.abode_security.models.AbodeSystem.set_dispatch_without_verification",
             new_callable=AsyncMock,
         ) as mock_set:
-            mock_set.side_effect = Exception("API Error")
+            mock_set.side_effect = AbodeError("API Error")
             await hass.services.async_call(
                 SWITCH_DOMAIN,
                 SERVICE_TURN_ON,
@@ -1342,7 +1348,7 @@ async def test_dispatch_police_error_handling(
             "custom_components.abode_security.models.AbodeSystem.set_dispatch_police",
             new_callable=AsyncMock,
         ) as mock_set:
-            mock_set.side_effect = Exception("API Error")
+            mock_set.side_effect = AbodeError("API Error")
             await hass.services.async_call(
                 SWITCH_DOMAIN,
                 SERVICE_TURN_ON,
@@ -1674,7 +1680,7 @@ async def test_dispatch_fire_error_handling(
             "custom_components.abode_security.models.AbodeSystem.set_dispatch_fire",
             new_callable=AsyncMock,
         ) as mock_set:
-            mock_set.side_effect = Exception("API Error")
+            mock_set.side_effect = AbodeError("API Error")
             await hass.services.async_call(
                 SWITCH_DOMAIN,
                 SERVICE_TURN_ON,
@@ -2006,7 +2012,7 @@ async def test_dispatch_medical_error_handling(
             "custom_components.abode_security.models.AbodeSystem.set_dispatch_medical",
             new_callable=AsyncMock,
         ) as mock_set:
-            mock_set.side_effect = Exception("API Error")
+            mock_set.side_effect = AbodeError("API Error")
             await hass.services.async_call(
                 SWITCH_DOMAIN,
                 SERVICE_TURN_ON,
