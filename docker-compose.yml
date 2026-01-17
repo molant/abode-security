@@ -2,6 +2,7 @@ services:
   homeassistant:
     container_name: abode-dev-ha
     image: homeassistant/home-assistant:stable
+    pull_policy: always
     volumes:
       - ./config:/config
       - ./custom_components/abode_security:/config/custom_components/abode_security
