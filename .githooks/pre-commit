@@ -3,6 +3,13 @@ set -e
 
 echo "Running pre-commit checks..."
 
+# Auto-discard changes to HA dev config auth file (accumulates session tokens)
+if git diff --name-only --cached | grep -q "config/.storage/auth"; then
+    echo "Removing config/.storage/auth from commit (dev environment file)..."
+    git reset HEAD -- config/.storage/auth >/dev/null 2>&1 || true
+    git checkout -- config/.storage/auth >/dev/null 2>&1 || true
+fi
+
 # Set PYTHONPATH to include vendored libraries and integration
 export PYTHONPATH="$(cd "$(dirname "$0")/../custom_components" && pwd):$PYTHONPATH"
 

@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Post-checkout hook: Clean up dev environment files after branch switch
+#
+# Arguments passed by git:
+#   $1 - ref of previous HEAD
+#   $2 - ref of new HEAD
+#   $3 - flag (1 = branch checkout, 0 = file checkout)
+
+# Only run on branch checkouts, not file checkouts
+if [ "$3" != "1" ]; then
+    exit 0
+fi
+
+# Discard changes to HA dev config auth file (accumulates session tokens)
+if git diff --name-only | grep -q "config/.storage/auth"; then
+    echo "Restoring config/.storage/auth to clean state..."
+    git checkout -- config/.storage/auth >/dev/null 2>&1 || true
+fi
