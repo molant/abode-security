@@ -107,18 +107,20 @@
 
 ## Phase 8: Documentation Updates
 
-- [ ] Update DEVELOPMENT.md:
-- [ ] Dev environment setup instructions
-- [ ] How to run mock server
-- [ ] Frontend development workflow
-- [ ] Running tests (pytest + playwright)
-- [ ] Update README.md:
-    - [ ] Badge for CI status
-    - [ ] Link to development docs
-- [ ] Update CLAUDE.md with:
-    - [ ] New project structure
-    - [ ] Key commands
-    - [ ] Testing approach
+- [x] Update DEVELOPMENT.md: (2025-01-16)
+- [x] Dev environment setup instructions
+- [x] How to run mock server
+- [x] Frontend development workflow
+- [x] Running tests (pytest + playwright)
+- [x] Update README.md: (already had CI badges and dev section)
+    - [x] Badge for CI status
+    - [x] Link to development docs
+- [x] Update CLAUDE.md with: (2025-01-16)
+    - [x] New project structure
+    - [x] Key commands
+    - [x] Testing approach
+- [x] Create CONTRIBUTING.md (2025-01-16)
+- [x] Update .gitignore with ruff cache (2025-01-16)
 
 ## File Structure After Implementation
 
