@@ -1,0 +1,88 @@
+name: E2E Tests
+
+on:
+  # Manual trigger only - enable when ready for automated E2E testing
+  workflow_dispatch:
+    inputs:
+      headed:
+        description: 'Run in headed mode (visible browser)'
+        required: false
+        default: 'false'
+
+  # Uncomment to run on pull requests:
+  # pull_request:
+  #   branches: [main, develop]
+
+jobs:
+  playwright-tests:
+    name: Playwright E2E Tests
+    runs-on: ubuntu-latest
+
+    # Disabled by default - remove this line to enable
+    if: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Start Docker services
+        run: docker-compose up -d
+
+      - name: Wait for Home Assistant
+        run: |
+          echo "Waiting for Home Assistant to start..."
+          timeout 120 bash -c 'until curl -f http://localhost:8123 > /dev/null 2>&1; do sleep 2; echo -n "."; done'
+          echo " Ready!"
+
+      - name: Wait for Mock Server
+        run: |
+          echo "Waiting for Mock Server..."
+          timeout 30 bash -c 'until curl -f http://localhost:8000 > /dev/null 2>&1; do sleep 1; done'
+          echo "Mock Server ready!"
+
+      - name: Run Playwright tests
+        run: npm run test:e2e
+        env:
+          CI: true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+      - name: Upload test videos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-videos
+          path: test-results/
+          retention-days: 7
+
+      - name: Stop Docker services
+        if: always()
+        run: docker-compose down
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "::group::Home Assistant Logs"
+          docker-compose logs homeassistant || true
+          echo "::endgroup::"
+          echo "::group::Mock Server Logs"
+          docker-compose logs mock-abode || true
+          echo "::endgroup::"

@@ -5,6 +5,8 @@ A powerful Home Assistant integration for the Abode Security System, providing r
 [![GitHub Release](https://img.shields.io/github/v/release/molant/abode-security?label=Version)](https://github.com/molant/abode-security/releases)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue.svg)](https://github.com/home-assistant/core/releases/tag/2024.1.0)
+[![Tests](https://github.com/molant/abode-security/actions/workflows/tests.yaml/badge.svg)](https://github.com/molant/abode-security/actions/workflows/tests.yaml)
+[![Validate](https://github.com/molant/abode-security/actions/workflows/validate.yaml/badge.svg)](https://github.com/molant/abode-security/actions/workflows/validate.yaml)
 
 ## Features
 
