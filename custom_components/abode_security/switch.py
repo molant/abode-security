@@ -148,10 +148,11 @@ class AbodeAutomationSwitch(AbodeAutomation, SwitchEntity):
         signal = f"abode_trigger_automation_{self.entity_id}"
 
         # Create a synchronous wrapper for the async trigger callback
-        # This allows async_dispatcher_connect to properly handle the async method
+        # Use add_job() instead of async_create_task() for thread safety -
+        # the callback may be invoked from a thread pool executor
         def _trigger_wrapper() -> None:
             """Wrapper to schedule async trigger as a task."""
-            self.hass.async_create_task(self.trigger())
+            self.hass.add_job(self.trigger())
 
         self.async_on_remove(
             async_dispatcher_connect(self.hass, signal, _trigger_wrapper)
