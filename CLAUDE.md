@@ -4,6 +4,8 @@
 
 Home Assistant custom integration for Abode security systems. Merges jaraco.abode with the official integration, exposing manual alarms and code optimizations (async patterns).
 
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for component diagrams and data flow.
+
 ## Development
 
 ### Local Development Setup
@@ -118,7 +120,7 @@ ssh <user>@<host> 'ha core logs'
   - **Never use** `--no-verify` - all tests must pass
 - **Code review**: Run `/pre-commit-review` before committing to check for security, performance, and quality issues
 - **Commit format**: Standard titles (feat:, fix:, docs:, test:, chore:, ci:, refactor:)
-- **Commit messages**: Brief and concise, no marketing language, no "Co-Authored-By" or "Generated with" lines
+- **Commit messages**: Brief and concise, no marketing language
 - **Branches**:
   - `main` - Stable releases
   - `develop` - Development

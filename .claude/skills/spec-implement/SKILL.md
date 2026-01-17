@@ -229,7 +229,12 @@ When ALL sub-phases in a phase are complete:
 
 1. **Update frontmatter** - Change `status: in_progress` to `status: done`
 
-2. **Run comprehensive verification**:
+2. **Update documentation** if the implementation affects:
+   - `ARCHITECTURE.md` - New components, changed data flow, new patterns
+   - `CLAUDE.md` - New commands, conventions, or development workflows
+   - Create new docs only if the feature introduces significant new concepts
+
+3. **Run comprehensive verification**:
    ```bash
    ./scripts/test.sh                    # All unit/integration tests
    ./scripts/test.sh --coverage         # Verify coverage
