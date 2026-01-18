@@ -4,7 +4,11 @@ from datetime import UTC, datetime
 
 import pytest
 
-from custom_components.abode_security.action_manager import AbodeAction, ActionStore
+from custom_components.abode_security.action_manager import (
+    AbodeAction,
+    ActionManager,
+    ActionStore,
+)
 
 
 class TestAbodeAction:
@@ -270,3 +274,283 @@ class TestActionStore:
         action_ids = [a.id for a in all_actions]
         assert "list-1" in action_ids
         assert "list-2" in action_ids
+
+
+@pytest.mark.usefixtures("mock_abode")
+class TestActionManager:
+    """Tests for ActionManager class."""
+
+    # --- Sub-Phase A: Core CRUD ---
+
+    async def test_manager_create_valid(self, hass) -> None:
+        """Test creating an action with valid data."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        action = await manager.async_create(
+            name="Motion Alert",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        assert action.id is not None
+        assert action.name == "Motion Alert"
+        assert action.modes == ["away"]
+        assert action.enabled is True
+
+    async def test_manager_create_empty_name(self, hass) -> None:
+        """Test creating action with empty name raises ValueError."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        with pytest.raises(ValueError, match="name"):
+            await manager.async_create(
+                name="",
+                modes=["home"],
+                sensor_entity_ids=["binary_sensor.door"],
+                alarm_entity_ids=["switch.panic_alarm"],
+            )
+
+    async def test_manager_create_whitespace_name(self, hass) -> None:
+        """Test creating action with whitespace-only name raises ValueError."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        with pytest.raises(ValueError, match="name"):
+            await manager.async_create(
+                name="   ",
+                modes=["home"],
+                sensor_entity_ids=["binary_sensor.door"],
+                alarm_entity_ids=["switch.panic_alarm"],
+            )
+
+    async def test_manager_create_name_too_long(self, hass) -> None:
+        """Test creating action with name over 100 chars raises ValueError."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        with pytest.raises(ValueError, match="name"):
+            await manager.async_create(
+                name="x" * 101,
+                modes=["home"],
+                sensor_entity_ids=["binary_sensor.door"],
+                alarm_entity_ids=["switch.panic_alarm"],
+            )
+
+    async def test_manager_create_empty_modes(self, hass) -> None:
+        """Test creating action with empty modes raises ValueError."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        with pytest.raises(ValueError, match="mode"):
+            await manager.async_create(
+                name="Test",
+                modes=[],
+                sensor_entity_ids=["binary_sensor.door"],
+                alarm_entity_ids=["switch.panic_alarm"],
+            )
+
+    async def test_manager_create_invalid_mode(self, hass) -> None:
+        """Test creating action with invalid mode raises ValueError."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        with pytest.raises(ValueError, match="mode"):
+            await manager.async_create(
+                name="Test",
+                modes=["invalid"],
+                sensor_entity_ids=["binary_sensor.door"],
+                alarm_entity_ids=["switch.panic_alarm"],
+            )
+
+    async def test_manager_create_empty_sensors(self, hass) -> None:
+        """Test creating action with empty sensors raises ValueError."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        with pytest.raises(ValueError, match="sensor"):
+            await manager.async_create(
+                name="Test",
+                modes=["home"],
+                sensor_entity_ids=[],
+                alarm_entity_ids=["switch.panic_alarm"],
+            )
+
+    async def test_manager_create_empty_alarms(self, hass) -> None:
+        """Test creating action with empty alarms raises ValueError."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        with pytest.raises(ValueError, match="alarm"):
+            await manager.async_create(
+                name="Test",
+                modes=["home"],
+                sensor_entity_ids=["binary_sensor.door"],
+                alarm_entity_ids=[],
+            )
+
+    async def test_manager_create_invalid_delay(self, hass) -> None:
+        """Test creating action with delay > 60 raises ValueError."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        with pytest.raises(ValueError, match="delay"):
+            await manager.async_create(
+                name="Test",
+                modes=["home"],
+                sensor_entity_ids=["binary_sensor.door"],
+                alarm_entity_ids=["switch.panic_alarm"],
+                delay_seconds=100,
+            )
+
+    async def test_manager_create_negative_delay(self, hass) -> None:
+        """Test creating action with negative delay raises ValueError."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        with pytest.raises(ValueError, match="delay"):
+            await manager.async_create(
+                name="Test",
+                modes=["home"],
+                sensor_entity_ids=["binary_sensor.door"],
+                alarm_entity_ids=["switch.panic_alarm"],
+                delay_seconds=-1,
+            )
+
+    async def test_manager_create_missing_entity_warning(self, hass, caplog) -> None:
+        """Test creating action with non-existent entity logs warning."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        # Entity doesn't exist in hass.states
+        action = await manager.async_create(
+            name="Test",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.nonexistent"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        # Should succeed but log warning
+        assert action is not None
+        assert "not found" in caplog.text
+
+    async def test_manager_get(self, hass) -> None:
+        """Test getting an action by ID."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        created = await manager.async_create(
+            name="Test",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        retrieved = await manager.async_get(created.id)
+        assert retrieved is not None
+        assert retrieved.id == created.id
+        assert retrieved.name == created.name
+
+    async def test_manager_get_not_found(self, hass) -> None:
+        """Test getting a non-existent action returns None."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        result = await manager.async_get("non-existent")
+        assert result is None
+
+    async def test_manager_get_all(self, hass) -> None:
+        """Test getting all actions."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        await manager.async_create(
+            name="Action 1",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        await manager.async_create(
+            name="Action 2",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.fire_alarm"],
+        )
+
+        all_actions = await manager.async_get_all()
+        assert len(all_actions) == 2
+
+    async def test_manager_update(self, hass) -> None:
+        """Test updating an action."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        action = await manager.async_create(
+            name="Original",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        updated = await manager.async_update(action.id, name="Updated")
+        assert updated is not None
+        assert updated.name == "Updated"
+        assert updated.id == action.id
+
+    async def test_manager_update_partial(self, hass) -> None:
+        """Test updating only some fields of an action."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        action = await manager.async_create(
+            name="Test",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        updated = await manager.async_update(action.id, modes=["home", "away"])
+        assert updated is not None
+        assert updated.name == "Test"  # unchanged
+        assert updated.modes == ["home", "away"]
+
+    async def test_manager_update_not_found(self, hass) -> None:
+        """Test updating a non-existent action returns None."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        result = await manager.async_update("non-existent", name="New")
+        assert result is None
+
+    async def test_manager_update_validation_error(self, hass) -> None:
+        """Test updating an action with invalid data raises ValueError."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        action = await manager.async_create(
+            name="Test",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        with pytest.raises(ValueError):
+            await manager.async_update(action.id, name="")
+
+    async def test_manager_delete(self, hass) -> None:
+        """Test deleting an action."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        action = await manager.async_create(
+            name="To Delete",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        result = await manager.async_delete(action.id)
+        assert result is True
+        assert await manager.async_get(action.id) is None
+
+    async def test_manager_delete_not_found(self, hass) -> None:
+        """Test deleting a non-existent action returns False."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        result = await manager.async_delete("non-existent")
+        assert result is False

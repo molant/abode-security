@@ -163,6 +163,27 @@ def pytest_collection_modifyitems(config, items):
         "test_store_remove",
         "test_store_remove_not_found",
         "test_store_get_all",
+        # ActionManager tests - Sub-Phase A (Phase 2 - Dashboard Configuration)
+        "test_manager_create_valid",
+        "test_manager_create_empty_name",
+        "test_manager_create_whitespace_name",
+        "test_manager_create_name_too_long",
+        "test_manager_create_empty_modes",
+        "test_manager_create_invalid_mode",
+        "test_manager_create_empty_sensors",
+        "test_manager_create_empty_alarms",
+        "test_manager_create_invalid_delay",
+        "test_manager_create_negative_delay",
+        "test_manager_create_missing_entity_warning",
+        "test_manager_get",
+        "test_manager_get_not_found",
+        "test_manager_get_all",
+        "test_manager_update",
+        "test_manager_update_partial",
+        "test_manager_update_not_found",
+        "test_manager_update_validation_error",
+        "test_manager_delete",
+        "test_manager_delete_not_found",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:

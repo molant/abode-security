@@ -18,31 +18,31 @@ Create the `ActionManager` class with CRUD operations and validation logic. This
 
 ### Tasks
 
-- [ ] Create `ActionManager` class
+- [x] Create `ActionManager` class
   - Constructor takes `hass: HomeAssistant`
   - Initialize `ActionStore` internally
   - Add `async_setup()` method to load store
 
-- [ ] Implement `async_create(name, modes, sensor_entity_ids, alarm_entity_ids, delay_seconds=0)` method
+- [x] Implement `async_create(name, modes, sensor_entity_ids, alarm_entity_ids, delay_seconds=0)` method
   - Generate UUID for new action
   - Create `AbodeAction` instance
   - Validate before saving (see validation rules below)
   - Add to store
   - Return created action
 
-- [ ] Implement `async_get(action_id: str)` method
+- [x] Implement `async_get(action_id: str)` method
   - Return action or None if not found
 
-- [ ] Implement `async_get_all()` method
+- [x] Implement `async_get_all()` method
   - Return list of all actions
 
-- [ ] Implement `async_update(action_id, **kwargs)` method
+- [x] Implement `async_update(action_id, **kwargs)` method
   - Update specified fields only
   - Validate after applying changes
   - Save to store
   - Return updated action or None if not found
 
-- [ ] Implement `async_delete(action_id: str)` method
+- [x] Implement `async_delete(action_id: str)` method
   - Remove from store
   - Return True if deleted, False if not found
 
