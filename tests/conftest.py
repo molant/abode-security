@@ -184,6 +184,15 @@ def pytest_collection_modifyitems(config, items):
         "test_manager_update_validation_error",
         "test_manager_delete",
         "test_manager_delete_not_found",
+        # ActionManager tests - Sub-Phase B (Phase 2 - Dashboard Configuration)
+        "test_manager_get_by_mode",
+        "test_manager_get_by_mode_excludes_disabled",
+        "test_manager_get_enabled",
+        "test_manager_toggle",
+        "test_manager_toggle_not_found",
+        "test_manager_record_trigger",
+        "test_manager_record_trigger_increments",
+        "test_manager_record_trigger_not_found",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:

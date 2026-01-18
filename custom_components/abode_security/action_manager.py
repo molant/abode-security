@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from homeassistant.helpers.storage import Store
@@ -310,3 +310,55 @@ class ActionManager:
         Returns True if deleted, False if not found.
         """
         return await self._store.async_remove(action_id)
+
+    async def async_get_by_mode(self, mode: str) -> list[AbodeAction]:
+        """Get enabled actions that include the given mode.
+
+        Args:
+            mode: The mode to filter by (standby, home, or away)
+
+        Returns:
+            List of enabled actions that include the mode
+        """
+        return [
+            action
+            for action in self._store.get_all()
+            if action.enabled and mode in action.modes
+        ]
+
+    async def async_get_enabled(self) -> list[AbodeAction]:
+        """Get all enabled actions."""
+        return [action for action in self._store.get_all() if action.enabled]
+
+    async def async_toggle(self, action_id: str) -> AbodeAction | None:
+        """Toggle an action's enabled state.
+
+        Returns the updated action, or None if not found.
+        """
+        action = self._store.get(action_id)
+        if action is None:
+            return None
+
+        return await self.async_update(action_id, enabled=not action.enabled)
+
+    async def async_record_trigger(self, action_id: str) -> None:
+        """Record that an action was triggered.
+
+        Updates last_triggered to current UTC time and increments trigger_count.
+        """
+        action = self._store.get(action_id)
+        if action is None:
+            return
+
+        updated_action = AbodeAction(
+            id=action.id,
+            name=action.name,
+            modes=action.modes,
+            sensor_entity_ids=action.sensor_entity_ids,
+            alarm_entity_ids=action.alarm_entity_ids,
+            enabled=action.enabled,
+            delay_seconds=action.delay_seconds,
+            last_triggered=datetime.now(UTC),
+            trigger_count=action.trigger_count + 1,
+        )
+        await self._store.async_add(updated_action)

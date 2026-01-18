@@ -554,3 +554,152 @@ class TestActionManager:
 
         result = await manager.async_delete("non-existent")
         assert result is False
+
+    # --- Sub-Phase B: Helper Methods ---
+
+    async def test_manager_get_by_mode(self, hass) -> None:
+        """Test getting actions by mode."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        await manager.async_create(
+            name="Home Action",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        await manager.async_create(
+            name="Away Action",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        await manager.async_create(
+            name="Both Action",
+            modes=["home", "away"],
+            sensor_entity_ids=["binary_sensor.window"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        home_actions = await manager.async_get_by_mode("home")
+        assert len(home_actions) == 2
+
+        away_actions = await manager.async_get_by_mode("away")
+        assert len(away_actions) == 2
+
+    async def test_manager_get_by_mode_excludes_disabled(self, hass) -> None:
+        """Test get_by_mode excludes disabled actions."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        action = await manager.async_create(
+            name="Test",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        await manager.async_update(action.id, enabled=False)
+
+        home_actions = await manager.async_get_by_mode("home")
+        assert len(home_actions) == 0
+
+    async def test_manager_get_enabled(self, hass) -> None:
+        """Test getting only enabled actions."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        await manager.async_create(
+            name="Enabled",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        action2 = await manager.async_create(
+            name="To Disable",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        await manager.async_update(action2.id, enabled=False)
+
+        enabled = await manager.async_get_enabled()
+        assert len(enabled) == 1
+        assert enabled[0].name == "Enabled"
+
+    async def test_manager_toggle(self, hass) -> None:
+        """Test toggling an action's enabled state."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        action = await manager.async_create(
+            name="Test",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        assert action.enabled is True
+
+        toggled = await manager.async_toggle(action.id)
+        assert toggled is not None
+        assert toggled.enabled is False
+
+        toggled_again = await manager.async_toggle(action.id)
+        assert toggled_again is not None
+        assert toggled_again.enabled is True
+
+    async def test_manager_toggle_not_found(self, hass) -> None:
+        """Test toggling a non-existent action returns None."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        result = await manager.async_toggle("non-existent")
+        assert result is None
+
+    async def test_manager_record_trigger(self, hass) -> None:
+        """Test recording a trigger updates timestamp and count."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        action = await manager.async_create(
+            name="Test",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        assert action.last_triggered is None
+        assert action.trigger_count == 0
+
+        await manager.async_record_trigger(action.id)
+
+        updated = await manager.async_get(action.id)
+        assert updated is not None
+        assert updated.last_triggered is not None
+        assert updated.trigger_count == 1
+
+    async def test_manager_record_trigger_increments(self, hass) -> None:
+        """Test recording multiple triggers increments count."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        action = await manager.async_create(
+            name="Test",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        await manager.async_record_trigger(action.id)
+        await manager.async_record_trigger(action.id)
+        await manager.async_record_trigger(action.id)
+
+        updated = await manager.async_get(action.id)
+        assert updated is not None
+        assert updated.trigger_count == 3
+
+    async def test_manager_record_trigger_not_found(self, hass) -> None:
+        """Test recording trigger for non-existent action does nothing."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        # Should not raise, just silently return
+        await manager.async_record_trigger("non-existent")

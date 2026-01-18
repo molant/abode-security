@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 phase: 2
 title: Action Manager CRUD
 ---
@@ -234,17 +234,17 @@ async def test_manager_delete_not_found(hass):
 
 ### Tasks
 
-- [ ] Implement `async_get_by_mode(mode: str)` method
+- [x] Implement `async_get_by_mode(mode: str)` method
   - Return list of enabled actions that include the given mode
 
-- [ ] Implement `async_get_enabled()` method
+- [x] Implement `async_get_enabled()` method
   - Return list of all enabled actions
 
-- [ ] Implement `async_toggle(action_id: str)` method
+- [x] Implement `async_toggle(action_id: str)` method
   - Toggle the `enabled` field
   - Return updated action or None
 
-- [ ] Implement `async_record_trigger(action_id: str)` method
+- [x] Implement `async_record_trigger(action_id: str)` method
   - Update `last_triggered` to current datetime (UTC)
   - Increment `trigger_count`
   - Save to store
