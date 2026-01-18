@@ -193,6 +193,28 @@ def pytest_collection_modifyitems(config, items):
         "test_manager_record_trigger",
         "test_manager_record_trigger_increments",
         "test_manager_record_trigger_not_found",
+        # WebSocket API tests - Sub-Phase A (Phase 3 - Dashboard Configuration)
+        "test_ws_actions_list_empty",
+        "test_ws_actions_list_with_data",
+        "test_ws_actions_get",
+        "test_ws_actions_get_not_found",
+        "test_ws_actions_create",
+        "test_ws_actions_create_with_delay",
+        "test_ws_actions_create_validation_error",
+        "test_ws_actions_create_invalid_mode_schema",
+        "test_ws_actions_update",
+        "test_ws_actions_update_not_found",
+        "test_ws_actions_update_validation_error",
+        "test_ws_actions_delete",
+        "test_ws_actions_delete_not_found",
+        "test_ws_actions_toggle",
+        "test_ws_actions_toggle_not_found",
+        "test_ws_actions_test",
+        "test_ws_actions_test_not_found",
+        "test_ws_actions_test_multiple_alarms",
+        "test_ws_actions_list_no_admin_required",
+        "test_ws_actions_get_no_admin_required",
+        "test_ws_actions_list_not_ready",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in_progress
 phase: 3
 title: WebSocket API
 ---
@@ -13,7 +13,24 @@ Create WebSocket API endpoints for the frontend to manage actions, query sensors
 ## Files to Create/Modify
 
 - **Create:** `custom_components/abode_security/websocket_api.py`
+- **Create:** `custom_components/abode_security/config_store.py`
 - **Modify:** `custom_components/abode_security/__init__.py` (register handlers)
+
+## Implementation Notes (from spec review)
+
+1. **Decorator ordering**: The `@require_admin` decorator must be applied AFTER `@websocket_api.websocket_command` for correct behavior:
+   ```python
+   @websocket_api.websocket_command({...})
+   @require_admin
+   @websocket_api.async_response
+   async def handler(hass, connection, msg):
+   ```
+
+2. **Test fixtures**: `pytest-homeassistant-custom-component` provides `hass_ws_client`. Need to create `action_manager` fixture and verify non-admin client pattern for authorization tests.
+
+3. **Integration setup**: The `__init__.py` already registers a frontend panel. WebSocket commands should be registered in `async_setup()` (before any config entry), while `ActionManager` and `ConfigStore` initialization goes in `async_setup_entry()`.
+
+4. **Test allowlist**: New tests must be added to `enabled_tests` in `conftest.py` to run.
 
 ## Security Requirements
 
@@ -40,43 +57,43 @@ Read-only endpoints (list, get, modes, sensors, alarms, config get) do NOT requi
 
 ### Tasks
 
-- [ ] Create `websocket_api.py` with imports and constants
+- [x] Create `websocket_api.py` with imports and constants
 
-- [ ] Implement `websocket_actions_list` handler
+- [x] Implement `websocket_actions_list` handler
   - Command: `abode_security/actions/list`
   - Returns: `{ "actions": [ ... ] }`
 
-- [ ] Implement `websocket_actions_get` handler
+- [x] Implement `websocket_actions_get` handler
   - Command: `abode_security/actions/get`
   - Parameters: `action_id: str`
   - Returns: Action dict or error if not found
 
-- [ ] Implement `websocket_actions_create` handler
+- [x] Implement `websocket_actions_create` handler
   - Command: `abode_security/actions/create`
   - Parameters: `name, modes, sensor_entity_ids, alarm_entity_ids, delay_seconds (optional)`
   - Returns: Created action dict
   - Errors: `validation_error` with message
 
-- [ ] Implement `websocket_actions_update` handler
+- [x] Implement `websocket_actions_update` handler
   - Command: `abode_security/actions/update`
   - Parameters: `action_id, name (optional), modes (optional), ...`
   - Returns: Updated action dict
   - Errors: `not_found` or `validation_error`
 
-- [ ] Implement `websocket_actions_delete` handler
+- [x] Implement `websocket_actions_delete` handler
   - Command: `abode_security/actions/delete`
   - Parameters: `action_id: str`
   - Returns: `{ "success": true }`
   - Errors: `not_found`
 
-- [ ] Implement `websocket_actions_toggle` handler
+- [x] Implement `websocket_actions_toggle` handler
   - Command: `abode_security/actions/toggle`
   - Parameters: `action_id: str`
   - Toggles the `enabled` field
   - Returns: Updated action dict
   - Requires admin
 
-- [ ] Implement `websocket_actions_test` handler
+- [x] Implement `websocket_actions_test` handler
   - Command: `abode_security/actions/test`
   - Parameters: `action_id: str`
   - Manually triggers action (calls alarm services)
