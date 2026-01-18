@@ -495,3 +495,248 @@ class TestWebSocketActionsNotReady:
 
         assert not response["success"]
         assert response["error"]["code"] == "not_ready"
+
+
+# --- Sub-Phase B: Entity Query Endpoints ---
+
+
+@pytest.mark.usefixtures("mock_abode", "setup_websocket_api")
+class TestWebSocketModesAPI:
+    """Tests for WebSocket modes API."""
+
+    async def test_ws_modes_list(self, hass, hass_ws_client) -> None:
+        """Test listing modes returns all three modes."""
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/modes/list"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        modes = response["result"]
+        assert len(modes) == 3
+
+        mode_ids = {m["id"] for m in modes}
+        assert mode_ids == {"standby", "home", "away"}
+
+    async def test_ws_modes_list_with_active_mode(self, hass, hass_ws_client) -> None:
+        """Test listing modes shows correct active mode."""
+        # Set alarm panel to armed_home
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/modes/list"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        modes = response["result"]
+
+        home_mode = next(m for m in modes if m["id"] == "home")
+        assert home_mode["active"] is True
+
+        standby_mode = next(m for m in modes if m["id"] == "standby")
+        assert standby_mode["active"] is False
+
+        away_mode = next(m for m in modes if m["id"] == "away")
+        assert away_mode["active"] is False
+
+    async def test_ws_modes_list_disarmed(self, hass, hass_ws_client) -> None:
+        """Test disarmed state maps to standby mode."""
+        hass.states.async_set("alarm_control_panel.abode_alarm", "disarmed")
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/modes/list"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        standby_mode = next(m for m in response["result"] if m["id"] == "standby")
+        assert standby_mode["active"] is True
+
+    async def test_ws_modes_list_with_action_count(self, hass, hass_ws_client) -> None:
+        """Test modes include action counts."""
+        manager = _get_manager(hass)
+        await manager.async_create(
+            name="Home Action",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        await manager.async_create(
+            name="Away Action",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/modes/list"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        home_mode = next(m for m in response["result"] if m["id"] == "home")
+        assert home_mode["action_count"] == 1
+
+        away_mode = next(m for m in response["result"] if m["id"] == "away")
+        assert away_mode["action_count"] == 1
+
+        standby_mode = next(m for m in response["result"] if m["id"] == "standby")
+        assert standby_mode["action_count"] == 0
+
+    async def test_ws_modes_list_has_metadata(self, hass, hass_ws_client) -> None:
+        """Test modes include name and icon metadata."""
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/modes/list"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        for mode in response["result"]:
+            assert "name" in mode
+            assert "icon" in mode
+            assert mode["icon"].startswith("mdi:")
+
+
+@pytest.mark.usefixtures("mock_abode", "setup_websocket_api")
+class TestWebSocketSensorsAPI:
+    """Tests for WebSocket sensors API."""
+
+    async def test_ws_entities_sensors_empty(self, hass, hass_ws_client) -> None:
+        """Test listing sensors when none exist."""
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert response["result"]["sensors"] == {}
+
+    async def test_ws_entities_sensors_grouped_by_device_class(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Test sensors are grouped by device_class."""
+        hass.states.async_set(
+            "binary_sensor.front_door",
+            "off",
+            {"device_class": "door", "friendly_name": "Front Door"},
+        )
+        hass.states.async_set(
+            "binary_sensor.back_door",
+            "on",
+            {"device_class": "door", "friendly_name": "Back Door"},
+        )
+        hass.states.async_set(
+            "binary_sensor.living_room_motion",
+            "off",
+            {"device_class": "motion", "friendly_name": "Living Room Motion"},
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        sensors = response["result"]["sensors"]
+
+        assert "door" in sensors
+        assert len(sensors["door"]) == 2
+
+        assert "motion" in sensors
+        assert len(sensors["motion"]) == 1
+
+    async def test_ws_entities_sensors_includes_state(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Test sensor info includes state."""
+        hass.states.async_set(
+            "binary_sensor.door",
+            "on",
+            {"device_class": "door", "friendly_name": "Door"},
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        door_sensor = response["result"]["sensors"]["door"][0]
+        assert door_sensor["state"] == "on"
+        assert door_sensor["entity_id"] == "binary_sensor.door"
+        assert door_sensor["name"] == "Door"
+
+    async def test_ws_entities_sensors_no_device_class(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Test sensors without device_class go to 'other'."""
+        hass.states.async_set(
+            "binary_sensor.unknown",
+            "off",
+            {"friendly_name": "Unknown Sensor"},
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert "other" in response["result"]["sensors"]
+        assert len(response["result"]["sensors"]["other"]) == 1
+
+
+@pytest.mark.usefixtures("mock_abode", "setup_websocket_api")
+class TestWebSocketAlarmsAPI:
+    """Tests for WebSocket alarms API."""
+
+    async def test_ws_entities_alarms_empty(self, hass, hass_ws_client) -> None:
+        """Test listing alarms when none exist."""
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/alarms"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert response["result"]["alarms"] == []
+
+    async def test_ws_entities_alarms_filters_abode_alarms(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Test only Abode alarm switches are returned."""
+        # Abode alarm switches
+        hass.states.async_set(
+            "switch.abode_panic_alarm", "off", {"friendly_name": "Panic Alarm"}
+        )
+        hass.states.async_set(
+            "switch.abode_medical_alarm", "off", {"friendly_name": "Medical Alarm"}
+        )
+        # Non-alarm switches (should be excluded)
+        hass.states.async_set("switch.living_room_light", "on")
+        hass.states.async_set("switch.abode_automation", "on")
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/alarms"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        alarms = response["result"]["alarms"]
+        assert len(alarms) == 2
+
+        entity_ids = {a["entity_id"] for a in alarms}
+        assert "switch.abode_panic_alarm" in entity_ids
+        assert "switch.abode_medical_alarm" in entity_ids
+
+    async def test_ws_entities_alarms_includes_type(self, hass, hass_ws_client) -> None:
+        """Test alarm info includes type."""
+        hass.states.async_set(
+            "switch.abode_panic_alarm", "off", {"friendly_name": "Panic Alarm"}
+        )
+        hass.states.async_set(
+            "switch.abode_fire_alarm", "off", {"friendly_name": "Fire Alarm"}
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/alarms"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        alarms = response["result"]["alarms"]
+
+        panic = next(a for a in alarms if a["entity_id"] == "switch.abode_panic_alarm")
+        assert panic["type"] == "panic"
+        assert panic["name"] == "Panic Alarm"
+
+        fire = next(a for a in alarms if a["entity_id"] == "switch.abode_fire_alarm")
+        assert fire["type"] == "fire"

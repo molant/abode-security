@@ -215,6 +215,19 @@ def pytest_collection_modifyitems(config, items):
         "test_ws_actions_list_no_admin_required",
         "test_ws_actions_get_no_admin_required",
         "test_ws_actions_list_not_ready",
+        # WebSocket API tests - Sub-Phase B (Phase 3 - Dashboard Configuration)
+        "test_ws_modes_list",
+        "test_ws_modes_list_with_active_mode",
+        "test_ws_modes_list_disarmed",
+        "test_ws_modes_list_with_action_count",
+        "test_ws_modes_list_has_metadata",
+        "test_ws_entities_sensors_empty",
+        "test_ws_entities_sensors_grouped_by_device_class",
+        "test_ws_entities_sensors_includes_state",
+        "test_ws_entities_sensors_no_device_class",
+        "test_ws_entities_alarms_empty",
+        "test_ws_entities_alarms_filters_abode_alarms",
+        "test_ws_entities_alarms_includes_type",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:

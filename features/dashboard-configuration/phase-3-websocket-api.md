@@ -273,7 +273,7 @@ async def test_ws_actions_list_no_admin_required(hass, hass_ws_client_non_admin)
 
 ### Tasks
 
-- [ ] Implement `websocket_modes_list` handler
+- [x] Implement `websocket_modes_list` handler
   - Command: `abode_security/modes/list`
   - Returns list of modes with metadata:
     ```json
@@ -285,7 +285,7 @@ async def test_ws_actions_list_no_admin_required(hass, hass_ws_client_non_admin)
     ```
   - Get active mode from `alarm_control_panel.abode_*` entity state
 
-- [ ] Implement `websocket_entities_sensors` handler
+- [x] Implement `websocket_entities_sensors` handler
   - Command: `abode_security/entities/sensors`
   - Returns ALL HA binary sensors grouped by device_class:
     ```json
@@ -304,7 +304,7 @@ async def test_ws_actions_list_no_admin_required(hass, hass_ws_client_non_admin)
   - Use `hass.states.async_all()` filtered by `binary_sensor.*`
   - Group by `device_class` attribute
 
-- [ ] Implement `websocket_entities_alarms` handler
+- [x] Implement `websocket_entities_alarms` handler
   - Command: `abode_security/entities/alarms`
   - Returns Abode alarm switches only:
     ```json

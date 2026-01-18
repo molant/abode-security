@@ -22,6 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 
 def async_register_websocket_commands(hass: HomeAssistant) -> None:
     """Register WebSocket commands for Abode Security."""
+    # Action CRUD endpoints
     websocket_api.async_register_command(hass, websocket_actions_list)
     websocket_api.async_register_command(hass, websocket_actions_get)
     websocket_api.async_register_command(hass, websocket_actions_create)
@@ -29,6 +30,10 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_actions_delete)
     websocket_api.async_register_command(hass, websocket_actions_toggle)
     websocket_api.async_register_command(hass, websocket_actions_test)
+    # Entity query endpoints
+    websocket_api.async_register_command(hass, websocket_modes_list)
+    websocket_api.async_register_command(hass, websocket_entities_sensors)
+    websocket_api.async_register_command(hass, websocket_entities_alarms)
 
 
 def _get_action_manager(hass: HomeAssistant):
@@ -313,3 +318,150 @@ async def websocket_actions_test(
         msg["id"],
         {"success": True, "alarms_triggered": alarms_triggered},
     )
+
+
+# --- Entity Query Endpoints ---
+
+# Mode metadata for display
+MODE_METADATA = {
+    "standby": {"name": "Standby", "icon": "mdi:lock-open"},
+    "home": {"name": "Home", "icon": "mdi:home"},
+    "away": {"name": "Away", "icon": "mdi:shield-check"},
+}
+
+# Mapping from alarm_control_panel states to mode IDs
+STATE_TO_MODE = {
+    "disarmed": "standby",
+    "armed_home": "home",
+    "armed_away": "away",
+}
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "abode_security/modes/list",
+    }
+)
+@websocket_api.async_response
+async def websocket_modes_list(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle listing available modes with metadata."""
+    action_manager = _get_action_manager(hass)
+
+    # Find the active mode from alarm_control_panel entity
+    active_mode = None
+    for state in hass.states.async_all("alarm_control_panel"):
+        if state.entity_id.startswith("alarm_control_panel.abode"):
+            active_mode = STATE_TO_MODE.get(state.state)
+            break
+
+    # Build mode list with action counts
+    modes = []
+    for mode_id in VALID_MODES:
+        metadata = MODE_METADATA.get(
+            mode_id, {"name": mode_id.title(), "icon": "mdi:help"}
+        )
+
+        # Count actions for this mode
+        action_count = 0
+        if action_manager:
+            actions = await action_manager.async_get_by_mode(mode_id)
+            action_count = len(actions)
+
+        modes.append(
+            {
+                "id": mode_id,
+                "name": metadata["name"],
+                "icon": metadata["icon"],
+                "action_count": action_count,
+                "active": mode_id == active_mode,
+            }
+        )
+
+    connection.send_result(msg["id"], modes)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "abode_security/entities/sensors",
+    }
+)
+@websocket_api.async_response
+async def websocket_entities_sensors(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle listing all binary sensors grouped by device_class."""
+    sensors_by_class: dict[str, list[dict[str, Any]]] = {}
+
+    for state in hass.states.async_all("binary_sensor"):
+        device_class = state.attributes.get("device_class", "other") or "other"
+        friendly_name = state.attributes.get("friendly_name", state.entity_id)
+
+        sensor_info = {
+            "entity_id": state.entity_id,
+            "name": friendly_name,
+            "state": state.state,
+        }
+
+        if device_class not in sensors_by_class:
+            sensors_by_class[device_class] = []
+        sensors_by_class[device_class].append(sensor_info)
+
+    connection.send_result(msg["id"], {"sensors": sensors_by_class})
+
+
+# Alarm types based on entity_id patterns
+ALARM_TYPES = {
+    "panic": "Panic",
+    "fire": "Fire",
+    "medical": "Medical",
+}
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "abode_security/entities/alarms",
+    }
+)
+@websocket_api.async_response
+async def websocket_entities_alarms(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle listing Abode alarm switches."""
+    alarms = []
+
+    for state in hass.states.async_all("switch"):
+        entity_id = state.entity_id
+
+        # Match Abode alarm switches: switch.abode_*_alarm
+        if not entity_id.startswith("switch.abode_") or not entity_id.endswith(
+            "_alarm"
+        ):
+            continue
+
+        # Extract alarm type from entity_id
+        # e.g., switch.abode_panic_alarm -> panic
+        alarm_type = "unknown"
+        for type_key in ALARM_TYPES:
+            if type_key in entity_id:
+                alarm_type = type_key
+                break
+
+        friendly_name = state.attributes.get("friendly_name", entity_id)
+
+        alarms.append(
+            {
+                "entity_id": entity_id,
+                "name": friendly_name,
+                "type": alarm_type,
+            }
+        )
+
+    connection.send_result(msg["id"], {"alarms": alarms})
