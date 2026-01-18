@@ -148,6 +148,14 @@ def pytest_collection_modifyitems(config, items):
         "test_dispatch_medical_turn_on",
         "test_dispatch_medical_turn_off",
         "test_dispatch_medical_error_handling",
+        # Action Manager tests (Phase 1 - Dashboard Configuration)
+        "test_action_creation_defaults",
+        "test_action_creation_all_fields",
+        "test_action_to_dict",
+        "test_action_to_dict_with_datetime",
+        "test_action_from_dict",
+        "test_action_from_dict_with_datetime_string",
+        "test_action_round_trip",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:

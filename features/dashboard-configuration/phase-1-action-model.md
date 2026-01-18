@@ -18,7 +18,7 @@ Create the `AbodeAction` dataclass and `ActionStore` class for persistent storag
 
 ### Tasks
 
-- [ ] Create `AbodeAction` dataclass with all fields:
+- [x] Create `AbodeAction` dataclass with all fields:
   - `id: str` - UUID string
   - `name: str` - User-friendly name
   - `modes: list[str]` - List of modes ["standby", "home", "away"]
@@ -29,10 +29,10 @@ Create the `AbodeAction` dataclass and `ActionStore` class for persistent storag
   - `last_triggered: datetime | None = None` - Last trigger timestamp
   - `trigger_count: int = 0` - Number of times triggered
 
-- [ ] Implement `to_dict()` method for JSON serialization
+- [x] Implement `to_dict()` method for JSON serialization
   - Convert datetime to ISO format string or None
 
-- [ ] Implement `from_dict()` classmethod for deserialization
+- [x] Implement `from_dict()` classmethod for deserialization
   - Parse ISO format string back to datetime
 
 ### Test Specification
