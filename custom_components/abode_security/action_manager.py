@@ -4,6 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+from homeassistant.helpers.storage import Store
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
+STORAGE_KEY = "abode_security_actions"
+STORAGE_VERSION = 1
 
 
 @dataclass
@@ -64,3 +73,67 @@ class AbodeAction:
             last_triggered=last_triggered,
             trigger_count=data.get("trigger_count", 0),
         )
+
+
+class ActionStore:
+    """Persistent storage for AbodeAction configurations.
+
+    Uses Home Assistant's Store API for JSON-based persistence.
+    Storage file: .storage/abode_security_actions.json
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        """Initialize the action store."""
+        self._hass = hass
+        self._store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        self._actions: dict[str, AbodeAction] = {}
+
+    async def async_load(self) -> None:
+        """Load actions from storage.
+
+        Handles missing file by initializing empty dict.
+        """
+        data = await self._store.async_load()
+        if data is None:
+            self._actions = {}
+            return
+
+        actions_data = data.get("actions", {})
+        self._actions = {
+            action_id: AbodeAction.from_dict(action_dict)
+            for action_id, action_dict in actions_data.items()
+        }
+
+    async def async_save(self) -> None:
+        """Save all actions to storage."""
+        data = {
+            "actions": {
+                action_id: action.to_dict()
+                for action_id, action in self._actions.items()
+            }
+        }
+        await self._store.async_save(data)
+
+    async def async_add(self, action: AbodeAction) -> None:
+        """Add an action to the store and persist."""
+        self._actions[action.id] = action
+        await self.async_save()
+
+    async def async_remove(self, action_id: str) -> bool:
+        """Remove an action from the store.
+
+        Returns True if removed, False if not found.
+        """
+        if action_id not in self._actions:
+            return False
+        del self._actions[action_id]
+        await self.async_save()
+        return True
+
+    def get(self, action_id: str) -> AbodeAction | None:
+        """Get an action by ID from cache."""
+        return self._actions.get(action_id)
+
+    def get_all(self) -> list[AbodeAction]:
+        """Get all actions as a list."""
+        return list(self._actions.values())

@@ -156,6 +156,13 @@ def pytest_collection_modifyitems(config, items):
         "test_action_from_dict",
         "test_action_from_dict_with_datetime_string",
         "test_action_round_trip",
+        # ActionStore tests (Phase 1 - Dashboard Configuration)
+        "test_store_init",
+        "test_store_add_and_get",
+        "test_store_persistence",
+        "test_store_remove",
+        "test_store_remove_not_found",
+        "test_store_get_all",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:

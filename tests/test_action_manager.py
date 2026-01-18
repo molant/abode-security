@@ -2,7 +2,9 @@
 
 from datetime import UTC, datetime
 
-from custom_components.abode_security.action_manager import AbodeAction
+import pytest
+
+from custom_components.abode_security.action_manager import AbodeAction, ActionStore
 
 
 class TestAbodeAction:
@@ -159,3 +161,112 @@ class TestAbodeAction:
             abs((restored.last_triggered - original.last_triggered).total_seconds())
             < 0.001
         )
+
+
+@pytest.mark.usefixtures("mock_abode")
+class TestActionStore:
+    """Tests for ActionStore class."""
+
+    async def test_store_init(self, hass) -> None:
+        """Test ActionStore initialization and loading empty store."""
+        store = ActionStore(hass)
+        await store.async_load()
+        assert store.get_all() == []
+
+    async def test_store_add_and_get(self, hass) -> None:
+        """Test adding an action and retrieving it."""
+        store = ActionStore(hass)
+        await store.async_load()
+
+        action = AbodeAction(
+            id="test-1",
+            name="Test Action",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        await store.async_add(action)
+
+        retrieved = store.get("test-1")
+        assert retrieved is not None
+        assert retrieved.id == "test-1"
+        assert retrieved.name == "Test Action"
+
+    async def test_store_persistence(self, hass) -> None:
+        """Test that actions persist across store instances."""
+        # First store instance - add an action
+        store1 = ActionStore(hass)
+        await store1.async_load()
+
+        action = AbodeAction(
+            id="persist-1",
+            name="Persistent Action",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.fire_alarm"],
+        )
+        await store1.async_add(action)
+
+        # Second store instance - should load the same action
+        store2 = ActionStore(hass)
+        await store2.async_load()
+
+        retrieved = store2.get("persist-1")
+        assert retrieved is not None
+        assert retrieved.name == "Persistent Action"
+
+    async def test_store_remove(self, hass) -> None:
+        """Test removing an action."""
+        store = ActionStore(hass)
+        await store.async_load()
+
+        action = AbodeAction(
+            id="remove-1",
+            name="To Remove",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        await store.async_add(action)
+        assert store.get("remove-1") is not None
+
+        result = await store.async_remove("remove-1")
+        assert result is True
+        assert store.get("remove-1") is None
+
+    async def test_store_remove_not_found(self, hass) -> None:
+        """Test removing a non-existent action returns False."""
+        store = ActionStore(hass)
+        await store.async_load()
+
+        result = await store.async_remove("non-existent")
+        assert result is False
+
+    async def test_store_get_all(self, hass) -> None:
+        """Test getting all actions as a list."""
+        store = ActionStore(hass)
+        await store.async_load()
+
+        action1 = AbodeAction(
+            id="list-1",
+            name="Action 1",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        action2 = AbodeAction(
+            id="list-2",
+            name="Action 2",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.fire_alarm"],
+        )
+        await store.async_add(action1)
+        await store.async_add(action2)
+
+        all_actions = store.get_all()
+        assert len(all_actions) == 2
+        assert isinstance(all_actions, list)
+        action_ids = [a.id for a in all_actions]
+        assert "list-1" in action_ids
+        assert "list-2" in action_ids

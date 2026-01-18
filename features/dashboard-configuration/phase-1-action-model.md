@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 phase: 1
 title: Action Model and Storage
 ---
@@ -87,31 +87,31 @@ def test_action_round_trip():
 
 ### Tasks
 
-- [ ] Create `ActionStore` class using Home Assistant's `Store` API
+- [x] Create `ActionStore` class using Home Assistant's `Store` API
   - Storage file: `.storage/abode_security_actions.json`
   - Store version: 1
 
-- [ ] Implement `async_load()` method
+- [x] Implement `async_load()` method
   - Load actions from storage
   - Handle missing file (return empty dict)
   - Deserialize each action using `AbodeAction.from_dict()`
 
-- [ ] Implement `async_save()` method
+- [x] Implement `async_save()` method
   - Serialize all actions using `to_dict()`
   - Write to storage file
 
-- [ ] Implement `async_add(action: AbodeAction)` method
+- [x] Implement `async_add(action: AbodeAction)` method
   - Add action to internal dict
   - Call `async_save()`
 
-- [ ] Implement `async_remove(action_id: str)` method
+- [x] Implement `async_remove(action_id: str)` method
   - Remove action from internal dict
   - Call `async_save()`
   - Return True if removed, False if not found
 
-- [ ] Implement `get(action_id: str)` method (sync, from cache)
+- [x] Implement `get(action_id: str)` method (sync, from cache)
 
-- [ ] Implement `get_all()` method (sync, returns list)
+- [x] Implement `get_all()` method (sync, returns list)
 
 ### Test Specification
 
