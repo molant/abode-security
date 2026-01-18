@@ -228,6 +228,17 @@ def pytest_collection_modifyitems(config, items):
         "test_ws_entities_alarms_empty",
         "test_ws_entities_alarms_filters_abode_alarms",
         "test_ws_entities_alarms_includes_type",
+        # WebSocket API tests - Sub-Phase C (Phase 3 - Dashboard Configuration)
+        "test_ws_config_get",
+        "test_ws_config_set",
+        "test_ws_config_set_min_value",
+        "test_ws_config_set_max_value",
+        "test_ws_config_set_below_min",
+        "test_ws_config_set_above_max",
+        "test_ws_config_set_no_fields",
+        "test_ws_config_persistence",
+        "test_ws_config_get_not_ready",
+        "test_ws_config_set_not_ready",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:

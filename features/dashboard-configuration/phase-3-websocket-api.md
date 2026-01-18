@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: complete
 phase: 3
 title: WebSocket API
 ---
@@ -391,16 +391,16 @@ Config is stored in `.storage/abode_security_config.json` and loaded into `hass.
 
 ### Tasks
 
-- [ ] Create `ConfigStore` class (similar to `ActionStore`)
+- [x] Create `ConfigStore` class (similar to `ActionStore`)
   - Storage file: `.storage/abode_security_config.json`
   - Default config: `{ "debounce_seconds": 1.0 }`
 
-- [ ] Implement `websocket_config_get` handler
+- [x] Implement `websocket_config_get` handler
   - Command: `abode_security/config/get`
   - Returns: `{ "debounce_seconds": 1.0 }`
   - No admin required
 
-- [ ] Implement `websocket_config_set` handler
+- [x] Implement `websocket_config_set` handler
   - Command: `abode_security/config/set`
   - Parameters: `debounce_seconds: float` (0.1 to 10.0)
   - Updates `hass.data[DOMAIN]["config"]`
@@ -464,16 +464,16 @@ async def test_ws_config_persistence(hass, hass_ws_client):
 
 ### Tasks
 
-- [ ] Create `async_register_websocket_commands(hass)` function in `websocket_api.py`
+- [x] Create `async_register_websocket_commands(hass)` function in `websocket_api.py`
 
-- [ ] Modify `__init__.py` `async_setup()` to call `async_register_websocket_commands(hass)`
+- [x] Modify `__init__.py` `async_setup()` to call `async_register_websocket_commands(hass)`
 
-- [ ] Modify `__init__.py` `async_setup_entry()` to:
+- [x] Modify `__init__.py` `async_setup_entry()` to:
   - Create and setup `ActionManager`
   - Create and load `ConfigStore`
   - Store in `hass.data[DOMAIN]`
 
-- [ ] Add cleanup in `async_unload_entry()`:
+- [x] Add cleanup in `async_unload_entry()`:
   - Remove action_manager from hass.data
   - Remove config from hass.data
 

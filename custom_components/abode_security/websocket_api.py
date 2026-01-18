@@ -34,6 +34,9 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_modes_list)
     websocket_api.async_register_command(hass, websocket_entities_sensors)
     websocket_api.async_register_command(hass, websocket_entities_alarms)
+    # Config endpoints
+    websocket_api.async_register_command(hass, websocket_config_get)
+    websocket_api.async_register_command(hass, websocket_config_set)
 
 
 def _get_action_manager(hass: HomeAssistant):
@@ -465,3 +468,72 @@ async def websocket_entities_alarms(
         )
 
     connection.send_result(msg["id"], {"alarms": alarms})
+
+
+# --- Config Endpoints ---
+
+
+def _get_config_store(hass: HomeAssistant):
+    """Get the ConfigStore from hass.data."""
+    return hass.data.get(DOMAIN, {}).get("config_store")
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "abode_security/config/get",
+    }
+)
+@websocket_api.async_response
+async def websocket_config_get(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle getting the current configuration."""
+    config_store = _get_config_store(hass)
+    if config_store is None:
+        connection.send_error(msg["id"], "not_ready", "Config store not initialized")
+        return
+
+    connection.send_result(msg["id"], config_store.get_config())
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "abode_security/config/set",
+        vol.Optional("debounce_seconds"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.1, max=10.0)
+        ),
+    }
+)
+@require_admin
+@websocket_api.async_response
+async def websocket_config_set(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle updating configuration settings."""
+    config_store = _get_config_store(hass)
+    if config_store is None:
+        connection.send_error(msg["id"], "not_ready", "Config store not initialized")
+        return
+
+    # Build update kwargs from optional fields
+    update_fields = {}
+    if "debounce_seconds" in msg:
+        update_fields["debounce_seconds"] = msg["debounce_seconds"]
+
+    if not update_fields:
+        # No fields to update, just return current config
+        connection.send_result(msg["id"], config_store.get_config())
+        return
+
+    try:
+        config = await config_store.async_update(**update_fields)
+        # Update the cached config in hass.data
+        hass.data[DOMAIN]["config"] = config
+        _LOGGER.info("Config updated by user %s: %s", connection.user.id, update_fields)
+        connection.send_result(msg["id"], config)
+    except ValueError as err:
+        connection.send_error(msg["id"], "validation_error", str(err))

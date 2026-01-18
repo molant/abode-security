@@ -3,6 +3,7 @@
 import pytest
 
 from custom_components.abode_security.action_manager import ActionManager
+from custom_components.abode_security.config_store import ConfigStore
 from custom_components.abode_security.const import DOMAIN
 from custom_components.abode_security.websocket_api import (
     async_register_websocket_commands,
@@ -18,10 +19,20 @@ async def action_manager(hass):
 
 
 @pytest.fixture
-async def setup_websocket_api(hass, action_manager):
-    """Set up WebSocket API with ActionManager in hass.data."""
+async def config_store(hass):
+    """Create a ConfigStore for testing."""
+    store = ConfigStore(hass)
+    await store.async_load()
+    return store
+
+
+@pytest.fixture
+async def setup_websocket_api(hass, action_manager, config_store):
+    """Set up WebSocket API with ActionManager and ConfigStore in hass.data."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["action_manager"] = action_manager
+    hass.data[DOMAIN]["config_store"] = config_store
+    hass.data[DOMAIN]["config"] = config_store.get_config()
     async_register_websocket_commands(hass)
     return action_manager
 
@@ -29,6 +40,11 @@ async def setup_websocket_api(hass, action_manager):
 def _get_manager(hass):
     """Get ActionManager from hass.data."""
     return hass.data[DOMAIN]["action_manager"]
+
+
+def _get_config_store(hass):
+    """Get ConfigStore from hass.data."""
+    return hass.data[DOMAIN]["config_store"]
 
 
 @pytest.mark.usefixtures("mock_abode", "setup_websocket_api")
@@ -740,3 +756,163 @@ class TestWebSocketAlarmsAPI:
 
         fire = next(a for a in alarms if a["entity_id"] == "switch.abode_fire_alarm")
         assert fire["type"] == "fire"
+
+
+# --- Sub-Phase C: Config Endpoints ---
+
+
+@pytest.mark.usefixtures("mock_abode", "setup_websocket_api")
+class TestWebSocketConfigAPI:
+    """Tests for WebSocket config API."""
+
+    async def test_ws_config_get(self, hass, hass_ws_client) -> None:
+        """Test getting config returns default values."""
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/config/get"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert "debounce_seconds" in response["result"]
+        assert response["result"]["debounce_seconds"] == 1.0  # default
+
+    async def test_ws_config_set(self, hass, hass_ws_client) -> None:
+        """Test setting config value."""
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/config/set",
+                "debounce_seconds": 2.5,
+            }
+        )
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert response["result"]["debounce_seconds"] == 2.5
+
+        # Verify cached config is updated
+        assert hass.data[DOMAIN]["config"]["debounce_seconds"] == 2.5
+
+    async def test_ws_config_set_min_value(self, hass, hass_ws_client) -> None:
+        """Test setting config to minimum value."""
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/config/set",
+                "debounce_seconds": 0.1,
+            }
+        )
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert response["result"]["debounce_seconds"] == 0.1
+
+    async def test_ws_config_set_max_value(self, hass, hass_ws_client) -> None:
+        """Test setting config to maximum value."""
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/config/set",
+                "debounce_seconds": 10.0,
+            }
+        )
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert response["result"]["debounce_seconds"] == 10.0
+
+    async def test_ws_config_set_below_min(self, hass, hass_ws_client) -> None:
+        """Test setting config below minimum is rejected."""
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/config/set",
+                "debounce_seconds": 0.05,  # Below 0.1 minimum
+            }
+        )
+        response = await client.receive_json()
+
+        assert not response["success"]
+
+    async def test_ws_config_set_above_max(self, hass, hass_ws_client) -> None:
+        """Test setting config above maximum is rejected."""
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/config/set",
+                "debounce_seconds": 15.0,  # Above 10.0 maximum
+            }
+        )
+        response = await client.receive_json()
+
+        assert not response["success"]
+
+    async def test_ws_config_set_no_fields(self, hass, hass_ws_client) -> None:
+        """Test calling set with no fields returns current config."""
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/config/set",
+            }
+        )
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert "debounce_seconds" in response["result"]
+
+    async def test_ws_config_persistence(self, hass, hass_ws_client) -> None:
+        """Test config is persisted to store."""
+        config_store = _get_config_store(hass)
+
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/config/set",
+                "debounce_seconds": 3.0,
+            }
+        )
+        await client.receive_json()
+
+        # Verify config store has the value
+        stored_config = config_store.get_config()
+        assert stored_config["debounce_seconds"] == 3.0
+
+
+@pytest.mark.usefixtures("mock_abode")
+class TestWebSocketConfigNotReady:
+    """Tests for WebSocket config API when store is not initialized."""
+
+    async def test_ws_config_get_not_ready(self, hass, hass_ws_client) -> None:
+        """Test getting config when store not initialized."""
+        # Register commands but don't set up config_store
+        async_register_websocket_commands(hass)
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/config/get"})
+        response = await client.receive_json()
+
+        assert not response["success"]
+        assert response["error"]["code"] == "not_ready"
+
+    async def test_ws_config_set_not_ready(self, hass, hass_ws_client) -> None:
+        """Test setting config when store not initialized."""
+        async_register_websocket_commands(hass)
+
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/config/set",
+                "debounce_seconds": 2.0,
+            }
+        )
+        response = await client.receive_json()
+
+        assert not response["success"]
+        assert response["error"]["code"] == "not_ready"

@@ -88,7 +88,10 @@ PLATFORMS = [
 
 async def async_setup(hass: HomeAssistant, _config: ConfigType) -> bool:
     """Set up the Abode component."""
+    from .websocket_api import async_register_websocket_commands
+
     setup_services(hass)
+    async_register_websocket_commands(hass)
     return True
 
 
@@ -192,6 +195,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     loop = asyncio.get_event_loop()
     abode_client.events.set_event_loop(loop)
 
+    # Initialize ActionManager and ConfigStore for WebSocket API
+    from .action_manager import ActionManager
+    from .config_store import ConfigStore
+
+    hass.data.setdefault(DOMAIN, {})
+
+    action_manager = ActionManager(hass)
+    await action_manager.async_setup()
+    hass.data[DOMAIN]["action_manager"] = action_manager
+
+    config_store = ConfigStore(hass)
+    await config_store.async_load()
+    hass.data[DOMAIN]["config"] = config_store.get_config()
+    hass.data[DOMAIN]["config_store"] = config_store
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Enable all Abode entities that were created
@@ -257,6 +275,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if abode_system.logout_listener is not None:
         abode_system.logout_listener()
+
+    # Clean up ActionManager and ConfigStore
+    if DOMAIN in hass.data:
+        hass.data[DOMAIN].pop("action_manager", None)
+        hass.data[DOMAIN].pop("config", None)
+        hass.data[DOMAIN].pop("config_store", None)
 
     return unload_ok
 
