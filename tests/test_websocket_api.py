@@ -527,7 +527,7 @@ class TestWebSocketModesAPI:
         response = await client.receive_json()
 
         assert response["success"]
-        modes = response["result"]
+        modes = response["result"]["modes"]
         assert len(modes) == 3
 
         mode_ids = {m["id"] for m in modes}
@@ -543,7 +543,7 @@ class TestWebSocketModesAPI:
         response = await client.receive_json()
 
         assert response["success"]
-        modes = response["result"]
+        modes = response["result"]["modes"]
 
         home_mode = next(m for m in modes if m["id"] == "home")
         assert home_mode["active"] is True
@@ -563,7 +563,9 @@ class TestWebSocketModesAPI:
         response = await client.receive_json()
 
         assert response["success"]
-        standby_mode = next(m for m in response["result"] if m["id"] == "standby")
+        standby_mode = next(
+            m for m in response["result"]["modes"] if m["id"] == "standby"
+        )
         assert standby_mode["active"] is True
 
     async def test_ws_modes_list_with_action_count(self, hass, hass_ws_client) -> None:
@@ -587,13 +589,14 @@ class TestWebSocketModesAPI:
         response = await client.receive_json()
 
         assert response["success"]
-        home_mode = next(m for m in response["result"] if m["id"] == "home")
+        modes = response["result"]["modes"]
+        home_mode = next(m for m in modes if m["id"] == "home")
         assert home_mode["action_count"] == 1
 
-        away_mode = next(m for m in response["result"] if m["id"] == "away")
+        away_mode = next(m for m in modes if m["id"] == "away")
         assert away_mode["action_count"] == 1
 
-        standby_mode = next(m for m in response["result"] if m["id"] == "standby")
+        standby_mode = next(m for m in modes if m["id"] == "standby")
         assert standby_mode["action_count"] == 0
 
     async def test_ws_modes_list_has_metadata(self, hass, hass_ws_client) -> None:
@@ -603,7 +606,7 @@ class TestWebSocketModesAPI:
         response = await client.receive_json()
 
         assert response["success"]
-        for mode in response["result"]:
+        for mode in response["result"]["modes"]:
             assert "name" in mode
             assert "icon" in mode
             assert mode["icon"].startswith("mdi:")

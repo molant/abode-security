@@ -36,7 +36,7 @@ export async function fetchModes(hass: HomeAssistant): Promise<AbodeMode[]> {
  */
 export async function fetchSensors(hass: HomeAssistant): Promise<SensorsByCategory> {
   const response = await hass.callWS<{ sensors: SensorsByCategory }>({
-    type: 'abode_security/sensors/list',
+    type: 'abode_security/entities/sensors',
   });
   return response.sensors;
 }
@@ -46,7 +46,7 @@ export async function fetchSensors(hass: HomeAssistant): Promise<SensorsByCatego
  */
 export async function fetchAlarms(hass: HomeAssistant): Promise<AlarmEntity[]> {
   const response = await hass.callWS<{ alarms: AlarmEntity[] }>({
-    type: 'abode_security/alarms/list',
+    type: 'abode_security/entities/alarms',
   });
   return response.alarms;
 }

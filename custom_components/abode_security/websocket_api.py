@@ -384,7 +384,7 @@ async def websocket_modes_list(
             }
         )
 
-    connection.send_result(msg["id"], modes)
+    connection.send_result(msg["id"], {"modes": modes})
 
 
 @websocket_api.websocket_command(
