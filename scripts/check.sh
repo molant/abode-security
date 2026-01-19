@@ -4,6 +4,11 @@
 
 set -e
 
+# Change to project root directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -15,7 +20,7 @@ echo "========================================="
 echo ""
 
 # Set PYTHONPATH to include vendored libraries and integration
-export PYTHONPATH="$(cd "$(dirname "$0")/../custom_components" && pwd):$PYTHONPATH"
+export PYTHONPATH="$PROJECT_ROOT/custom_components:$PYTHONPATH"
 
 # Lint with ruff
 echo "Linting with ruff..."
