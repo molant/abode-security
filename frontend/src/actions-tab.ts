@@ -394,7 +394,7 @@ export class ActionsTab extends LitElement {
     this._error = null;
 
     try {
-      this._actions = await fetchActions(this.hass);
+      this._actions = (await fetchActions(this.hass)) ?? [];
     } catch (err) {
       this._error = err instanceof Error ? err.message : 'Failed to load actions';
     } finally {
@@ -403,7 +403,7 @@ export class ActionsTab extends LitElement {
   }
 
   private _getRecentTriggers(): AbodeAction[] {
-    return this._actions
+    return (this._actions ?? [])
       .filter((a) => a.last_triggered)
       .sort(
         (a, b) =>

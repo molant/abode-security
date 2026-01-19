@@ -6,10 +6,26 @@ import type { HomeAssistant, AbodeAction, SensorsByCategory, AlarmEntity, AbodeM
 
 /**
  * Create a mock HomeAssistant object.
+ * Returns empty arrays/objects for API calls to prevent undefined errors.
  */
 export function createMockHass(overrides: Partial<HomeAssistant> = {}): HomeAssistant {
   return {
-    callWS: async () => ({ success: true }),
+    callWS: async (params: { type: string }) => {
+      // Return appropriate mock data based on the API type
+      if (params.type === 'abode_security/modes/list') {
+        return { modes: [] };
+      }
+      if (params.type === 'abode_security/actions/list') {
+        return { actions: [] };
+      }
+      if (params.type === 'abode_security/entities/sensors') {
+        return { sensors: {} };
+      }
+      if (params.type === 'abode_security/entities/alarms') {
+        return { alarms: [] };
+      }
+      return { success: true };
+    },
     states: {},
     ...overrides,
   } as HomeAssistant;

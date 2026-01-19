@@ -296,8 +296,8 @@ export class ActionEditor extends LitElement {
         fetchSensors(this.hass),
         fetchAlarms(this.hass),
       ]);
-      this._sensors = sensors;
-      this._alarms = alarms;
+      this._sensors = sensors ?? null;
+      this._alarms = alarms ?? [];
     } catch (err) {
       console.error('Failed to load entities:', err);
     } finally {

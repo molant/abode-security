@@ -149,8 +149,8 @@ export class ModesTab extends LitElement {
         fetchModes(this.hass),
         fetchActions(this.hass),
       ]);
-      this._modes = modes;
-      this._actions = actions;
+      this._modes = modes ?? [];
+      this._actions = actions ?? [];
     } catch (err) {
       this._error = err instanceof Error ? err.message : 'Failed to load data';
     } finally {

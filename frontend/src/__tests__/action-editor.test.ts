@@ -33,7 +33,7 @@ describe('ActionEditor', () => {
       el._loading = false;
       await elementUpdated(el);
 
-      expect(el.shadowRoot?.textContent).to.include('Create Action');
+      expect(el.shadowRoot?.textContent).to.include('New Action');
     });
 
     it('renders edit form when action provided', async () => {
@@ -199,9 +199,9 @@ describe('ActionEditor', () => {
       el._loading = false;
       await elementUpdated(el);
 
-      const overlay = el.shadowRoot?.querySelector('.editor-overlay');
-      expect(overlay?.getAttribute('role')).to.equal('dialog');
-      expect(overlay?.getAttribute('aria-modal')).to.equal('true');
+      const dialog = el.shadowRoot?.querySelector('.editor-dialog');
+      expect(dialog?.getAttribute('role')).to.equal('dialog');
+      expect(dialog?.getAttribute('aria-modal')).to.equal('true');
     });
   });
 });
