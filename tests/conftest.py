@@ -239,6 +239,31 @@ def pytest_collection_modifyitems(config, items):
         "test_ws_config_persistence",
         "test_ws_config_get_not_ready",
         "test_ws_config_set_not_ready",
+        # ActionTriggerCoordinator tests (Phase 4 - Dashboard Configuration)
+        # Sub-Phase A: Coordinator Core
+        "test_coordinator_init",
+        "test_coordinator_start_stop",
+        "test_coordinator_get_mode_standby",
+        "test_coordinator_get_mode_home",
+        "test_coordinator_get_mode_away",
+        "test_coordinator_get_mode_no_panel",
+        # Sub-Phase B: State Change Handling
+        "test_coordinator_ignores_non_binary_sensor",
+        "test_coordinator_ignores_off_state",
+        "test_coordinator_matches_sensor_and_mode",
+        "test_coordinator_no_match_wrong_mode",
+        "test_coordinator_no_match_wrong_sensor",
+        "test_coordinator_debounce",
+        # Sub-Phase C: Action Execution
+        "test_coordinator_triggers_alarm_service",
+        "test_coordinator_fires_event",
+        "test_coordinator_multiple_actions",
+        "test_coordinator_disabled_action_not_triggered",
+        "test_coordinator_delayed_action",
+        "test_coordinator_delayed_action_cancelled_on_delete",
+        "test_coordinator_delayed_action_cancelled_on_disable",
+        "test_coordinator_multi_alarm_continues_on_failure",
+        "test_coordinator_cancel_pending_for_action",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:

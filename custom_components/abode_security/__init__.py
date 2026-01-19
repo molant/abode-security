@@ -197,6 +197,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Initialize ActionManager and ConfigStore for WebSocket API
     from .action_manager import ActionManager
+    from .action_trigger import ActionTriggerCoordinator
     from .config_store import ConfigStore
 
     hass.data.setdefault(DOMAIN, {})
@@ -209,6 +210,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await config_store.async_load()
     hass.data[DOMAIN]["config"] = config_store.get_config()
     hass.data[DOMAIN]["config_store"] = config_store
+
+    # Initialize ActionTriggerCoordinator
+    coordinator = ActionTriggerCoordinator(hass, action_manager)
+    action_manager.set_trigger_coordinator(coordinator)
+    await coordinator.async_start()
+    hass.data[DOMAIN]["action_trigger"] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -276,8 +283,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if abode_system.logout_listener is not None:
         abode_system.logout_listener()
 
-    # Clean up ActionManager and ConfigStore
+    # Clean up ActionTriggerCoordinator, ActionManager and ConfigStore
     if DOMAIN in hass.data:
+        if coordinator := hass.data[DOMAIN].get("action_trigger"):
+            await coordinator.async_stop()
+        hass.data[DOMAIN].pop("action_trigger", None)
         hass.data[DOMAIN].pop("action_manager", None)
         hass.data[DOMAIN].pop("config", None)
         hass.data[DOMAIN].pop("config_store", None)

@@ -13,6 +13,8 @@ from homeassistant.helpers.storage import Store
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
+    from .action_trigger import ActionTriggerCoordinator
+
 _LOGGER = logging.getLogger(__name__)
 
 STORAGE_KEY = "abode_security_actions"
@@ -154,10 +156,21 @@ class ActionManager:
         """Initialize the action manager."""
         self._hass = hass
         self._store = ActionStore(hass)
+        self._trigger_coordinator: ActionTriggerCoordinator | None = None
 
     async def async_setup(self) -> None:
         """Set up the action manager by loading the store."""
         await self._store.async_load()
+
+    def set_trigger_coordinator(
+        self, coordinator: ActionTriggerCoordinator | None
+    ) -> None:
+        """Set the trigger coordinator for cancellation callbacks.
+
+        Args:
+            coordinator: The ActionTriggerCoordinator instance, or None to clear
+        """
+        self._trigger_coordinator = coordinator
 
     def _validate_action(
         self,
@@ -302,6 +315,11 @@ class ActionManager:
             trigger_count=action.trigger_count,
         )
         await self._store.async_add(updated_action)
+
+        # Cancel pending delays if action was disabled
+        if self._trigger_coordinator and not enabled and action.enabled:
+            self._trigger_coordinator.cancel_pending_for_action(action_id)
+
         return updated_action
 
     async def async_delete(self, action_id: str) -> bool:
@@ -309,6 +327,10 @@ class ActionManager:
 
         Returns True if deleted, False if not found.
         """
+        # Cancel any pending delays for this action
+        if self._trigger_coordinator:
+            self._trigger_coordinator.cancel_pending_for_action(action_id)
+
         return await self._store.async_remove(action_id)
 
     async def async_get_by_mode(self, mode: str) -> list[AbodeAction]:

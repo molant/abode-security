@@ -24,6 +24,7 @@ Use Docker environment for all development:
 
 **Backend (Python)**:
 ```bash
+./scripts/check.sh               # Quick checks: lint + type check + unit tests
 pytest tests/                    # Run unit tests
 pytest -m integration            # Run integration tests (needs mock server)
 ruff check . && ruff format .   # Lint and format

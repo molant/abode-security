@@ -35,6 +35,9 @@ markers = [
     "unit: Fast unit tests with mocked responses",
 ]
 
+[tool.setuptools.packages.find]
+where = ["custom_components"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py311"

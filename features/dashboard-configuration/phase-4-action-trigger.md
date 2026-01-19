@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 phase: 4
 title: Action Trigger Coordinator
 ---
@@ -18,19 +18,19 @@ Create the `ActionTriggerCoordinator` that listens to Home Assistant state chang
 
 ### Tasks
 
-- [ ] Create `ActionTriggerCoordinator` class
+- [x] Create `ActionTriggerCoordinator` class
   - Constructor takes `hass: HomeAssistant, action_manager: ActionManager`
   - Store reference to debounce config (from `hass.data[DOMAIN]`)
 
-- [ ] Implement `async_start()` method
+- [x] Implement `async_start()` method
   - Subscribe to `EVENT_STATE_CHANGED` events
   - Store unsubscribe callback for cleanup
 
-- [ ] Implement `async_stop()` method
+- [x] Implement `async_stop()` method
   - Unsubscribe from events
   - Cancel any pending delayed triggers
 
-- [ ] Implement `_get_current_mode()` helper
+- [x] Implement `_get_current_mode()` helper
   - Find `alarm_control_panel.abode_*` entity
   - Map HA state to mode:
     - `disarmed` → `"standby"`
@@ -89,20 +89,20 @@ async def test_coordinator_get_mode_no_panel(hass, action_manager):
 
 ### Tasks
 
-- [ ] Implement `_handle_state_change(event: Event)` callback
+- [x] Implement `_handle_state_change(event: Event)` callback
   - Extract entity_id from event
   - Filter: only process `binary_sensor.*` entities
   - Filter: only process transitions to state `"on"`
   - Call `_process_sensor_activation(entity_id)`
 
-- [ ] Implement `_process_sensor_activation(entity_id: str)` method
+- [x] Implement `_process_sensor_activation(entity_id: str)` method
   - Get current mode
   - If mode is None, log warning and return
   - Query `action_manager.async_get_by_mode(mode)`
   - Filter actions: entity_id must be in action's `sensor_entity_ids`
   - For each matching action, call `_trigger_action(action, entity_id)`
 
-- [ ] Implement debouncing logic
+- [x] Implement debouncing logic
   - Track last trigger time per (action_id, sensor_id) pair
   - Skip trigger if within debounce window
   - Use `hass.data[DOMAIN]["config"]["debounce_seconds"]`
@@ -252,11 +252,11 @@ async def test_coordinator_debounce(hass, action_manager):
 
 ### Tasks
 
-- [ ] Implement `_trigger_action(action: AbodeAction, triggered_by: str)` method
+- [x] Implement `_trigger_action(action: AbodeAction, triggered_by: str)` method
   - If action has `delay_seconds > 0`, schedule delayed execution
   - Otherwise, execute immediately via `_execute_action()`
 
-- [ ] Implement `_execute_action(action: AbodeAction, triggered_by: str)` method
+- [x] Implement `_execute_action(action: AbodeAction, triggered_by: str)` method
   - For each alarm in `action.alarm_entity_ids`:
     - Try to call `hass.services.async_call("switch", "turn_on", {"entity_id": alarm})`
     - On failure: log error, continue to next alarm (don't abort)
@@ -272,14 +272,14 @@ async def test_coordinator_debounce(hass, action_manager):
     ```
   - Log errors at WARNING level: `_LOGGER.warning("Failed to trigger alarm %s: %s", alarm_id, error)`
 
-- [ ] Implement delayed execution with cancellation support
+- [x] Implement delayed execution with cancellation support
   - Use `asyncio.create_task()` with sleep
   - Track pending tasks in `_pending_delays: dict[str, asyncio.Task]` keyed by `f"{action_id}:{sensor_id}"`
   - Cancel task if action is disabled/deleted before delay completes
   - Provide `cancel_pending_for_action(action_id: str)` method for ActionManager to call on delete/disable
   - Clean up completed tasks from tracking dict
 
-- [ ] Event data structure:
+- [x] Event data structure:
   ```python
   {
       "action_id": action.id,
@@ -517,7 +517,7 @@ async def test_coordinator_multi_alarm_continues_on_failure(hass, action_manager
 
 ### Tasks
 
-- [ ] Modify `__init__.py` `async_setup_entry()`:
+- [x] Modify `__init__.py` `async_setup_entry()`:
   - Create `ActionTriggerCoordinator` with references to `ActionManager`
   - Call `coordinator.async_start()`
   - Store in `hass.data[DOMAIN]["action_trigger"]`
@@ -526,11 +526,11 @@ async def test_coordinator_multi_alarm_continues_on_failure(hass, action_manager
     action_manager.set_trigger_coordinator(coordinator)
     ```
 
-- [ ] Modify `__init__.py` `async_unload_entry()`:
+- [x] Modify `__init__.py` `async_unload_entry()`:
   - Call `coordinator.async_stop()` (cancels all pending delays)
   - Remove from `hass.data[DOMAIN]`
 
-- [ ] Wire up ActionManager delete/disable to cancel pending delays:
+- [x] Wire up ActionManager delete/disable to cancel pending delays:
   ```python
   # In ActionManager.async_delete():
   if self._trigger_coordinator:
