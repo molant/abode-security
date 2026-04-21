@@ -310,8 +310,9 @@ class Client:
 
         self._session_monitor_running = True
         try:
-            # Get current event loop - if this fails, we can't start the monitor
-            loop = asyncio.get_event_loop()
+            # get_running_loop is the right primitive here: this is only ever
+            # called from an async context (_async_initialize).
+            loop = asyncio.get_running_loop()
             self._session_monitor_task = loop.create_task(self._session_monitor_loop())
             log.debug("Session monitor background task started")
         except RuntimeError as exc:

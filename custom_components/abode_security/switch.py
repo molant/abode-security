@@ -17,17 +17,13 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .abode.devices.alarm import Alarm
 from .abode.devices.switch import Switch
 from .abode.exceptions import Exception as AbodeException
+from .abode.helpers.timeline import Groups as TimelineGroups
 from .const import DOMAIN, LOGGER
 from .decorators import handle_abode_errors
 from .entity import AbodeAutomation, AbodeDevice
 from .models import AbodeSystem
 
 PARALLEL_UPDATES = 1
-
-try:
-    from .abode.helpers.timeline import Groups as TimelineGroups
-except ImportError:
-    TimelineGroups = None
 
 DEVICE_TYPES = ["switch", "valve"]
 
@@ -289,10 +285,6 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         """Subscribe to timeline events when added to Home Assistant."""
         await super().async_added_to_hass()
 
-        if TimelineGroups is None:
-            LOGGER.warning("Timeline groups not available, state sync disabled")
-            return
-
         # Subscribe to alarm trigger events
         await self._subscribe_to_events(
             TimelineGroups.ALARM, self._alarm_event_callback
@@ -306,9 +298,6 @@ class AbodeManualAlarmSwitch(SwitchEntity):
     async def async_will_remove_from_hass(self) -> None:
         """Clean up event subscriptions when removed."""
         await super().async_will_remove_from_hass()
-
-        if TimelineGroups is None:
-            return
 
         # Remove event callbacks
         await self._unsubscribe_from_events(

@@ -1,4 +1,4 @@
-import { LitElement, html, css, PropertyValues } from 'lit';
+import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { HomeAssistant } from './types';
 import './modes-tab';
@@ -8,7 +8,6 @@ import './actions-tab';
 export class AbodeConfigurationPanel extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;
   @state() private _activeTab: 'modes' | 'actions' = 'actions';
-  @state() private _activeTabId = 'actions-panel';
 
   static styles = css`
     :host {
@@ -81,14 +80,8 @@ export class AbodeConfigurationPanel extends LitElement {
     }
   `;
 
-  protected updated(changedProps: PropertyValues): void {
-    super.updated(changedProps);
-    if (changedProps.has('_activeTab')) {
-      this._activeTabId = this._activeTab === 'modes' ? 'modes-panel' : 'actions-panel';
-    }
-  }
-
   render() {
+    const activeTabId = this._activeTab === 'modes' ? 'modes-panel' : 'actions-panel';
     return html`
       <div class="panel-content">
         <div class="header">
@@ -121,7 +114,7 @@ export class AbodeConfigurationPanel extends LitElement {
         <div
           class="tab-content"
           role="tabpanel"
-          id=${this._activeTabId}
+          id=${activeTabId}
           aria-labelledby=${this._activeTab === 'modes' ? 'modes-tab' : 'actions-tab'}
         >
           ${this._activeTab === 'modes'

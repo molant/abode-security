@@ -10,6 +10,7 @@ from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api import require_admin
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
+from homeassistant.helpers import config_validation as cv
 
 from .action_manager import VALID_MODES
 from .const import DOMAIN
@@ -108,11 +109,11 @@ async def websocket_actions_get(
             vol.Length(min=1),
         ),
         vol.Required("sensor_entity_ids"): vol.All(
-            [str],
+            [cv.entity_id],
             vol.Length(min=1),
         ),
         vol.Required("alarm_entity_ids"): vol.All(
-            [str],
+            [cv.entity_id],
             vol.Length(min=1),
         ),
         vol.Optional("delay_seconds", default=0): vol.All(
@@ -157,11 +158,11 @@ async def websocket_actions_create(
             vol.Length(min=1),
         ),
         vol.Optional("sensor_entity_ids"): vol.All(
-            [str],
+            [cv.entity_id],
             vol.Length(min=1),
         ),
         vol.Optional("alarm_entity_ids"): vol.All(
-            [str],
+            [cv.entity_id],
             vol.Length(min=1),
         ),
         vol.Optional("delay_seconds"): vol.All(int, vol.Range(min=0, max=60)),

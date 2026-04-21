@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { repeat } from 'lit/directives/repeat.js';
 import type { HomeAssistant, AbodeAction } from './types';
 import { fetchActions, updateAction, deleteAction, testAction } from './api';
 import './action-editor';
@@ -556,7 +557,11 @@ export class ActionsTab extends LitElement {
           `
         : html`
             <div class="actions-list" role="list">
-              ${this._actions.map((action) => this._renderActionRow(action))}
+              ${repeat(
+                this._actions,
+                (action) => action.id,
+                (action) => this._renderActionRow(action),
+              )}
             </div>
           `}
 

@@ -102,28 +102,26 @@ async def async_setup_entry(
         )
     ]
 
-    connection_sensor_exists = False
-
     # Attempt migration of legacy unique IDs
-    if not connection_sensor_exists:
-        for legacy_uid in legacy_unique_ids:
-            if legacy_uid == connection_unique_id:
-                continue
-            if entity_id := entity_registry.async_get_entity_id(
-                "sensor", DOMAIN, legacy_uid
-            ):
-                entity_registry.async_update_entity(
-                    entity_id, new_unique_id=connection_unique_id
-                )
-                connection_sensor_exists = True
-                break
+    migrated = False
+    for legacy_uid in legacy_unique_ids:
+        if legacy_uid == connection_unique_id:
+            continue
+        if entity_id := entity_registry.async_get_entity_id(
+            "sensor", DOMAIN, legacy_uid
+        ):
+            entity_registry.async_update_entity(
+                entity_id, new_unique_id=connection_unique_id
+            )
+            migrated = True
+            break
 
     # Remove any extra duplicate entities beyond the canonical one
     for entity in all_connection_entities:
         if entity.unique_id != connection_unique_id:
             entity_registry.async_remove(entity.entity_id)
 
-    if not connection_sensor_exists:
+    if not migrated:
         entities.append(AbodeConnectionStatusSensor(data, connection_unique_id))
 
     for description in SENSOR_TYPES:

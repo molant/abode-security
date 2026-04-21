@@ -26,7 +26,6 @@ export function createMockHass(overrides: Partial<HomeAssistant> = {}): HomeAssi
       }
       return { success: true };
     },
-    states: {},
     ...overrides,
   } as HomeAssistant;
 }

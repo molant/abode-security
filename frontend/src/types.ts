@@ -5,31 +5,6 @@
 // Home Assistant types
 export interface HomeAssistant {
   callWS<T>(params: { type: string; [key: string]: unknown }): Promise<T>;
-  states: { [entity_id: string]: HassState };
-}
-
-export interface HassState {
-  entity_id: string;
-  state: string;
-  attributes: { friendly_name?: string; [key: string]: unknown };
-}
-
-// Panel types
-export interface AbodePanel {
-  mode: {
-    area_1: 'standby' | 'home' | 'away';
-    area_1_label: string;
-  };
-  online: string;
-  battery: string;
-}
-
-export interface AbodeDevice {
-  id: string;
-  name: string;
-  type: string;
-  type_tag: string;
-  status: string;
 }
 
 // Action types
@@ -59,15 +34,17 @@ export interface SensorEntity {
   state: string;
 }
 
-export interface SensorsByCategory {
-  door: SensorEntity[];
-  window: SensorEntity[];
-  motion: SensorEntity[];
-  moisture: SensorEntity[];
-  smoke: SensorEntity[];
-  connectivity: SensorEntity[];
-  other: SensorEntity[];
-}
+// Backend omits categories with zero sensors, so all keys are optional.
+export type SensorCategory =
+  | 'door'
+  | 'window'
+  | 'motion'
+  | 'moisture'
+  | 'smoke'
+  | 'connectivity'
+  | 'other';
+
+export type SensorsByCategory = Partial<Record<SensorCategory, SensorEntity[]>>;
 
 export interface AlarmEntity {
   entity_id: string;
