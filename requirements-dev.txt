@@ -19,7 +19,9 @@ ruff==0.9.4
 # Mock server dependencies (for running locally outside Docker)
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
-requests==2.32.3
+# Loose pin: homeassistant pins requests to a specific patch version that
+# changes across releases; keep this compatible with whatever HA demands.
+requests>=2.32.3
 
 # Home Assistant dependencies
 homeassistant>=2024.11
