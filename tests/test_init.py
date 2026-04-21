@@ -34,8 +34,9 @@ async def test_change_settings(hass: HomeAssistant, mock_abode) -> None:
     mock_abode.set_setting.assert_called_once()
 
 
-async def test_add_unique_id(hass: HomeAssistant) -> None:
+async def test_add_unique_id(hass: HomeAssistant, mock_abode) -> None:
     """Test unique_id is set to Abode username."""
+    del mock_abode  # Fixture dependency, not used directly
     mock_entry = await setup_platform(hass, ALARM_DOMAIN)
     # Set unique_id to None to match previous config entries
     hass.config_entries.async_update_entry(entry=mock_entry, unique_id=None)
