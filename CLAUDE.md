@@ -25,6 +25,11 @@ Quality gates (`ruff`, `mypy`, `pytest`) are enforced by `.githooks/pre-commit`.
 
 `pytest -m ""` runs everything.
 
+### Testing gotchas
+
+- **`enabled_tests` allowlist** — `tests/conftest.py` skips any test that uses the `hass` fixture unless its name is in the `enabled_tests` set (around line 30). This is a holdover from phased test rollout. Newly added tests will silently skip with `"Test infrastructure complete but test needs updates - see phase-4-5.md"` unless you add the test's name to the set. If a test runs green immediately after writing it, double-check it didn't skip.
+- **Frontend tests exist locally but aren't in CI** — `cd frontend && npm test` runs `web-test-runner` against `frontend/src/__tests__/*.test.ts` (Playwright-backed, `@open-wc/testing`). CI only runs `npm run build`, so a broken frontend test won't be caught on PR. Run `npm test` locally before pushing frontend changes.
+
 ## Abode API quirks
 
 - Polling endpoints (panel status, CMS settings) rate-limit aggressively with 429s — be conservative with request frequency
