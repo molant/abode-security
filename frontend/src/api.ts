@@ -55,10 +55,9 @@ export async function fetchAlarms(hass: HomeAssistant): Promise<AlarmEntity[]> {
  * Fetch configuration.
  */
 export async function fetchConfig(hass: HomeAssistant): Promise<AbodeConfig> {
-  const response = await hass.callWS<{ config: AbodeConfig }>({
+  return hass.callWS<AbodeConfig>({
     type: 'abode_security/config/get',
   });
-  return response.config;
 }
 
 /**
@@ -68,11 +67,10 @@ export async function createAction(
   hass: HomeAssistant,
   data: Partial<AbodeAction>
 ): Promise<AbodeAction> {
-  const response = await hass.callWS<{ action: AbodeAction }>({
+  return hass.callWS<AbodeAction>({
     type: 'abode_security/actions/create',
     ...data,
   });
-  return response.action;
 }
 
 /**
@@ -83,12 +81,11 @@ export async function updateAction(
   id: string,
   data: Partial<AbodeAction>
 ): Promise<AbodeAction> {
-  const response = await hass.callWS<{ action: AbodeAction }>({
+  return hass.callWS<AbodeAction>({
     type: 'abode_security/actions/update',
     action_id: id,
     ...data,
   });
-  return response.action;
 }
 
 /**
