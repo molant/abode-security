@@ -1,12 +1,20 @@
 # Pending Features & Improvements
 
-This document tracks deferred items, future enhancements, and "nice to have" improvements that were identified during feature development but not implemented immediately.
+Deferred items, future enhancements, and "nice to have" improvements not implemented immediately.
+
+## Open code-review findings
+
+A parallel code review in April 2026 produced 9 GitHub issues spanning correctness, a11y, and refactors. Triage them before picking items below:
+
+- [github.com/molant/abode-security/issues](https://github.com/molant/abode-security/issues)
+
+The review also landed four direct fixes for production bugs (frontend WS contract, action-trigger restart false-fire + delay race, embedded library retry/shutdown races); those are done.
 
 ## Frontend Panel Enhancements
 
 **Source**: Phase 5 & 6 of better-development
 
-The current frontend panel (`frontend/src/abode-panel.ts`) is a minimal implementation showing "Abode Configuration" text. The following functionality could be added:
+The frontend panel (`frontend/src/abode-panel.ts`) currently implements Actions (CRUD + test) and Modes tabs. Possible further additions:
 
 - [ ] Display alarm panel status (armed/disarmed/home)
 - [ ] Show device list with current states
@@ -17,6 +25,7 @@ The current frontend panel (`frontend/src/abode-panel.ts`) is a minimal implemen
 - [ ] Automation management
 
 **E2E tests to add when panel is expanded:**
+
 - [ ] Dashboard loads with sensor data
 - [ ] Alarm mode display is correct
 - [ ] Arm/disarm interactions work
@@ -35,20 +44,14 @@ The current frontend panel (`frontend/src/abode-panel.ts`) is a minimal implemen
 
 **Source**: Phase 4.5 of better-development
 
-125 tests are currently skipped. Categories:
+~120 tests are gated behind the `enabled_tests` allowlist in `tests/conftest.py`. Categories:
 
-- [ ] **Advanced features tests** (~29 tests) - SmartPolling, EventFilter, BatchOperations
-  - Require full HA environment or more complex mocking
-- [ ] **Async verification tests** (~27 tests) - Static analysis of async patterns
-  - Could be converted to simple unit tests
-- [ ] **Entity lifecycle tests** (~9 tests) - Event subscription, error handling
-  - Need real entity instances
-- [ ] **Exception tests** (~12 tests) - Exception class behavior
-  - Should be simple to enable
-- [ ] **E2E scenario tests** (~10 tests) - Full workflow testing
-  - Could use mock server approach
-- [ ] **Integration advanced features tests** (~18 tests)
-  - Require options flow and complex setup
+- [ ] **Advanced features tests** (~29 tests) - SmartPolling, EventFilter, BatchOperations — require full HA environment or more complex mocking
+- [ ] **Async verification tests** (~27 tests) - Static analysis of async patterns — could be converted to simple unit tests
+- [ ] **Entity lifecycle tests** (~9 tests) - Event subscription, error handling — need real entity instances
+- [ ] **Exception tests** (~12 tests) - Exception class behavior — should be simple to enable
+- [ ] **E2E scenario tests** (~10 tests) - Full workflow testing — could use mock server approach
+- [ ] **Integration advanced features tests** (~18 tests) — require options flow and complex setup
 
 ## CI/CD Improvements
 
@@ -63,7 +66,6 @@ The current frontend panel (`frontend/src/abode-panel.ts`) is a minimal implemen
 ## Documentation
 
 - [ ] Add API documentation for frontend components
-- [ ] Add architecture diagram
 - [ ] Document mock server endpoints more thoroughly
 
 ---
@@ -74,10 +76,13 @@ The current frontend panel (`frontend/src/abode-panel.ts`) is a minimal implemen
 2. **Picking up items**: Check this list when looking for improvements to make
 3. **Completing items**: Mark checkbox and add completion date, or remove if done as part of another feature
 4. **Organizing**: Group related items under headings
+5. **Correctness findings / bugs**: file on GitHub issues, not here
 
 ## Priority Guide
 
 When picking up deferred items, consider:
+
+- **Highest value**: Open GitHub issues (correctness, a11y)
 - **High value**: Frontend panel enhancements (most user-visible)
 - **Medium value**: Test coverage improvements (code quality)
 - **Lower priority**: Build improvements, CI enhancements
