@@ -96,12 +96,13 @@ class ActionTriggerCoordinator:
         new_state = event.data.get("new_state")
         old_state = event.data.get("old_state")
 
-        # Only process transitions to "on"
+        # Only process genuine "off" -> "on" transitions.
+        # Rejecting any other old_state (None, "unavailable", "unknown", "on") avoids
+        # spurious triggers on HA restart, where a currently-open sensor transitions
+        # "unavailable" -> "on" and would otherwise fire the alarm.
         if new_state is None or new_state.state != "on":
             return
-
-        # Ignore if already "on" (not a transition)
-        if old_state is not None and old_state.state == "on":
+        if old_state is None or old_state.state != "off":
             return
 
         # Schedule processing (don't block event loop)
@@ -198,6 +199,11 @@ class ActionTriggerCoordinator:
                     f"action_delay_exec_{task_key}",
                 )
 
+            # If a delay is already pending for this (action, sensor) pair, cancel
+            # it before scheduling a new one. Otherwise the prior unsub is lost and
+            # the action double-fires.
+            if existing := self._pending_delays.pop(task_key, None):
+                existing()
             unsub = async_call_later(self._hass, action.delay_seconds, delayed_callback)
             self._pending_delays[task_key] = unsub
         else:

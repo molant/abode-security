@@ -657,3 +657,126 @@ class TestActionExecution:
         assert len(service_calls) == 0
 
         await coordinator.async_stop()
+
+
+# --- Regression tests for state-transition correctness ---
+
+
+@pytest.mark.usefixtures("mock_abode", "setup_coordinator")
+class TestStateTransitionRegressions:
+    """Regression tests for subtle state-transition bugs."""
+
+    async def test_unavailable_to_on_does_not_trigger(self, hass) -> None:
+        """An 'unavailable' -> 'on' transition (e.g. on HA restart) must not fire.
+
+        Previously, any transition where old_state != 'on' and new_state == 'on'
+        would trigger the action, so a currently-open sensor would fire the
+        alarm on every HA restart.
+        """
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        service_calls = []
+
+        async def mock_service(call):
+            service_calls.append(call)
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        await manager.async_create(
+            name="Door Alert",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.front_door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        # Deliberately skip priming the sensor to "off" — this test simulates
+        # the restart recovery path where the sensor is re-created as
+        # "unavailable" and immediately becomes "on".
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_away")
+        hass.states.async_set("binary_sensor.front_door", "unavailable")
+        await hass.async_block_till_done()
+
+        hass.states.async_set("binary_sensor.front_door", "on")
+        await hass.async_block_till_done()
+
+        assert service_calls == []
+
+        await coordinator.async_stop()
+
+    async def test_unknown_to_on_does_not_trigger(self, hass) -> None:
+        """'unknown' -> 'on' must also be ignored; only 'off' -> 'on' is real."""
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        service_calls = []
+
+        async def mock_service(call):
+            service_calls.append(call)
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        await manager.async_create(
+            name="Test",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        hass.states.async_set("binary_sensor.motion", "unknown")
+        await hass.async_block_till_done()
+        hass.states.async_set("binary_sensor.motion", "on")
+        await hass.async_block_till_done()
+
+        assert service_calls == []
+
+        await coordinator.async_stop()
+
+    async def test_refire_during_pending_delay_fires_once(self, hass) -> None:
+        """Re-firing a sensor during a pending delay must cancel the old timer.
+
+        Without cancelling the prior unsub, both timers would fire and the
+        action executed twice.
+        """
+        hass.data[DOMAIN]["config"]["debounce_seconds"] = 0.0
+
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        service_calls = []
+
+        async def mock_service(call):
+            service_calls.append(call)
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        await manager.async_create(
+            name="Delayed",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+            delay_seconds=5,
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        hass.states.async_set("binary_sensor.door", "off")
+        await hass.async_block_till_done()
+
+        hass.states.async_set("binary_sensor.door", "on")
+        await hass.async_block_till_done()
+
+        hass.states.async_set("binary_sensor.door", "off")
+        await hass.async_block_till_done()
+        hass.states.async_set("binary_sensor.door", "on")
+        await hass.async_block_till_done()
+
+        await async_fire_time_changed_and_wait(hass, timedelta(seconds=6))
+
+        # The discriminator: with the prior bug both timers survived and fired.
+        assert len(service_calls) == 1
+
+        await coordinator.async_stop()

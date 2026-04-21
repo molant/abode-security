@@ -264,6 +264,10 @@ def pytest_collection_modifyitems(config, items):
         "test_coordinator_delayed_action_cancelled_on_disable",
         "test_coordinator_multi_alarm_continues_on_failure",
         "test_coordinator_cancel_pending_for_action",
+        # State-transition regressions
+        "test_unavailable_to_on_does_not_trigger",
+        "test_unknown_to_on_does_not_trigger",
+        "test_refire_during_pending_delay_fires_once",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:
