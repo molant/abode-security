@@ -975,6 +975,10 @@ class Client:
                     max_attempts,
                 )
                 self._set_connection_status("rate_limited", str(exc))
+                # Final attempt: re-raise so the caller sees rate-limit state
+                # rather than receiving a silent None.
+                if attempt == max_attempts - 1:
+                    raise
                 await asyncio.sleep(wait_seconds)
                 retry_delay = min(wait_seconds * 2, 300)
             except (TimeoutError, aiohttp.ClientError) as exc:
@@ -1027,6 +1031,11 @@ class Client:
 
                 # Exponential backoff for next retry
                 retry_delay = min(retry_delay * 2, 30)  # Max 30 seconds
+
+        # Defensive: if the loop exits without returning or raising (should be
+        # unreachable given the branches above), surface a clear error rather
+        # than returning None and letting callers crash on attribute access.
+        raise Exception(errors.REQUEST)
 
     async def _send_request(
         self, method, path, headers=None, data=None, raise_on_error=True
@@ -1125,6 +1134,15 @@ class Client:
                     # For error responses, avoid JSON parsing failures on HTML bodies
                     body = await response.text()
                     return ResponseWrapper(body, status, headers_dict)
+
+                # status >= 400 (non-429) with raise_on_error=True: raise a
+                # typed exception carrying the status and message. The outer
+                # send_request loop does not catch AuthenticationException,
+                # so this still propagates to the caller (matching pre-fix
+                # behavior), but now preserves the HTTP status for logging
+                # and caller-side decisions.
+                message = await AuthenticationException.best_message(response)
+                raise AuthenticationException((status, message))
         except aiohttp.ClientError as exc:
             log.info("Abode connection error: %s", exc)
             if not raise_on_error:

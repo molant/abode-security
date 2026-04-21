@@ -102,7 +102,9 @@ class SocketIO:
 
         self._thread = None
         self._websocket = None
-        self._exit_event = None
+        # Create the exit event up front so stop() can signal the thread even
+        # during the early cookie-wait phase (before the websocket is built).
+        self._exit_event = threading.Event()
         self._running = False
 
         self._websocket_connected = False
@@ -147,11 +149,13 @@ class SocketIO:
         log.info("Stopping SocketIO thread...")
 
         self._running = False
+        self._exit_event.set()
 
-        if self._exit_event:
-            self._exit_event.set()
-
-        self._thread.join()
+        # Bound the join so HA unload can't hang if the thread is stuck (e.g.,
+        # inside a network call that doesn't honor the exit event).
+        self._thread.join(timeout=10)
+        if self._thread.is_alive():
+            log.warning("SocketIO thread did not exit within 10s; abandoning")
 
     def _run(self):
         self._running = True
@@ -186,35 +190,47 @@ class SocketIO:
     def _step(self, intervals):
         self._handle_event("started")
 
-        # Wait for cookies to be set by async callback; abort connect if none available
-        import time
-
-        max_attempts = 1500  # Up to 15 seconds (10ms * 1500)
-        for attempt in range(max_attempts):
-            if self._cookie:
-                log.debug(
-                    "Cookies obtained on attempt %d, proceeding with WebSocket connection",
-                    attempt + 1,
+        # Wait for cookies to be set by async callback; abort connect if none
+        # available. Use the exit event so stop() interrupts the wait instead
+        # of blocking HA shutdown for up to 15s.
+        poll_interval = 0.05
+        max_attempts = 300  # 15s total at 50ms polls
+        attempt = 0
+        while not self._cookie:
+            if not self._running or self._exit_event.wait(poll_interval):
+                raise SocketIOException(
+                    ERRORS.SOCKETIO_ERROR,
+                    details="SocketIO stopped while waiting for cookies",
                 )
-                break
-            # Log progress at 5s and 10s milestones
-            if attempt == 500:
+            attempt += 1
+            if attempt >= max_attempts:
+                raise SocketIOException(
+                    ERRORS.SOCKETIO_ERROR,
+                    details="Timeout waiting for authentication cookies before SocketIO connect (15s)",
+                )
+            if attempt == 100:
                 log.warning(
                     "Still waiting for authentication cookies (5s elapsed, continuing...)"
                 )
-            elif attempt == 1000:
+            elif attempt == 200:
                 log.warning(
                     "Still waiting for authentication cookies (10s elapsed, continuing...)"
                 )
-            time.sleep(0.01)
-        else:
-            raise SocketIOException(
-                ERRORS.SOCKETIO_ERROR,
-                details="Timeout waiting for authentication cookies before SocketIO connect (15s)",
-            )
+        log.debug(
+            "Cookies obtained after %d polls, proceeding with WebSocket connection",
+            attempt,
+        )
 
         self._websocket = WebSocket(self._url)
-        self._exit_event = threading.Event()
+        # Reset for this connection cycle (reused across reconnects). Re-check
+        # _running afterwards to close the window where stop() raced with the
+        # clear() and had its signal wiped.
+        self._exit_event.clear()
+        if not self._running:
+            raise SocketIOException(
+                ERRORS.SOCKETIO_ERROR,
+                details="SocketIO stopped before WebSocket connect",
+            )
 
         self._add_header("Cookie", self._cookie)
         self._add_header("Origin", self._origin)

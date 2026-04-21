@@ -280,12 +280,17 @@ class EventController:
         # Schedule async session initialization on the event loop
         # Seed cookies immediately from current session to avoid races
         try:
-            cookie_str = _cookie_string(
-                getattr(self._client, "_session", None).cookie_jar
-            )
-            if cookie_str:
-                self._socketio.set_cookie(cookie_str)
-                log.debug("Seeded SocketIO cookies from existing session")
+            session = getattr(self._client, "_session", None)
+            if session is None:
+                log.warning(
+                    "SocketIO started before HTTP session was initialized; "
+                    "proceeding without seed cookies (will fetch via _async_get_session)"
+                )
+            else:
+                cookie_str = _cookie_string(session.cookie_jar)
+                if cookie_str:
+                    self._socketio.set_cookie(cookie_str)
+                    log.debug("Seeded SocketIO cookies from existing session")
         except Exception as exc:
             log.debug("Unable to seed cookies from existing session: %s", exc)
 
