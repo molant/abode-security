@@ -93,6 +93,12 @@ class SocketIO:
         error=4,
     )
 
+    # After this many consecutive failed connect cycles, dispatch a
+    # `persistent_disconnect` event so the outer integration can surface a
+    # warning. With max backoff 30s and min 5s, 20 attempts is ~3.3 to
+    # ~10 minutes of attempts depending on jitter.
+    PERSISTENT_DISCONNECT_THRESHOLD = 20
+
     def __init__(self, url, cookie=None, origin=None):
         params = dict(EIO=3, transport="websocket")
         self._url = url + "?" + urllib.parse.urlencode(params)
@@ -113,6 +119,13 @@ class SocketIO:
 
         self._last_ping_time = datetime.datetime.min
         self._last_packet_time = datetime.datetime.min
+
+        # Reconnect health tracking. _connect_failures increments per
+        # failed iteration of _run and resets to 0 on successful websocket
+        # connect. _persistent_disconnect_fired guards against re-emitting
+        # the same disconnect signal repeatedly while still down.
+        self._connect_failures = 0
+        self._persistent_disconnect_fired = False
 
         self._callbacks = collections.defaultdict(list)
 
@@ -161,9 +174,19 @@ class SocketIO:
         self._running = True
 
         intervals = BackoffIntervals()
+        first_iteration = True
 
         while self._running:
             log.info("Attempting to connect to SocketIO server...")
+
+            # On reconnect, drop any cookie left over from the previous cycle.
+            # The wait-for-cookie poll inside _step then blocks until
+            # _async_get_session() supplies a fresh one — without this the
+            # SocketIO thread would happily reconnect with stale cookies that
+            # Abode invalidated during the disconnect window.
+            if not first_iteration:
+                self._cookie = None
+            first_iteration = False
 
             try:
                 self._step(intervals)
@@ -174,6 +197,21 @@ class SocketIO:
 
             if not self._running:
                 break
+
+            self._connect_failures += 1
+            if (
+                self._connect_failures >= self.PERSISTENT_DISCONNECT_THRESHOLD
+                and not self._persistent_disconnect_fired
+            ):
+                log.warning(
+                    "SocketIO failed to connect %d times consecutively; "
+                    "signaling persistent disconnect",
+                    self._connect_failures,
+                )
+                self._persistent_disconnect_fired = True
+                self._handle_event(
+                    "persistent_disconnect", self._connect_failures
+                )
 
             interval = next(intervals)
             log.info("Waiting %f seconds before reconnecting...", interval)
@@ -252,6 +290,13 @@ class SocketIO:
     def _on_websocket_connected(self, _event):
         self._websocket_connected = True
         log.info("Websocket Connected")
+        # A successful connect clears the persistent-disconnect bookkeeping.
+        # If we'd previously emitted persistent_disconnect, also fire a
+        # recovery event so listeners can clear their warning state.
+        self._connect_failures = 0
+        if self._persistent_disconnect_fired:
+            self._persistent_disconnect_fired = False
+            self._handle_event("connection_recovered")
         self._handle_event("connected")
 
     def _on_websocket_disconnected(self, _event):

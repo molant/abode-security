@@ -268,6 +268,15 @@ def pytest_collection_modifyitems(config, items):
         "test_unavailable_to_on_does_not_trigger",
         "test_unknown_to_on_does_not_trigger",
         "test_refire_during_pending_delay_fires_once",
+        # SocketIO reconnect (issue #2)
+        "test_fires_after_threshold_connect_failures",
+        "test_does_not_fire_below_threshold",
+        "test_resets_after_successful_connect_then_refires",
+        "test_websocket_connected_resets_counter",
+        "test_cookie_cleared_before_subsequent_iterations",
+        "test_seeds_only_on_first_started",
+        "test_persistent_disconnect_handler_updates_client_status",
+        "test_connection_recovered_handler_updates_client_status",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:
