@@ -91,6 +91,12 @@ class EventController:
         # Event loop reference for scheduling callbacks
         self._event_loop = None
 
+        # Tracks whether we've handled the very first `started` event. The
+        # synchronous cookie seed is only useful on the first call — on
+        # reconnect the in-memory cookie_jar may be stale and we rely on
+        # _async_get_session() to refresh it.
+        self._initial_seed_done = False
+
         # Setup SocketIO
         self._socketio = sio.SocketIO(url=url, origin=urls.BASE)
 
@@ -98,6 +104,8 @@ class EventController:
         self._socketio.on("started", self._on_socket_started)
         self._socketio.on("connected", self._on_socket_connected)
         self._socketio.on("disconnected", self._on_socket_disconnected)
+        self._socketio.on("persistent_disconnect", self._on_persistent_disconnect)
+        self._socketio.on("connection_recovered", self._on_connection_recovered)
         self._socketio.on("com.goabode.device.update", self._on_device_update)
         self._socketio.on("com.goabode.gateway.mode", self._on_mode_change)
         self._socketio.on("com.goabode.gateway.timeline", self._on_timeline_update)
@@ -277,22 +285,33 @@ class EventController:
             )
             return
 
-        # Schedule async session initialization on the event loop
-        # Seed cookies immediately from current session to avoid races
-        try:
-            session = getattr(self._client, "_session", None)
-            if session is None:
-                log.warning(
-                    "SocketIO started before HTTP session was initialized; "
-                    "proceeding without seed cookies (will fetch via _async_get_session)"
-                )
-            else:
-                cookie_str = _cookie_string(session.cookie_jar)
-                if cookie_str:
-                    self._socketio.set_cookie(cookie_str)
-                    log.debug("Seeded SocketIO cookies from existing session")
-        except Exception as exc:
-            log.debug("Unable to seed cookies from existing session: %s", exc)
+        # Seed cookies from the current session only on the very first
+        # `started` event. On reconnect we must NOT pre-set the cookie:
+        # SocketIO clears self._cookie between iterations, and the wait
+        # loop in _step relies on that to block until _async_get_session()
+        # completes with fresh cookies. Seeding from a possibly-stale
+        # cookie_jar would defeat that wait and reconnect with bad auth.
+        if not self._initial_seed_done:
+            self._initial_seed_done = True
+            try:
+                session = getattr(self._client, "_session", None)
+                if session is None:
+                    log.warning(
+                        "SocketIO started before HTTP session was initialized; "
+                        "proceeding without seed cookies (will fetch via _async_get_session)"
+                    )
+                else:
+                    cookie_str = _cookie_string(session.cookie_jar)
+                    if cookie_str:
+                        self._socketio.set_cookie(cookie_str)
+                        log.debug("Seeded SocketIO cookies from existing session")
+            except Exception as exc:
+                log.debug("Unable to seed cookies from existing session: %s", exc)
+        else:
+            log.debug(
+                "Skipping cookie seed on reconnect; relying on _async_get_session "
+                "to refresh"
+            )
 
         try:
             future = asyncio.run_coroutine_threadsafe(
@@ -405,6 +424,35 @@ class EventController:
             self._connected = False
         with contextlib.suppress(Exception):
             self._client._set_connection_status("disconnected")
+        self._execute_connection_callbacks()
+
+    def _on_persistent_disconnect(self, attempts):
+        """SocketIO failed to reconnect for an extended period.
+
+        Surface this to the client so diagnostics and the HA UI can show that
+        the integration is stuck rather than silently retrying forever.
+        """
+        log.warning(
+            "Abode SocketIO persistently disconnected after %d failed attempts; "
+            "integration may be stuck",
+            attempts,
+        )
+        with self._connection_lock:
+            self._connected = False
+        with contextlib.suppress(Exception):
+            self._client._set_connection_status(
+                "persistent_disconnect",
+                f"SocketIO failed to reconnect after {attempts} attempts",
+            )
+        self._execute_connection_callbacks()
+
+    def _on_connection_recovered(self):
+        """SocketIO reconnected after a previously-emitted persistent disconnect."""
+        log.info("Abode SocketIO reconnected after persistent disconnect")
+        with self._connection_lock:
+            self._connected = True
+        with contextlib.suppress(Exception):
+            self._client._set_connection_status("connected")
         self._execute_connection_callbacks()
 
     def _execute_connection_callbacks(self):
