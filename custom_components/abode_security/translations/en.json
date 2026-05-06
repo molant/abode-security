@@ -1,7 +1,8 @@
 {
   "config": {
     "abort": {
-      "reauth_successful": "Re-authentication successful"
+      "reauth_successful": "Re-authentication successful",
+      "reauth_wrong_account": "The username does not match the existing entry. Remove the integration and re-add it to use a different Abode account."
     },
     "error": {
       "cannot_connect": "Cannot connect to Abode service",

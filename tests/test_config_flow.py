@@ -183,3 +183,68 @@ async def test_step_reauth(hass: HomeAssistant) -> None:
 
     assert len(hass.config_entries.async_entries()) == 1
     assert entry.data[CONF_PASSWORD] == "new_password"
+
+
+async def test_step_reauth_username_change_aborts(hass: HomeAssistant) -> None:
+    """Reauth with a different username must abort, not create a duplicate entry."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="alice@example.com",
+        data={CONF_USERNAME: "alice@example.com", CONF_PASSWORD: "password"},
+    )
+    entry.add_to_hass(hass)
+
+    result = await entry.start_reauth_flow(hass)
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+
+    with patch("custom_components.abode_security.abode.client.Client"):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_USERNAME: "bob@example.com",
+                CONF_PASSWORD: "new_password",
+            },
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_wrong_account"
+
+    # Original entry untouched, no duplicate created.
+    entries = hass.config_entries.async_entries(DOMAIN)
+    assert len(entries) == 1
+    assert entries[0].unique_id == "alice@example.com"
+    assert entries[0].data[CONF_USERNAME] == "alice@example.com"
+    assert entries[0].data[CONF_PASSWORD] == "password"
+
+
+async def test_step_reauth_preserves_polling(hass: HomeAssistant) -> None:
+    """Reauth must merge into existing data so CONF_POLLING is not dropped."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="user@email.com",
+        data={
+            CONF_USERNAME: "user@email.com",
+            CONF_PASSWORD: "password",
+            CONF_POLLING: True,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await entry.start_reauth_flow(hass)
+
+    with patch("custom_components.abode_security.abode.client.Client"):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_USERNAME: "user@email.com",
+                CONF_PASSWORD: "new_password",
+            },
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert entry.data[CONF_PASSWORD] == "new_password"
+    # CONF_POLLING must survive reauth — the bug overwrote entry.data wholesale.
+    assert entry.data[CONF_POLLING] is True

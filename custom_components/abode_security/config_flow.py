@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import voluptuous as vol
 from homeassistant.config_entries import (
+    SOURCE_REAUTH,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
@@ -138,18 +139,26 @@ class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
 
     async def _async_create_entry(self) -> ConfigFlowResult:
         """Create the config entry."""
-        config_data = {
-            CONF_USERNAME: self._username,
-            CONF_PASSWORD: self._password,
-            CONF_POLLING: self._polling,
-        }
-        existing_entry = await self.async_set_unique_id(self._username)
+        await self.async_set_unique_id(self._username)
 
-        if existing_entry:
-            return self.async_update_reload_and_abort(existing_entry, data=config_data)
+        if self.source == SOURCE_REAUTH:
+            # Force username stability on reauth: a different login means a
+            # different account, which would orphan the existing entry.
+            self._abort_if_unique_id_mismatch(reason="reauth_wrong_account")
+            # Use data_updates so existing keys (e.g. CONF_POLLING) survive.
+            return self.async_update_reload_and_abort(
+                self._get_reauth_entry(),
+                data_updates={CONF_PASSWORD: cast(str, self._password)},
+            )
 
+        self._abort_if_unique_id_configured()
         return self.async_create_entry(
-            title=cast(str, self._username), data=config_data
+            title=cast(str, self._username),
+            data={
+                CONF_USERNAME: self._username,
+                CONF_PASSWORD: self._password,
+                CONF_POLLING: self._polling,
+            },
         )
 
     async def async_step_user(
