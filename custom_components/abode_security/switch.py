@@ -91,19 +91,9 @@ async def async_setup_entry(
         for alarm_type in MANUAL_ALARM_TYPES
     )
 
-    # Add CMS settings switches (wrapper methods handle missing methods gracefully)
-    # Order: Monitoring Active, Test Mode, Send Media, Dispatch Without Verification, Fire, Medical, Police
-    entities.extend(
-        [
-            AbodeMonitoringActiveSwitch(data, alarm),
-            AbodeTestModeSwitch(data, alarm),
-            AbodeSendMediaSwitch(data, alarm),
-            AbodeDispatchWithoutVerificationSwitch(data, alarm),
-            AbodeDispatchFireSwitch(data, alarm),
-            AbodeDispatchMedicalSwitch(data, alarm),
-            AbodeDispatchPoliceSwitch(data, alarm),
-        ]
-    )
+    # CMS settings switches (wrapper methods handle missing methods gracefully).
+    entities.extend(AbodeCMSSettingSwitch(data, alarm, *row) for row in _CMS_SWITCHES)
+    entities.append(AbodeTestModeSwitch(data, alarm))
 
     async_add_entities(entities)
 
@@ -405,7 +395,12 @@ class AbodeManualAlarmSwitch(SwitchEntity):
 
 
 class AbodeCMSSettingSwitch(SwitchEntity):
-    """Base class for CMS configuration switches."""
+    """Base class for CMS configuration switches.
+
+    Also serves as the base for the test-mode switch, which differs only in
+    its support-flag attribute, its unique-id suffix, and a post-update hook
+    that stops polling when test mode auto-disables on its 30-min timeout.
+    """
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
@@ -418,6 +413,8 @@ class AbodeCMSSettingSwitch(SwitchEntity):
         icon: str,
         getter_name: str,
         setter_name: str,
+        unique_id_suffix: str | None = None,
+        support_flag: str = "cms_settings_supported",
     ) -> None:
         """Initialize the CMS setting switch."""
         self._data = data
@@ -426,11 +423,14 @@ class AbodeCMSSettingSwitch(SwitchEntity):
         self._attr_icon = icon
         self._getter_name = getter_name
         self._setter_name = setter_name
+        self._support_flag = support_flag
         self._is_on = False
         self._last_state_change: datetime | None = None
         self._error_count = 0
-        # Use alarm device ID and setting name for unique ID
-        self._attr_unique_id = f"{alarm.id}-{getter_name.lower().replace('_', '-')}"
+        # unique_id must stay stable across the issue #7 refactor — explicit
+        # suffix overrides the default getter-derived form.
+        suffix = unique_id_suffix or getter_name.lower().replace("_", "-")
+        self._attr_unique_id = f"{alarm.id}-{suffix}"
         self._attr_available = True
         self._attr_should_poll = False
         self._initial_sync_done = False
@@ -473,7 +473,7 @@ class AbodeCMSSettingSwitch(SwitchEntity):
                 self._attr_should_poll = True
                 self._initial_sync_done = True
         except AbodeException as ex:
-            if not self._data.cms_settings_supported:
+            if not getattr(self._data, self._support_flag):
                 LOGGER.info("%s unsupported; disabling switch", self._attr_name)
                 self._attr_available = False
                 self._attr_should_poll = False
@@ -519,13 +519,14 @@ class AbodeCMSSettingSwitch(SwitchEntity):
                     previous_state,
                     self._is_on,
                 )
+            self._post_update(previous_state, self._is_on)
             # Mark available on successful poll and reset error count
             self._error_count = 0
             if not self._attr_available:
                 self._attr_available = True
                 self.async_write_ha_state()
         except AbodeException as ex:
-            if not self._data.cms_settings_supported:
+            if not getattr(self._data, self._support_flag):
                 LOGGER.info("%s unsupported; disabling switch", self._attr_name)
                 self._attr_available = False
                 self._attr_should_poll = False
@@ -587,236 +588,86 @@ class AbodeCMSSettingSwitch(SwitchEntity):
         self._last_state_change = datetime.now(UTC)
         self.schedule_update_ha_state()
 
+    def _post_update(self, previous: bool, current: bool) -> None:
+        """Hook called inside async_update on a successful poll, before the error counter resets."""
+
     @property
     def is_on(self) -> bool:
         """Return True if the CMS setting is enabled."""
         return self._is_on
 
 
-class AbodeMonitoringActiveSwitch(AbodeCMSSettingSwitch):
-    """Switch for monitoring active CMS setting."""
-
-    def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
-        """Initialize the monitoring active switch."""
-        super().__init__(
-            data,
-            alarm,
-            name="Monitoring Active",
-            icon="mdi:shield-check",
-            getter_name="get_monitoring_active",
-            setter_name="set_monitoring_active",
-        )
-
-
-class AbodeSendMediaSwitch(AbodeCMSSettingSwitch):
-    """Switch for send media CMS setting."""
-
-    def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
-        """Initialize the send media switch."""
-        super().__init__(
-            data,
-            alarm,
-            name="Send Media",
-            icon="mdi:camera",
-            getter_name="get_send_media",
-            setter_name="set_send_media",
-        )
-
-
-class AbodeDispatchWithoutVerificationSwitch(AbodeCMSSettingSwitch):
-    """Switch for dispatch without verification CMS setting."""
-
-    def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
-        """Initialize the dispatch without verification switch."""
-        super().__init__(
-            data,
-            alarm,
-            name="Dispatch Without Verification",
-            icon="mdi:police-badge",
-            getter_name="get_dispatch_without_verification",
-            setter_name="set_dispatch_without_verification",
-        )
+# (display name, icon, getter, setter) for each CMS-setting switch.
+_CMS_SWITCHES: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "Monitoring Active",
+        "mdi:shield-check",
+        "get_monitoring_active",
+        "set_monitoring_active",
+    ),
+    ("Send Media", "mdi:camera", "get_send_media", "set_send_media"),
+    (
+        "Dispatch Without Verification",
+        "mdi:police-badge",
+        "get_dispatch_without_verification",
+        "set_dispatch_without_verification",
+    ),
+    ("Dispatch Fire", "mdi:fire-truck", "get_dispatch_fire", "set_dispatch_fire"),
+    (
+        "Dispatch Medical",
+        "mdi:hospital-box",
+        "get_dispatch_medical",
+        "set_dispatch_medical",
+    ),
+    (
+        "Dispatch Police",
+        "mdi:police-badge",
+        "get_dispatch_police",
+        "set_dispatch_police",
+    ),
+)
 
 
-class AbodeDispatchPoliceSwitch(AbodeCMSSettingSwitch):
-    """Switch for dispatch police CMS setting."""
+class AbodeTestModeSwitch(AbodeCMSSettingSwitch):
+    """A switch for controlling Abode test mode.
 
-    def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
-        """Initialize the dispatch police switch."""
-        super().__init__(
-            data,
-            alarm,
-            name="Dispatch Police",
-            icon="mdi:police-badge",
-            getter_name="get_dispatch_police",
-            setter_name="set_dispatch_police",
-        )
-
-
-class AbodeDispatchFireSwitch(AbodeCMSSettingSwitch):
-    """Switch for dispatch fire CMS setting."""
-
-    def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
-        """Initialize the dispatch fire switch."""
-        super().__init__(
-            data,
-            alarm,
-            name="Dispatch Fire",
-            icon="mdi:fire-truck",
-            getter_name="get_dispatch_fire",
-            setter_name="set_dispatch_fire",
-        )
-
-
-class AbodeDispatchMedicalSwitch(AbodeCMSSettingSwitch):
-    """Switch for dispatch medical CMS setting."""
-
-    def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
-        """Initialize the dispatch medical switch."""
-        super().__init__(
-            data,
-            alarm,
-            name="Dispatch Medical",
-            icon="mdi:hospital-box",
-            getter_name="get_dispatch_medical",
-            setter_name="set_dispatch_medical",
-        )
-
-
-class AbodeTestModeSwitch(SwitchEntity):
-    """A switch for controlling Abode test mode."""
-
-    _attr_has_entity_name = True
-    _attr_name = "Test Mode"
-    _attr_icon = "mdi:test-tube"
-    _attr_entity_category = EntityCategory.CONFIG
+    Differs from a plain CMS-setting switch in two places: it consults the
+    ``test_mode_supported`` flag (CMS-setting support is independent of
+    test-mode support), and it stops polling after the API auto-disables
+    test mode on its 30-minute server-side timeout.
+    """
 
     def __init__(self, data: AbodeSystem, alarm: Alarm) -> None:
         """Initialize the test mode switch."""
-        self._data = data
-        self._alarm = alarm
-        self._is_on = False
-        self._user_enabled = False  # Track if user explicitly enabled test mode
-        self._last_state_change: datetime | None = (
-            None  # Track when state was last changed
+        super().__init__(
+            data,
+            alarm,
+            name="Test Mode",
+            icon="mdi:test-tube",
+            getter_name="get_test_mode",
+            setter_name="set_test_mode",
+            unique_id_suffix="test-mode",
+            support_flag="test_mode_supported",
         )
-        # Use alarm device ID for unique ID to link to the alarm device
-        self._attr_unique_id = f"{alarm.id}-test-mode"
-        self._attr_available = True
-        # Start with polling disabled - will be enabled after first successful fetch
-        # to ensure async_added_to_hass can set initial status before polling starts
-        self._attr_should_poll = False
-        self._initial_sync_done = False
+        self._user_enabled = False
 
-    @property
-    def device_info(self) -> dict[str, Any]:
-        """Return device registry information for this entity."""
-        return {
-            "identifiers": {(DOMAIN, self._alarm.id)},
-            "manufacturer": "Abode",
-            "model": self._alarm.type,
-            "name": self._alarm.name,
-        }
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Enable test mode and remember the user enabled it."""
+        await super().async_turn_on(**kwargs)
+        # Mirror parent's success signal: _is_on flips True only if the API
+        # call didn't raise (handle_abode_errors swallows AbodeError).
+        if self._is_on:
+            self._user_enabled = True
 
-    async def async_added_to_hass(self) -> None:
-        """Update test mode status on first add."""
-        LOGGER.info("Test mode switch added to Home Assistant, fetching initial status")
-        await super().async_added_to_hass()
-        await self._refresh_test_mode_status()
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Disable test mode and clear the user-enabled flag."""
+        await super().async_turn_off(**kwargs)
+        if not self._is_on:
+            self._user_enabled = False
 
-    async def _refresh_test_mode_status(self) -> None:
-        """Refresh test mode status from Abode."""
-        try:
-            self._is_on = await self._data.get_test_mode()
-            LOGGER.info("Initial test mode status fetched: %s", self._is_on)
-            self.async_write_ha_state()
-
-            # Enable polling after first successful fetch
-            if not self._initial_sync_done:
-                LOGGER.debug("Enabling polling after initial sync")
-                self._attr_should_poll = True
-                self._initial_sync_done = True
-        except AbodeException as ex:
-            if not self._data.test_mode_supported:
-                LOGGER.info("Test mode unsupported; disabling test mode switch")
-                self._attr_available = False
-                self._attr_should_poll = False
-                self.async_write_ha_state()
-                return
-            LOGGER.error("Failed to get test mode status (AbodeException): %s", ex)
-            import traceback
-
-            LOGGER.debug("Traceback: %s", traceback.format_exc())
-        except Exception as ex:
-            LOGGER.error("Unexpected error getting test mode status: %s", ex)
-            import traceback
-
-            LOGGER.debug("Traceback: %s", traceback.format_exc())
-
-    async def async_update(self) -> None:
-        """Update test mode status."""
-        # Skip polling for 5 seconds after a state change to let API catch up
-        if self._last_state_change is not None:
-            time_since_change = datetime.now(UTC) - self._last_state_change
-            if time_since_change < timedelta(seconds=5):
-                LOGGER.debug("Skipping test mode poll (waiting for API to catch up)")
-                return
-
-        try:
-            previous_state = self._is_on
-            self._is_on = await self._data.get_test_mode()
-
-            LOGGER.debug(
-                "Polling test mode status: was %s, now %s", previous_state, self._is_on
-            )
-
-            if previous_state != self._is_on:
-                LOGGER.info(
-                    "Test mode status changed: %s -> %s", previous_state, self._is_on
-                )
-
-            # If test mode was enabled by user but is now off externally (e.g., 30-min timeout),
-            # stop polling to save resources
-            if self._user_enabled and previous_state and not self._is_on:
-                LOGGER.info(
-                    "Test mode auto-disabled (30-min timeout), stopping polling"
-                )
-                self._user_enabled = False
-                self._attr_should_poll = False
-        except AbodeException as ex:
-            if not self._data.test_mode_supported:
-                LOGGER.info("Test mode unsupported; disabling test mode switch")
-                self._attr_available = False
-                self._attr_should_poll = False
-                self.async_write_ha_state()
-                return
-            LOGGER.error("Failed to update test mode status: %s", ex)
-        except Exception as ex:
-            LOGGER.error("Unexpected error updating test mode status: %s", ex)
-
-    @handle_abode_errors("enable test mode")
-    async def async_turn_on(self, **_kwargs: Any) -> None:
-        """Enable test mode."""
-        await self._data.set_test_mode(True)
-        LOGGER.info("Test mode enabled")
-        self._user_enabled = True  # User explicitly enabled test mode
-        # Trust the state we just set (API may need time to process)
-        self._is_on = True
-        self._last_state_change = datetime.now(UTC)
-        self.schedule_update_ha_state()
-
-    @handle_abode_errors("disable test mode")
-    async def async_turn_off(self, **_kwargs: Any) -> None:
-        """Disable test mode."""
-        await self._data.set_test_mode(False)
-        LOGGER.info("Test mode disabled")
-        self._user_enabled = False  # User explicitly disabled test mode
-        # Trust the state we just set (API may need time to process)
-        self._is_on = False
-        self._last_state_change = datetime.now(UTC)
-        self.schedule_update_ha_state()
-
-    @property
-    def is_on(self) -> bool:
-        """Return True if test mode is enabled."""
-        return self._is_on
+    def _post_update(self, previous: bool, current: bool) -> None:
+        """Stop polling after the API auto-disables a user-enabled test mode."""
+        if self._user_enabled and previous and not current:
+            LOGGER.info("Test mode auto-disabled (30-min timeout), stopping polling")
+            self._user_enabled = False
+            self._attr_should_poll = False
