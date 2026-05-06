@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -18,9 +16,9 @@ from .abode.devices.alarm import Alarm
 from .abode.devices.switch import Switch
 from .abode.exceptions import Exception as AbodeException
 from .abode.helpers.timeline import Groups as TimelineGroups
-from .const import DOMAIN, LOGGER
+from .const import LOGGER
 from .decorators import handle_abode_errors
-from .entity import AbodeAutomation, AbodeDevice
+from .entity import AbodeAlarmAttachedEntity, AbodeAutomation, AbodeDevice
 from .models import AbodeSystem
 
 PARALLEL_UPDATES = 1
@@ -170,12 +168,9 @@ class AbodeAutomationSwitch(AbodeAutomation, SwitchEntity):
         return bool(self._automation.enabled)
 
 
-class AbodeManualAlarmSwitch(SwitchEntity):
+class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
     """A switch for triggering and dismissing manual alarms."""
 
-    _attr_has_entity_name = True
-    _attr_should_poll = False
-    _device: Alarm
     _alarm_type: str
     _timeline_id: str | None = None
     _is_on: bool = False
@@ -202,99 +197,46 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         "BURGLAR": "Burglar Alarm",
     }
 
-    def __init__(self, data: AbodeSystem, device: Alarm, alarm_type: str) -> None:
+    def __init__(self, data: AbodeSystem, alarm: Alarm, alarm_type: str) -> None:
         """Initialize the manual alarm switch."""
-        self._data = data
-        self._device = device
+        super().__init__(data, alarm)
         self._alarm_type = alarm_type
-        self._attr_unique_id = f"{device.id}-manual-alarm-{alarm_type.lower()}"
+        # Manual alarm state comes from timeline events, not polling.
+        # Override even when integration polling is enabled.
+        self._attr_should_poll = False
+        self._attr_unique_id = f"{alarm.id}-manual-alarm-{alarm_type.lower()}"
         self._attr_name = self.ALARM_NAMES.get(
             alarm_type, alarm_type.replace("_", " ").title()
         )
         self._attr_icon = self.ALARM_ICONS.get(alarm_type)
         self._attr_available = True
 
-    @property
-    def device_info(self) -> dict[str, Any]:
-        """Return device registry information for this entity."""
-        return {
-            "identifiers": {(DOMAIN, self._device.id)},
-            "manufacturer": "Abode",
-            "model": self._device.type,
-            "name": self._device.name,
-            "sw_version": "1.0.0",
-        }
-
-    async def _subscribe_to_events(
-        self,
-        event_group: str,
-        callback: Callable[[dict[str, Any]], None],
-    ) -> None:
-        """Subscribe to Abode timeline events."""
-        try:
-            await asyncio.wait_for(
-                self.hass.async_add_executor_job(
-                    self._data.abode.events.add_event_callback,
-                    event_group,
-                    callback,
-                ),
-                timeout=10.0,
-            )
-            LOGGER.debug(f"Subscribed to {event_group} events")
-        except TimeoutError:
-            LOGGER.warning(f"Timeout subscribing to {event_group} events")
-        except Exception as ex:
-            LOGGER.warning(f"Could not subscribe to {event_group} events: %s", ex)
-
-    async def _unsubscribe_from_events(
-        self,
-        event_group: str,
-        callback: Callable[[dict[str, Any]], None],
-    ) -> None:
-        """Unsubscribe from Abode timeline events."""
-        if not hasattr(self._data.abode.events, "remove_event_callback"):
-            LOGGER.debug("remove_event_callback not available, skipping unsubscribe")
-            return
-
-        try:
-            await asyncio.wait_for(
-                self.hass.async_add_executor_job(
-                    self._data.abode.events.remove_event_callback,
-                    event_group,
-                    callback,
-                ),
-                timeout=10.0,
-            )
-            LOGGER.debug(f"Unsubscribed from {event_group} events")
-        except TimeoutError:
-            LOGGER.warning(f"Timeout unsubscribing from {event_group} events")
-        except Exception as ex:
-            LOGGER.warning(f"Could not unsubscribe from {event_group} events: %s", ex)
-
     async def async_added_to_hass(self) -> None:
         """Subscribe to timeline events when added to Home Assistant."""
         await super().async_added_to_hass()
-
-        # Subscribe to alarm trigger events
-        await self._subscribe_to_events(
-            TimelineGroups.ALARM, self._alarm_event_callback
+        await self._run_executor_with_timeout(
+            self._data.abode.events.add_event_callback,
+            TimelineGroups.ALARM,
+            self._alarm_event_callback,
         )
-
-        # Subscribe to alarm end/dismiss events
-        await self._subscribe_to_events(
-            TimelineGroups.ALARM_END, self._alarm_end_callback
+        await self._run_executor_with_timeout(
+            self._data.abode.events.add_event_callback,
+            TimelineGroups.ALARM_END,
+            self._alarm_end_callback,
         )
 
     async def async_will_remove_from_hass(self) -> None:
         """Clean up event subscriptions when removed."""
         await super().async_will_remove_from_hass()
-
-        # Remove event callbacks
-        await self._unsubscribe_from_events(
-            TimelineGroups.ALARM, self._alarm_event_callback
+        await self._run_executor_with_timeout(
+            self._data.abode.events.remove_event_callback,
+            TimelineGroups.ALARM,
+            self._alarm_event_callback,
         )
-        await self._unsubscribe_from_events(
-            TimelineGroups.ALARM_END, self._alarm_end_callback
+        await self._run_executor_with_timeout(
+            self._data.abode.events.remove_event_callback,
+            TimelineGroups.ALARM_END,
+            self._alarm_end_callback,
         )
 
     def _alarm_event_callback(self, event: dict[str, Any]) -> None:
@@ -362,7 +304,7 @@ class AbodeManualAlarmSwitch(SwitchEntity):
             )
             return
 
-        response = await self._device.trigger_manual_alarm(self._alarm_type)
+        response = await self._alarm.trigger_manual_alarm(self._alarm_type)
         # Safely extract event_id from response, handling non-dict responses
         if isinstance(response, dict):
             self._timeline_id = response.get("event_id")
@@ -394,7 +336,7 @@ class AbodeManualAlarmSwitch(SwitchEntity):
         return self._is_on
 
 
-class AbodeCMSSettingSwitch(SwitchEntity):
+class AbodeCMSSettingSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
     """Base class for CMS configuration switches.
 
     Also serves as the base for the test-mode switch, which differs only in
@@ -402,7 +344,6 @@ class AbodeCMSSettingSwitch(SwitchEntity):
     that stops polling when test mode auto-disables on its 30-min timeout.
     """
 
-    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(
@@ -417,8 +358,7 @@ class AbodeCMSSettingSwitch(SwitchEntity):
         support_flag: str = "cms_settings_supported",
     ) -> None:
         """Initialize the CMS setting switch."""
-        self._data = data
-        self._alarm = alarm
+        super().__init__(data, alarm)
         self._attr_name = name
         self._attr_icon = icon
         self._getter_name = getter_name
@@ -435,16 +375,15 @@ class AbodeCMSSettingSwitch(SwitchEntity):
         self._attr_should_poll = False
         self._initial_sync_done = False
 
-    @property
-    def device_info(self) -> dict[str, Any]:
-        """Return device registry information for this entity."""
-        return {
-            "identifiers": {(DOMAIN, self._alarm.id)},
-            "manufacturer": "Abode",
-            "model": self._alarm.type,
-            "name": self._alarm.name,
-            "sw_version": "1.0.0",
-        }
+    def _update_connection_status(self) -> None:
+        # When this setting isn't supported by the account, _refresh_status /
+        # async_update have permanently marked the entity unavailable and
+        # disabled polling. Don't let a SocketIO reconnect resurrect it.
+        # Uses _support_flag so AbodeTestModeSwitch (test_mode_supported) and
+        # plain CMS switches (cms_settings_supported) share this code.
+        if not getattr(self._data, self._support_flag):
+            return
+        super()._update_connection_status()
 
     async def async_added_to_hass(self) -> None:
         """Update setting status on first add."""

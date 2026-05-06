@@ -46,21 +46,6 @@ async def test_manual_alarm_switch_unsubscribes_on_removal(
     assert hasattr(mock_abode.events, "remove_event_callback")
 
 
-async def test_manual_alarm_switch_handles_missing_remove_callback(
-    hass: HomeAssistant, mock_abode
-) -> None:
-    """Test graceful handling when remove_event_callback doesn't exist."""
-    # Remove the remove_event_callback to simulate older library version
-    if hasattr(mock_abode.events, "remove_event_callback"):
-        delattr(mock_abode.events, "remove_event_callback")
-
-    await setup_platform(hass, SWITCH_DOMAIN)
-
-    # Verify the entity still sets up successfully
-    state = hass.states.get("switch.test_alarm_panic_alarm")
-    assert state is not None
-
-
 async def test_get_test_mode_returns_false_when_method_missing() -> None:
     """Test that get_test_mode returns False if method doesn't exist."""
     abode_system = AbodeSystem(
@@ -120,20 +105,6 @@ async def test_test_mode_switch_polling_disabled_initially(
     assert state is not None
     # State should be off (test mode disabled)
     assert state.state == "off"
-
-
-async def test_event_callback_helpers_handle_exceptions(
-    hass: HomeAssistant, mock_abode
-) -> None:
-    """Test that event callback helpers handle exceptions gracefully."""
-    # Make add_event_callback raise to test exception handling
-    mock_abode.events.add_event_callback.side_effect = Exception("Subscription failed")
-
-    await setup_platform(hass, SWITCH_DOMAIN)
-
-    # Entity should still be set up despite callback exception
-    state = hass.states.get("switch.test_alarm_panic_alarm")
-    assert state is not None
 
 
 async def test_service_handler_factory_error_handling(

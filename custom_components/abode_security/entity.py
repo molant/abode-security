@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import Callable
+from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
 from .abode.automation import Automation as AbodeAuto
+from .abode.devices.alarm import Alarm as AbodeAlarm
 from .abode.devices.base import Device as AbodeDev
 from .const import ATTRIBUTION, DOMAIN
 from .models import AbodeSystem
@@ -26,30 +29,36 @@ class AbodeEntity(Entity):
         self._attr_should_poll = data.polling
         self._abode_system = data
 
-    async def async_added_to_hass(self) -> None:
-        """Subscribe to Abode connection status updates."""
+    async def _run_executor_with_timeout(
+        self, fn: Callable[..., Any], *args: Any
+    ) -> None:
+        """Run a sync callable in the executor, suppressing TimeoutError.
+
+        Mirrors the 10s wait/suppress pattern used across Abode
+        subscribe/unsubscribe callbacks so we don't block HA's event loop on
+        a slow Abode call.
+        """
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(
-                self.hass.async_add_executor_job(
-                    self._data.abode.events.add_connection_status_callback,
-                    self.unique_id,
-                    self._update_connection_status,
-                ),
+                self.hass.async_add_executor_job(fn, *args),
                 timeout=10.0,
             )
 
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to Abode connection status updates."""
+        await self._run_executor_with_timeout(
+            self._data.abode.events.add_connection_status_callback,
+            self.unique_id,
+            self._update_connection_status,
+        )
         self._abode_system.entity_ids.add(self.entity_id)
 
     async def async_will_remove_from_hass(self) -> None:
         """Unsubscribe from Abode connection status updates."""
-        with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(
-                self.hass.async_add_executor_job(
-                    self._data.abode.events.remove_connection_status_callback,
-                    self.unique_id,
-                ),
-                timeout=10.0,
-            )
+        await self._run_executor_with_timeout(
+            self._data.abode.events.remove_connection_status_callback,
+            self.unique_id,
+        )
 
     def _update_connection_status(self) -> None:
         """Update the entity available property."""
@@ -69,26 +78,18 @@ class AbodeDevice(AbodeEntity):
     async def async_added_to_hass(self) -> None:
         """Subscribe to device events."""
         await super().async_added_to_hass()
-        with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(
-                self.hass.async_add_executor_job(
-                    self._data.abode.events.add_device_callback,
-                    self._device.id,
-                    self._update_callback,
-                ),
-                timeout=10.0,
-            )
+        await self._run_executor_with_timeout(
+            self._data.abode.events.add_device_callback,
+            self._device.id,
+            self._update_callback,
+        )
 
     async def async_will_remove_from_hass(self) -> None:
         """Unsubscribe from device events."""
         await super().async_will_remove_from_hass()
-        with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(
-                self.hass.async_add_executor_job(
-                    self._data.abode.events.remove_all_device_callbacks, self._device.id
-                ),
-                timeout=10.0,
-            )
+        await self._run_executor_with_timeout(
+            self._data.abode.events.remove_all_device_callbacks, self._device.id
+        )
 
     async def async_update(self) -> None:
         """Update device state."""
@@ -118,6 +119,32 @@ class AbodeDevice(AbodeEntity):
     def _update_callback(self, _device: AbodeDev) -> None:
         """Update the device state."""
         self.schedule_update_ha_state()
+
+
+class AbodeAlarmAttachedEntity(AbodeEntity):
+    """Base for entities anchored to the alarm device, not a physical sensor.
+
+    Used by manual-alarm, CMS-setting, and test-mode switches: they all hang
+    off the alarm panel rather than a separate Abode device, so they share a
+    single canonical `device_info` here. Keeping it in one place avoids the
+    per-class drift that produced issue #8 (one copy missing `sw_version`).
+    """
+
+    def __init__(self, data: AbodeSystem, alarm: AbodeAlarm) -> None:
+        """Initialize an alarm-attached entity."""
+        super().__init__(data)
+        self._alarm = alarm
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device registry info for the alarm device."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._alarm.id)},
+            manufacturer="Abode",
+            model=self._alarm.type,
+            name=self._alarm.name,
+            sw_version="1.0.0",
+        )
 
 
 class AbodeAutomation(AbodeEntity):
