@@ -68,7 +68,8 @@ class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         # Import Client inside function so test mocks can intercept it
         from .abode.client import Client as Abode
 
-        errors = {}
+        errors: dict[str, str] = {}
+        abode = None
 
         try:
             abode = Abode(self._username, self._password, False, False, False)
@@ -88,6 +89,7 @@ class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
 
         except AbodeAuthenticationException as ex:
             if ex.errcode == MFA_CODE_REQUIRED[0]:
+                # finally below cleans up this client; MFA step opens a new one.
                 return await self.async_step_mfa()
 
             LOGGER.error("Unable to connect to Abode: %s", ex)
@@ -105,6 +107,14 @@ class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             LOGGER.exception("Unexpected exception during Abode login")
             errors = {"base": "unknown"}
 
+        finally:
+            # Always close the aiohttp session opened by the client (issue #6).
+            # async_setup_entry creates a fresh client on entry creation.
+            if abode is not None:
+                result = abode.cleanup()
+                if hasattr(result, "__await__"):
+                    await result
+
         if errors:
             return self.async_show_form(
                 step_id=step_id, data_schema=vol.Schema(self.data_schema), errors=errors
@@ -117,6 +127,7 @@ class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
         # Import Client inside function so test mocks can intercept it
         from .abode.client import Client as Abode
 
+        abode = None
         try:
             # Create instance to access login method for passing MFA code
             abode = Abode(self._username, self._password, False, False, False)
@@ -134,6 +145,13 @@ class AbodeFlowHandler(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
                 data_schema=vol.Schema(self.mfa_data_schema),
                 errors={"base": "invalid_mfa_code"},
             )
+
+        finally:
+            # Always close the aiohttp session opened by the client (issue #6).
+            if abode is not None:
+                result = abode.cleanup()
+                if hasattr(result, "__await__"):
+                    await result
 
         return await self._async_create_entry()
 
