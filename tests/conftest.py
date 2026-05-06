@@ -299,6 +299,10 @@ def pytest_collection_modifyitems(config, items):
         "test_test_mode_switch_uses_test_mode_supported_flag",
         "test_cms_setting_base_default_support_flag",
         "test_cms_switches_table_covers_all_legacy_entities",
+        # Alarm-attached entity base (issue #8)
+        "test_alarm_attached_device_info_consistent_manual_alarm",
+        "test_alarm_attached_device_info_consistent_cms",
+        "test_alarm_attached_device_info_consistent_test_mode",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:
