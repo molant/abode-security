@@ -1,7 +1,8 @@
 {
   "config": {
     "abort": {
-      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]",
+      "reauth_wrong_account": "The username does not match the existing entry. Remove the integration and re-add it to use a different Abode account."
     },
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",

@@ -33,6 +33,8 @@ def pytest_collection_modifyitems(config, items):
         "test_user_flow",
         "test_step_mfa",
         "test_step_reauth",
+        "test_step_reauth_username_change_aborts",
+        "test_step_reauth_preserves_polling",
         # Init tests (Phase 4.5.2)
         "test_change_settings",
         "test_add_unique_id",
