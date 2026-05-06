@@ -35,6 +35,9 @@ def pytest_collection_modifyitems(config, items):
         "test_step_reauth",
         "test_step_reauth_username_change_aborts",
         "test_step_reauth_preserves_polling",
+        "test_user_flow_cleanup_on_success",
+        "test_user_flow_cleanup_on_login_failure",
+        "test_step_mfa_cleanup",
         # Init tests (Phase 4.5.2)
         "test_change_settings",
         "test_add_unique_id",

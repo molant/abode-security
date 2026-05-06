@@ -227,6 +227,85 @@ async def test_step_reauth_username_change_aborts(hass: HomeAssistant) -> None:
     assert entries[0].data[CONF_PASSWORD] == "password"
 
 
+async def test_user_flow_cleanup_on_success(hass: HomeAssistant) -> None:
+    """Successful login must cleanup() the Abode client (issue #6)."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+
+    with patch("custom_components.abode_security.abode.client.Client") as mock_client:
+        instance = mock_client.return_value
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_USERNAME: "user@email.com", CONF_PASSWORD: "password"},
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    instance.cleanup.assert_called_once()
+
+
+async def test_user_flow_cleanup_on_login_failure(hass: HomeAssistant) -> None:
+    """Failed login must still cleanup() the Abode client (issue #6).
+
+    Simulates the realistic leak scenario: the Client instance is created
+    (session opens), then .login() raises — without try/finally the session
+    is orphaned.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+
+    with patch("custom_components.abode_security.abode.client.Client") as mock_client:
+        instance = mock_client.return_value
+        instance.login.side_effect = AbodeAuthenticationException(
+            (HTTPStatus.BAD_REQUEST, "auth error")
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_USERNAME: "user@email.com", CONF_PASSWORD: "password"},
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_auth"}
+    instance.cleanup.assert_called_once()
+
+
+async def test_step_mfa_cleanup(hass: HomeAssistant) -> None:
+    """MFA flow must cleanup() each Abode client it creates (issue #6).
+
+    The first client (login that triggers MFA_CODE_REQUIRED) and the second
+    client (MFA code submission) must both be cleaned up.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+
+    with patch("custom_components.abode_security.abode.client.Client") as mock_client:
+        first_instance = mock_client.return_value
+        first_instance.login.side_effect = AbodeAuthenticationException(
+            MFA_CODE_REQUIRED
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_USERNAME: "user@email.com", CONF_PASSWORD: "password"},
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "mfa"
+    first_instance.cleanup.assert_called_once()
+
+    with patch(
+        "custom_components.abode_security.abode.client.Client"
+    ) as mock_mfa_client:
+        mfa_instance = mock_mfa_client.return_value
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={"mfa_code": "123456"}
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    mfa_instance.cleanup.assert_called_once()
+
+
 async def test_step_reauth_preserves_polling(hass: HomeAssistant) -> None:
     """Reauth must merge into existing data so CONF_POLLING is not dropped."""
     entry = MockConfigEntry(
