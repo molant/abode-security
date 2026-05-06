@@ -21,18 +21,26 @@ pytestmark = pytest.mark.usefixtures("mock_setup_entry")
 
 
 async def test_one_config_allowed(hass: HomeAssistant) -> None:
-    """Test that only one Abode Security configuration is allowed."""
+    """Test that only one Abode Security configuration is allowed.
+
+    The framework must abort before any login attempt — otherwise the
+    hass.data[DOMAIN][...] writes in async_setup_entry would clobber the
+    existing entry's ActionManager / ConfigStore / coordinator (issue #5).
+    """
     MockConfigEntry(
         domain=DOMAIN,
         data={CONF_USERNAME: "user@email.com", CONF_PASSWORD: "password"},
     ).add_to_hass(hass)
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
+    with patch("custom_components.abode_security.abode.client.Client") as mock_client:
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": SOURCE_USER}
+        )
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "single_instance_allowed"
+    # No login should be attempted — manifest's single_config_entry contract.
+    mock_client.assert_not_called()
 
 
 async def test_user_flow(hass: HomeAssistant) -> None:

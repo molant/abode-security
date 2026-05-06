@@ -195,7 +195,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     loop = asyncio.get_event_loop()
     abode_client.events.set_event_loop(loop)
 
-    # Initialize ActionManager and ConfigStore for WebSocket API
+    # Initialize ActionManager and ConfigStore for WebSocket API.
+    # Note: keys below are domain-scoped (not entry-scoped). Safe only because
+    # manifest.json declares "single_config_entry": true — the framework aborts
+    # any second user/discovery flow with single_instance_allowed before this
+    # runs. If that flag is ever removed, these writes must move to entry.
+    # runtime_data (and storage keys in ActionManager / ConfigStore namespaced
+    # per entry) — see issue #5.
     from .action_manager import ActionManager
     from .action_trigger import ActionTriggerCoordinator
     from .config_store import ConfigStore
