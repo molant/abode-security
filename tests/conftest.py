@@ -287,6 +287,18 @@ def pytest_collection_modifyitems(config, items):
         "test_two_concurrent_recreates_run_one_login_at_a_time",
         "test_failure_counter_reset_after_recreate",
         "test_hung_request_finally_skipped_after_generation_bump",
+        # Switch unique_id regression guards (issue #7)
+        "test_test_mode_switch_unique_id_preserved",
+        "test_monitoring_active_switch_unique_id_preserved",
+        "test_send_media_switch_unique_id_preserved",
+        "test_dispatch_without_verification_switch_unique_id_preserved",
+        "test_dispatch_police_switch_unique_id_preserved",
+        "test_dispatch_fire_switch_unique_id_preserved",
+        "test_dispatch_medical_switch_unique_id_preserved",
+        "test_test_mode_switch_name_and_icon",
+        "test_test_mode_switch_uses_test_mode_supported_flag",
+        "test_cms_setting_base_default_support_flag",
+        "test_cms_switches_table_covers_all_legacy_entities",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:
