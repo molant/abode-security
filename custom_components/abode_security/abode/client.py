@@ -119,6 +119,31 @@ class Client:
         self._session_created_time: datetime | None = None  # When session was created
         self._session_max_age_seconds = 1800  # Recreate session every 30 minutes (well before 1h 30s server timeout)
 
+        # Session swap synchronization (issue #3). All three are lazily
+        # initialized in `_ensure_session_swap_primitives` because asyncio
+        # primitives must be created on the running event loop.
+        # - _session_swap_lock: serializes concurrent _recreate_session calls.
+        # - _session_ready: cleared while a swap is in progress; new
+        #   _send_request calls wait on it before incrementing inflight.
+        # - _inflight_zero_event: set whenever _inflight_requests == 0 so
+        #   _recreate_session can drain in-flight requests before closing.
+        self._session_swap_lock: asyncio.Lock | None = None
+        self._session_ready: asyncio.Event | None = None
+        self._inflight_zero_event: asyncio.Event | None = None
+        self._inflight_requests = 0
+        # Bumped when a drain timeout forces the in-flight counter to be
+        # reset out from under a hung request. Each request captures the
+        # generation at registration; if the generation has moved by the
+        # time the request's finally runs, its decrement is skipped (the
+        # swap already accounted for it). Without this, a hung request
+        # that eventually completes after a forced reset would decrement
+        # an unrelated request's slot and falsely signal "no in flight."
+        self._session_swap_generation = 0
+        # Drain timeout: don't wait forever on a stuck request before
+        # forcing the swap. Production aiohttp requests should complete
+        # within the per-request 30 s timeout configured below.
+        self._session_drain_timeout = 35.0
+
         # Background task for proactive session monitoring
         self._session_monitor_task: asyncio.Task | None = None
         self._session_monitor_running = False
@@ -270,38 +295,101 @@ class Client:
         log.info("Logout successful")
         self._set_connection_status("disconnected")
 
+    def _ensure_session_swap_primitives(self) -> None:
+        """Lazily create asyncio primitives bound to the running loop."""
+        if self._session_swap_lock is None:
+            self._session_swap_lock = asyncio.Lock()
+        if self._session_ready is None:
+            self._session_ready = asyncio.Event()
+            self._session_ready.set()
+        if self._inflight_zero_event is None:
+            self._inflight_zero_event = asyncio.Event()
+            if self._inflight_requests == 0:
+                self._inflight_zero_event.set()
+
     async def _recreate_session(self):
-        """Recreate aiohttp session to clear stale connections."""
-        log.info("Recreating aiohttp session due to connection issues")
-        self._session_recreate_count += 1
+        """Recreate aiohttp session, draining in-flight requests first.
 
-        if self._session:
+        Concurrent callers serialize on `_session_swap_lock` so two failure
+        paths can't race two `login()` calls. New `_send_request` callers
+        block on `_session_ready` while the swap is in progress, and the
+        existing in-flight requests are drained via `_inflight_zero_event`
+        before the old session is closed (see issue #3).
+        """
+        self._ensure_session_swap_primitives()
+        assert self._session_swap_lock is not None
+        assert self._session_ready is not None
+        assert self._inflight_zero_event is not None
+
+        async with self._session_swap_lock:
+            log.info("Recreating aiohttp session due to connection issues")
+            self._session_recreate_count += 1
+
+            # Block new requests and wait for in-flight ones to finish.
+            self._session_ready.clear()
             try:
-                await self._session.close()
+                try:
+                    await asyncio.wait_for(
+                        self._inflight_zero_event.wait(),
+                        timeout=self._session_drain_timeout,
+                    )
+                except TimeoutError:
+                    log.warning(
+                        "Session drain timed out after %.1fs (%d still in flight)"
+                        " - proceeding with swap anyway",
+                        self._session_drain_timeout,
+                        self._inflight_requests,
+                    )
+                    # Bump the generation so the hung request's eventual
+                    # finally clause won't decrement a slot it no longer
+                    # owns, and clear the counter so a subsequent recreate
+                    # doesn't wait on the orphaned in-flight slot.
+                    self._session_swap_generation += 1
+                    self._inflight_requests = 0
+                    self._inflight_zero_event.set()
+
+                if self._session:
+                    try:
+                        await self._session.close()
+                    except Exception as exc:
+                        log.warning("Error closing old session: %s", exc)
+
+                # Create fresh session
+                timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=10)
+                connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
+                self._session = aiohttp.ClientSession(
+                    timeout=timeout, connector=connector
+                )
+                self._session_created_time = datetime.now()
+
+                # Clear token to force fresh auth
+                self._token = None
+                self._oauth_token = None
+
+                # Clear CMS cache to force fresh fetch after session recreation
+                self._cms_cache = None
+                self._cms_cache_time = None
+
+                # `login()` calls `self._session.post/get` directly, not
+                # `_send_request`, so it doesn't deadlock on the cleared
+                # ready event.
+                await self.login()
+
+                # Reset failure counter on a successful recreate so the
+                # threshold doesn't trip again on the very next failure.
+                self._consecutive_failures = 0
+            finally:
+                # Always re-open the gate, even if login() raised, so that
+                # callers waiting on _session_ready don't stall forever.
+                self._session_ready.set()
+
+            # Sync cookies to SocketIO if available
+            try:
+                await self._sync_socketio_cookies()
             except Exception as exc:
-                log.warning("Error closing old session: %s", exc)
-
-        # Create fresh session
-        timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=10)
-        connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
-        self._session = aiohttp.ClientSession(timeout=timeout, connector=connector)
-        self._session_created_time = datetime.now()
-
-        # Clear token to force fresh auth
-        self._token = None
-        self._oauth_token = None
-
-        # Clear CMS cache to force fresh fetch after session recreation
-        self._cms_cache = None
-        self._cms_cache_time = None
-
-        await self.login()
-
-        # Sync cookies to SocketIO if available
-        try:
-            await self._sync_socketio_cookies()
-        except Exception as exc:
-            log.warning("Failed to sync cookies after session recreation: %s", exc)
+                log.warning(
+                    "Failed to sync cookies after session recreation: %s", exc
+                )
 
     def _start_session_monitor(self):
         """Start background task to monitor session age and recreate proactively."""
@@ -1068,6 +1156,20 @@ class Client:
                 )
                 await self._recreate_session()
 
+        # Block while a session swap is in progress and register this
+        # request with the in-flight counter so `_recreate_session` can
+        # drain (issue #3). asyncio is single-threaded so the counter
+        # updates don't need a lock. The captured generation token is
+        # checked in the finally clause so a forced drain-timeout reset
+        # can't be undone by this request's eventual decrement.
+        self._ensure_session_swap_primitives()
+        assert self._session_ready is not None
+        assert self._inflight_zero_event is not None
+        await self._session_ready.wait()
+        my_swap_generation = self._session_swap_generation
+        self._inflight_requests += 1
+        self._inflight_zero_event.clear()
+
         try:
             url = f"{urls.BASE}{path}"
             log.debug("API Request - method=%s, path=%s, data=%s", method, url, data)
@@ -1149,6 +1251,17 @@ class Client:
             if not raise_on_error:
                 status = getattr(exc, "status", 0) or 0
                 return ResponseWrapper(str(exc), status, {})
+        finally:
+            # Drop in-flight registration so a pending _recreate_session can
+            # observe the drain. Skip the decrement if our slot was already
+            # reset by a drain timeout (generation moved) — otherwise we'd
+            # falsely zero the counter while another request is in flight
+            # against a freshly swapped session.
+            if my_swap_generation == self._session_swap_generation:
+                self._inflight_requests -= 1
+                if self._inflight_requests <= 0:
+                    self._inflight_requests = 0
+                    self._inflight_zero_event.set()
 
         raise Exception(errors.REQUEST)
 

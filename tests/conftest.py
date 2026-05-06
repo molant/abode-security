@@ -277,6 +277,11 @@ def pytest_collection_modifyitems(config, items):
         "test_seeds_only_on_first_started",
         "test_persistent_disconnect_handler_updates_client_status",
         "test_connection_recovered_handler_updates_client_status",
+        # Client session recreation (issue #3)
+        "test_recreate_waits_for_in_flight_request",
+        "test_two_concurrent_recreates_run_one_login_at_a_time",
+        "test_failure_counter_reset_after_recreate",
+        "test_hung_request_finally_skipped_after_generation_bump",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:
