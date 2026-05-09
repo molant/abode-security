@@ -34,7 +34,13 @@ export interface SensorEntity {
   state: string;
 }
 
-// Backend omits categories with zero sensors, so all keys are optional.
+// Backend keys sensors by Home Assistant `device_class`, which is open-ended
+// (garage_door, gas, heat, vibration, …). Use a string-keyed map so unknown
+// categories surface in the editor instead of being silently dropped.
+export type SensorsByCategory = Partial<Record<string, SensorEntity[]>>;
+
+// Legacy literal union of well-known categories. Kept for callsites that want
+// a typed iterator or label map; not used as the key type of SensorsByCategory.
 export type SensorCategory =
   | 'door'
   | 'window'
@@ -43,8 +49,6 @@ export type SensorCategory =
   | 'smoke'
   | 'connectivity'
   | 'other';
-
-export type SensorsByCategory = Partial<Record<SensorCategory, SensorEntity[]>>;
 
 export interface AlarmEntity {
   entity_id: string;
