@@ -297,6 +297,8 @@ def pytest_collection_modifyitems(config, items):
         "test_recreate_after_cleanup_does_not_allocate_session",
         "test_second_cleanup_does_not_return_until_first_finishes",
         "test_cleanup_logs_and_swallows_aiohttp_close_error",
+        # Test fixture hygiene — TCPConnector stub (issue #15)
+        "test_recreate_session_does_not_construct_real_connector",
         # Switch unique_id regression guards (issue #7)
         "test_test_mode_switch_unique_id_preserved",
         "test_monitoring_active_switch_unique_id_preserved",
