@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import type { HomeAssistant, AbodeMode, AbodeAction } from './types';
+import type { HomeAssistant, AbodeMode, AbodeAction, Mode } from './types';
 import { fetchModes, fetchActions } from './api';
 
 @customElement('abode-modes-tab')
@@ -176,7 +176,7 @@ export class ModesTab extends LitElement {
     }
   }
 
-  private _getActionsForMode(modeId: string): AbodeAction[] {
+  private _getActionsForMode(modeId: Mode): AbodeAction[] {
     return this._actions.filter(
       (action) => action.enabled && action.modes.includes(modeId)
     );

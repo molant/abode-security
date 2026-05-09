@@ -3,13 +3,20 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type {
   HomeAssistant,
   AbodeAction,
+  Mode,
   SensorsByCategory,
   AlarmEntity,
 } from './types';
+import { MODES } from './types';
 import { fetchSensors, fetchAlarms, createAction, updateAction } from './api';
 import './abode-modal';
 
-type SensorCategory = keyof SensorsByCategory;
+// "Toggle membership of `value` in a string array" — pure, no `this` access,
+// so it lives at module scope rather than as a static method. Returns a new
+// array (never mutates input) so Lit picks up the @state change.
+function toggleIn<T extends string>(arr: readonly T[], value: T): T[] {
+  return arr.includes(value) ? arr.filter((x) => x !== value) : [...arr, value];
+}
 
 @customElement('abode-action-editor')
 export class ActionEditor extends LitElement {
@@ -17,7 +24,7 @@ export class ActionEditor extends LitElement {
   @property({ attribute: false }) action: AbodeAction | null = null;
 
   @state() private _name = '';
-  @state() private _modes: string[] = [];
+  @state() private _modes: Mode[] = [];
   @state() private _delaySeconds = 0;
   @state() private _selectedSensors: string[] = [];
   @state() private _selectedAlarms: string[] = [];
@@ -341,41 +348,31 @@ export class ActionEditor extends LitElement {
     this._selectedAlarms = [...this.action.alarm_entity_ids];
   }
 
-  private _toggleMode(mode: string) {
-    if (this._modes.includes(mode)) {
-      this._modes = this._modes.filter((m) => m !== mode);
-    } else {
-      this._modes = [...this._modes, mode];
-    }
+  private _toggleMode(mode: Mode) {
+    this._modes = toggleIn(this._modes, mode);
     this._clearError('modes');
   }
 
   private _toggleSensor(entityId: string) {
-    if (this._selectedSensors.includes(entityId)) {
-      this._selectedSensors = this._selectedSensors.filter((s) => s !== entityId);
-    } else {
-      this._selectedSensors = [...this._selectedSensors, entityId];
-    }
+    this._selectedSensors = toggleIn(this._selectedSensors, entityId);
     this._clearError('sensors');
   }
 
   private _toggleAlarm(entityId: string) {
-    if (this._selectedAlarms.includes(entityId)) {
-      this._selectedAlarms = this._selectedAlarms.filter((a) => a !== entityId);
-    } else {
-      this._selectedAlarms = [...this._selectedAlarms, entityId];
-    }
+    this._selectedAlarms = toggleIn(this._selectedAlarms, entityId);
     this._clearError('alarms');
   }
 
-  private _isCategorySelected(category: SensorCategory): boolean {
+  // Category keys are open-ended (HA `device_class`), so these helpers work
+  // off plain `string` rather than the closed `SensorCategory` literal union.
+  private _isCategorySelected(category: string): boolean {
     if (!this._sensors) return false;
     const sensors = this._sensors[category] || [];
     if (sensors.length === 0) return false;
     return sensors.every((s) => this._selectedSensors.includes(s.entity_id));
   }
 
-  private _isCategoryPartial(category: SensorCategory): boolean {
+  private _isCategoryPartial(category: string): boolean {
     if (!this._sensors) return false;
     const sensors = this._sensors[category] || [];
     if (sensors.length === 0) return false;
@@ -385,7 +382,7 @@ export class ActionEditor extends LitElement {
     return selected.length > 0 && selected.length < sensors.length;
   }
 
-  private _toggleCategory(category: SensorCategory) {
+  private _toggleCategory(category: string) {
     if (!this._sensors) return;
     const sensors = this._sensors[category] || [];
     const entityIds = sensors.map((s) => s.entity_id);
@@ -520,7 +517,7 @@ export class ActionEditor extends LitElement {
       <div class="form-group">
         <label>Modes (at least one required)</label>
         <div class="checkbox-group">
-          ${['standby', 'home', 'away'].map(
+          ${MODES.map(
             (mode) => html`
               <label>
                 <input
