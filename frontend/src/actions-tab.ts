@@ -4,6 +4,7 @@ import { repeat } from 'lit/directives/repeat.js';
 import type { HomeAssistant, AbodeAction } from './types';
 import { fetchActions, updateAction, deleteAction, testAction } from './api';
 import './action-editor';
+import './abode-modal';
 
 @customElement('abode-actions-tab')
 export class ActionsTab extends LitElement {
@@ -248,48 +249,7 @@ export class ActionsTab extends LitElement {
       opacity: 1;
     }
 
-    /* Dialog styles */
-    .dialog-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    }
-
-    .dialog {
-      background: var(--card-background-color, #fff);
-      border-radius: 8px;
-      padding: 24px;
-      max-width: 400px;
-      width: 90%;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-    }
-
-    .dialog h3 {
-      margin: 0 0 16px 0;
-      font-size: 18px;
-      font-weight: 500;
-      color: var(--primary-text-color);
-    }
-
-    .dialog p {
-      margin: 0 0 24px 0;
-      color: var(--secondary-text-color);
-      line-height: 1.5;
-    }
-
-    .dialog-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-    }
-
+    /* Dialog button styles — applied to <button slot="footer"> inside <abode-modal>. */
     .dialog-button {
       padding: 8px 16px;
       border: none;
@@ -658,66 +618,58 @@ export class ActionsTab extends LitElement {
 
   private _renderDeleteDialog() {
     return html`
-      <div
-        class="dialog-overlay"
-        @click=${(e: Event) => {
-          if (e.target === e.currentTarget) this._confirm = null;
-        }}
-        @keydown=${(e: KeyboardEvent) => {
-          if (e.key === 'Escape') this._confirm = null;
-        }}
+      <abode-modal
+        heading="Delete Action"
+        variant="alertdialog"
+        @dismiss=${() => (this._confirm = null)}
       >
-        <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title">
-          <h3 id="delete-title">Delete Action</h3>
-          <p>
-            Delete action "${this._confirm?.action.name}"? This cannot be undone.
-          </p>
-          <div class="dialog-actions">
-            <button
-              class="dialog-button cancel"
-              @click=${() => (this._confirm = null)}
-            >
-              Cancel
-            </button>
-            <button class="dialog-button danger" @click=${this._confirmDelete}>
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
+        <p>
+          Delete action "${this._confirm?.action.name}"? This cannot be undone.
+        </p>
+        <button
+          slot="footer"
+          class="dialog-button cancel"
+          @click=${() => (this._confirm = null)}
+        >
+          Cancel
+        </button>
+        <button
+          slot="footer"
+          class="dialog-button danger"
+          @click=${this._confirmDelete}
+        >
+          Delete
+        </button>
+      </abode-modal>
     `;
   }
 
   private _renderTestDialog() {
     return html`
-      <div
-        class="dialog-overlay"
-        @click=${(e: Event) => {
-          if (e.target === e.currentTarget) this._confirm = null;
-        }}
-        @keydown=${(e: KeyboardEvent) => {
-          if (e.key === 'Escape') this._confirm = null;
-        }}
+      <abode-modal
+        heading="Test Action"
+        variant="alertdialog"
+        @dismiss=${() => (this._confirm = null)}
       >
-        <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="test-title">
-          <h3 id="test-title">Test Action</h3>
-          <p>
-            This will trigger real alarms. Are you sure you want to test
-            "${this._confirm?.action.name}"?
-          </p>
-          <div class="dialog-actions">
-            <button
-              class="dialog-button cancel"
-              @click=${() => (this._confirm = null)}
-            >
-              Cancel
-            </button>
-            <button class="dialog-button primary" @click=${this._confirmTest}>
-              Test
-            </button>
-          </div>
-        </div>
-      </div>
+        <p>
+          This will trigger real alarms. Are you sure you want to test
+          "${this._confirm?.action.name}"?
+        </p>
+        <button
+          slot="footer"
+          class="dialog-button cancel"
+          @click=${() => (this._confirm = null)}
+        >
+          Cancel
+        </button>
+        <button
+          slot="footer"
+          class="dialog-button primary"
+          @click=${this._confirmTest}
+        >
+          Test
+        </button>
+      </abode-modal>
     `;
   }
 }

@@ -7,6 +7,7 @@ import type {
   AlarmEntity,
 } from './types';
 import { fetchSensors, fetchAlarms, createAction, updateAction } from './api';
+import './abode-modal';
 
 type SensorCategory = keyof SensorsByCategory;
 
@@ -29,38 +30,6 @@ export class ActionEditor extends LitElement {
   static styles = css`
     :host {
       display: block;
-    }
-
-    .editor-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-      padding: 16px;
-    }
-
-    .editor-dialog {
-      background: var(--card-background-color, #fff);
-      border-radius: 12px;
-      padding: 24px;
-      max-width: 600px;
-      width: 100%;
-      max-height: 90vh;
-      overflow-y: auto;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-    }
-
-    h2 {
-      margin: 0 0 24px 0;
-      font-size: 20px;
-      font-weight: 500;
-      color: var(--primary-text-color);
     }
 
     .form-group {
@@ -227,16 +196,10 @@ export class ActionEditor extends LitElement {
       accent-color: var(--primary-color, #03a9f4);
     }
 
-    .button-row {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      margin-top: 24px;
-      padding-top: 16px;
-      border-top: 1px solid var(--divider-color, #e0e0e0);
-    }
-
-    .button-row button {
+    /* Footer button styles — applied to <button slot="footer"> inside <abode-modal>.
+     * The selector intentionally matches all slot="footer" buttons in this
+     * shadow root, which today only exist inside <abode-modal>. */
+    button[slot='footer'] {
       padding: 10px 20px;
       border: none;
       border-radius: 4px;
@@ -246,30 +209,30 @@ export class ActionEditor extends LitElement {
       transition: background 0.2s;
     }
 
-    .button-row button.cancel {
+    button[slot='footer'].cancel {
       background: transparent;
       color: var(--secondary-text-color);
     }
 
-    .button-row button.cancel:hover {
+    button[slot='footer'].cancel:hover {
       background: var(--secondary-background-color);
     }
 
-    .button-row button.primary {
+    button[slot='footer'].primary {
       background: var(--primary-color, #03a9f4);
       color: white;
     }
 
-    .button-row button.primary:hover:not(:disabled) {
+    button[slot='footer'].primary:hover:not(:disabled) {
       background: var(--primary-color-dark, #0288d1);
     }
 
-    .button-row button.primary:disabled {
+    button[slot='footer'].primary:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
 
-    .button-row button:focus-visible {
+    button[slot='footer']:focus-visible {
       outline: 2px solid var(--primary-color);
       outline-offset: 2px;
     }
@@ -437,37 +400,22 @@ export class ActionEditor extends LitElement {
     this.dispatchEvent(new CustomEvent('cancel'));
   }
 
-  private _handleOverlayClick(e: Event) {
-    if (e.target === e.currentTarget) {
-      this._handleCancel();
-    }
-  }
-
-  private _handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      this._handleCancel();
-    }
-  }
-
   render() {
     return html`
-      <div
-        class="editor-overlay"
-        @click=${this._handleOverlayClick}
-        @keydown=${this._handleKeydown}
+      <abode-modal
+        heading=${this.action ? 'Edit Action' : 'New Action'}
+        size="lg"
+        @dismiss=${this._handleCancel}
       >
-        <div class="editor-dialog" role="dialog" aria-modal="true" aria-labelledby="editor-title">
-          <h2 id="editor-title">${this.action ? 'Edit Action' : 'New Action'}</h2>
-
-          ${this._loading
-            ? html`<div class="loading">Loading...</div>`
-            : this._renderForm()}
-        </div>
-      </div>
+        ${this._loading
+          ? html`<div class="loading">Loading...</div>`
+          : this._renderFormBody()}
+        ${this._loading ? '' : this._renderFooter()}
+      </abode-modal>
     `;
   }
 
-  private _renderForm() {
+  private _renderFormBody() {
     return html`
       <div class="form-group">
         <label for="action-name">Name</label>
@@ -545,13 +493,22 @@ export class ActionEditor extends LitElement {
             ${this._errors.form}
           </div>`
         : ''}
+    `;
+  }
 
-      <div class="button-row">
-        <button class="cancel" @click=${this._handleCancel}>Cancel</button>
-        <button class="primary" @click=${this._handleSave} ?disabled=${this._saving}>
-          ${this._saving ? 'Saving...' : 'Save'}
-        </button>
-      </div>
+  private _renderFooter() {
+    return html`
+      <button slot="footer" class="cancel" @click=${this._handleCancel}>
+        Cancel
+      </button>
+      <button
+        slot="footer"
+        class="primary"
+        @click=${this._handleSave}
+        ?disabled=${this._saving}
+      >
+        ${this._saving ? 'Saving...' : 'Save'}
+      </button>
     `;
   }
 
