@@ -5,10 +5,11 @@
  * API integration is tested via E2E and integration tests.
  */
 
-import { expect, fixture, html } from '@open-wc/testing';
+import { aTimeout, expect, fixture, html } from '@open-wc/testing';
 
 import '../modes-tab.js';
 import type { ModesTab } from '../modes-tab.js';
+import type { HomeAssistant } from '../types.js';
 import { createMockHass, createMockModes, elementUpdated } from './test-helpers.js';
 
 describe('ModesTab', () => {
@@ -131,6 +132,41 @@ describe('ModesTab', () => {
 
       const errorEl = el.shadowRoot?.querySelector('.error');
       expect(errorEl?.getAttribute('role')).to.equal('alert');
+    });
+  });
+
+  describe('lifecycle and async safety', () => {
+    it('does not mutate state after disconnection while _loadData is in flight (#29)', async () => {
+      let resolveModes!: (value: { modes: unknown[] }) => void;
+      const modesPromise = new Promise<{ modes: unknown[] }>((resolve) => {
+        resolveModes = resolve;
+      });
+
+      const hass = createMockHass({
+        callWS: ((params: { type: string }) => {
+          if (params.type === 'abode_security/modes/list') {
+            return modesPromise;
+          }
+          if (params.type === 'abode_security/actions/list') {
+            return Promise.resolve({ actions: [] });
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ModesTab>(html`
+        <abode-modes-tab .hass=${hass}></abode-modes-tab>
+      `);
+
+      el.remove();
+      resolveModes({ modes: createMockModes() });
+      await modesPromise;
+      await aTimeout(0);
+
+      // @ts-expect-error - accessing private property for testing
+      expect(el._modes).to.deep.equal([], 'modes must not mutate after disconnect');
+      // @ts-expect-error - accessing private property for testing
+      expect(el._loading).to.equal(true, '_loading must remain true (state ignored)');
     });
   });
 });

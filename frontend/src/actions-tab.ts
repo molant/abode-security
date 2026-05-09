@@ -18,6 +18,11 @@ export class ActionsTab extends LitElement {
   @state() private _togglingIds: Set<string> = new Set();
   @state() private _operationError: string | null = null;
 
+  // Aborted on disconnect so a late-resolving fetch can't write state to a
+  // detached element (panel tab switches destroy the inactive tab — closes #29).
+  // See action-editor.ts for full rationale; this version omits the Retry path.
+  private _abort: AbortController | null = null;
+
   static styles = css`
     :host {
       display: block;
@@ -348,16 +353,30 @@ export class ActionsTab extends LitElement {
     await this._loadData();
   }
 
+  disconnectedCallback() {
+    this._abort?.abort();
+    this._abort = null;
+    super.disconnectedCallback();
+  }
+
   private async _loadData() {
+    this._abort?.abort();
+    const controller = new AbortController();
+    this._abort = controller;
+    const { signal } = controller;
+
     this._loading = true;
     this._error = null;
 
     try {
-      this._actions = (await fetchActions(this.hass)) ?? [];
+      const actions = (await fetchActions(this.hass)) ?? [];
+      if (signal.aborted) return;
+      this._actions = actions;
     } catch (err) {
+      if (signal.aborted) return;
       this._error = err instanceof Error ? err.message : 'Failed to load actions';
     } finally {
-      this._loading = false;
+      if (!signal.aborted) this._loading = false;
     }
   }
 
