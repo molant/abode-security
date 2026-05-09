@@ -74,9 +74,12 @@ def _stub_sync_socketio_cookies(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _stub_aiohttp_client_session(monkeypatch):
-    """Replace the aiohttp.ClientSession constructor used inside
-    _recreate_session so tests don't allocate (and leak) a real session."""
+def _stub_aiohttp_session_and_connector(monkeypatch):
+    """Replace the aiohttp.ClientSession and TCPConnector constructors used
+    inside _recreate_session so tests don't allocate (and leak) a real
+    session or connector. A real TCPConnector registers with the running
+    loop and emits an "Unclosed connector" ResourceWarning at GC under
+    stricter warning configurations (e.g. PYTHONDEVMODE=1)."""
     fake_session_factory = MagicMock(
         side_effect=lambda *_a, **_kw: MagicMock(close=AsyncMock())
     )
@@ -84,6 +87,39 @@ def _stub_aiohttp_client_session(monkeypatch):
         "custom_components.abode_security.abode.client.aiohttp.ClientSession",
         fake_session_factory,
     )
+    monkeypatch.setattr(
+        "custom_components.abode_security.abode.client.aiohttp.TCPConnector",
+        MagicMock(side_effect=lambda *_a, **_kw: MagicMock()),
+    )
+
+
+class TestRecreateSessionStubsTCPConnector:
+    """The autouse fixture must stub ``aiohttp.TCPConnector`` alongside
+    ``aiohttp.ClientSession`` so ``_recreate_session`` doesn't allocate a
+    real connector that registers with the running loop and emits an
+    "Unclosed connector" ResourceWarning at GC under stricter warning
+    configurations (e.g. ``PYTHONDEVMODE=1``)."""
+
+    async def test_recreate_session_does_not_construct_real_connector(self):
+        client = _build_client()
+        client._session = MagicMock()
+        client._session.close = AsyncMock()
+
+        with patch.object(client, "login", new=AsyncMock()):
+            await client._recreate_session()
+
+        from custom_components.abode_security.abode.client import (
+            aiohttp as client_aiohttp,
+        )
+
+        assert isinstance(client_aiohttp.TCPConnector, MagicMock), (
+            "aiohttp.TCPConnector must be patched in this test module so "
+            "_recreate_session doesn't leak a real connector at GC"
+        )
+        assert client_aiohttp.TCPConnector.call_count >= 1, (
+            "expected _recreate_session to construct (the patched) "
+            "TCPConnector at least once per recreate"
+        )
 
 
 class TestSessionRecreateDrainsInFlightRequests:
