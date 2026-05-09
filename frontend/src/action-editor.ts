@@ -26,6 +26,14 @@ export class ActionEditor extends LitElement {
   @state() private _errors: Record<string, string> = {};
   @state() private _saving = false;
   @state() private _loading = true;
+  @state() private _loadError: string | null = null;
+
+  // Tracks the in-flight _loadEntities call. Aborted on disconnect (so a
+  // late-resolving fetch doesn't write state to a detached element) and on
+  // Retry (so a slow first attempt doesn't overwrite a fresh successful one).
+  // hass.callWS doesn't support cancellation, but the signal lets us discard
+  // the *result* once it arrives.
+  private _abort: AbortController | null = null;
 
   static styles = css`
     :host {
@@ -242,29 +250,85 @@ export class ActionEditor extends LitElement {
       padding: 24px;
       color: var(--secondary-text-color);
     }
+
+    .retry-row {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 32px 24px;
+      text-align: center;
+    }
+
+    .retry-row .error-text {
+      font-size: 14px;
+      margin: 0;
+    }
+
+    .retry-row button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      background: var(--primary-color, #03a9f4);
+      color: white;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .retry-row button:hover {
+      background: var(--primary-color-dark, #0288d1);
+    }
+
+    .retry-row button:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: 2px;
+    }
   `;
 
   async connectedCallback() {
     super.connectedCallback();
-    await this._loadEntities();
+    // Populate from `this.action` synchronously *before* the async load so a
+    // disconnect mid-fetch can't mutate _name/_modes/etc. on a detached
+    // element. _populateForm only depends on the `action` prop, not on the
+    // sensors/alarms being loaded, so it's safe to run first.
     if (this.action) {
       this._populateForm();
     }
+    await this._loadEntities();
+  }
+
+  disconnectedCallback() {
+    this._abort?.abort();
+    this._abort = null;
+    super.disconnectedCallback();
   }
 
   private async _loadEntities() {
+    // Cancel any prior in-flight load so its late result can't overwrite
+    // a fresher one (covers Retry-while-still-loading and reconnects).
+    this._abort?.abort();
+    const controller = new AbortController();
+    this._abort = controller;
+    const { signal } = controller;
+
     this._loading = true;
+    this._loadError = null;
     try {
       const [sensors, alarms] = await Promise.all([
         fetchSensors(this.hass),
         fetchAlarms(this.hass),
       ]);
+      if (signal.aborted) return;
       this._sensors = sensors ?? null;
       this._alarms = alarms ?? [];
     } catch (err) {
-      console.error('Failed to load entities:', err);
+      if (signal.aborted) return;
+      this._loadError =
+        err instanceof Error ? err.message : 'Failed to load sensors and alarms';
     } finally {
-      this._loading = false;
+      if (!signal.aborted) this._loading = false;
     }
   }
 
@@ -366,6 +430,11 @@ export class ActionEditor extends LitElement {
   }
 
   private async _handleSave() {
+    // The Save button's `?disabled=${this._saving}` only reflects on the
+    // next render — a fast double-click can fire two handlers before that
+    // cycle completes. Guard inside the handler too so the second call is
+    // a no-op (closes #27).
+    if (this._saving) return;
     if (!this._validate()) return;
 
     this._saving = true;
@@ -409,9 +478,22 @@ export class ActionEditor extends LitElement {
       >
         ${this._loading
           ? html`<div class="loading">Loading...</div>`
-          : this._renderFormBody()}
-        ${this._loading ? '' : this._renderFooter()}
+          : this._loadError
+            ? this._renderLoadError()
+            : this._renderFormBody()}
+        ${this._loading || this._loadError ? '' : this._renderFooter()}
       </abode-modal>
+    `;
+  }
+
+  private _renderLoadError() {
+    // type="button" defends against a future refactor wrapping the modal body
+    // in a <form> — without it, the button would default to type="submit".
+    return html`
+      <div class="retry-row" role="alert">
+        <span class="error-text">${this._loadError}</span>
+        <button type="button" @click=${this._loadEntities}>Retry</button>
+      </div>
     `;
   }
 

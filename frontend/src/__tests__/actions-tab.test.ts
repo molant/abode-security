@@ -5,7 +5,7 @@
  * API integration is tested via E2E and integration tests.
  */
 
-import { expect, fixture, html } from '@open-wc/testing';
+import { aTimeout, expect, fixture, html } from '@open-wc/testing';
 
 import '../actions-tab.js';
 import type { ActionsTab } from '../actions-tab.js';
@@ -449,6 +449,71 @@ describe('ActionsTab', () => {
       // Here we just verify the action-tab passes the right variant prop.
       const modal = el.shadowRoot?.querySelector('abode-modal');
       expect(modal?.getAttribute('variant')).to.equal('alertdialog');
+    });
+  });
+
+  describe('lifecycle and async safety', () => {
+    it('does not mutate state after disconnection while _loadData is in flight (#29)', async () => {
+      let resolveActions!: (value: { actions: unknown[] }) => void;
+      const actionsPromise = new Promise<{ actions: unknown[] }>((resolve) => {
+        resolveActions = resolve;
+      });
+
+      const hass = createMockHass({
+        callWS: ((params: { type: string }) => {
+          if (params.type === 'abode_security/actions/list') {
+            return actionsPromise;
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ActionsTab>(html`
+        <abode-actions-tab .hass=${hass}></abode-actions-tab>
+      `);
+
+      // _loadData is in flight, awaiting actionsPromise. Disconnect first…
+      el.remove();
+
+      // …then resolve. The result must be discarded.
+      resolveActions({ actions: [createMockAction({ id: 'late', name: 'Late' })] });
+      await actionsPromise;
+      await aTimeout(0);
+
+      // @ts-expect-error - accessing private property for testing
+      expect(el._actions).to.deep.equal([], 'actions must not mutate after disconnect');
+      // @ts-expect-error - accessing private property for testing
+      expect(el._loading).to.equal(true, '_loading must remain true (state ignored)');
+    });
+
+    it('does not set _error after disconnection when _loadData rejects (#29)', async () => {
+      let rejectActions!: (err: Error) => void;
+      const actionsPromise = new Promise<unknown>((_, reject) => {
+        rejectActions = reject;
+      });
+
+      const hass = createMockHass({
+        callWS: ((params: { type: string }) => {
+          if (params.type === 'abode_security/actions/list') {
+            return actionsPromise;
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ActionsTab>(html`
+        <abode-actions-tab .hass=${hass}></abode-actions-tab>
+      `);
+
+      el.remove();
+      rejectActions(new Error('socket dropped'));
+      // The rejection must not leak as an unhandled promise — the catch in
+      // _loadData handles it; we just yield once to let it run.
+      await actionsPromise.catch(() => undefined);
+      await aTimeout(0);
+
+      // @ts-expect-error - accessing private property for testing
+      expect(el._error).to.equal(null, '_error must not be set after disconnect');
     });
   });
 });
