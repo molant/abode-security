@@ -556,23 +556,16 @@ export class ActionEditor extends LitElement {
   }
 
   private _renderSensorSelection() {
-    if (!this._sensors) {
+    const sensorsByCategory = this._sensors;
+    if (!sensorsByCategory) {
       return html`<div class="loading">Loading sensors...</div>`;
     }
 
-    const categories: SensorCategory[] = [
-      'door',
-      'window',
-      'motion',
-      'moisture',
-      'smoke',
-      'connectivity',
-      'other',
-    ];
-
-    const nonEmptyCategories = categories.filter(
-      (cat) => (this._sensors![cat] || []).length > 0
-    );
+    // Drive categories from the response keys, not a frontend allowlist —
+    // the backend keys by HA `device_class`, which is open-ended.
+    const nonEmptyCategories = Object.keys(sensorsByCategory)
+      .filter((cat) => (sensorsByCategory[cat] ?? []).length > 0)
+      .sort();
 
     if (nonEmptyCategories.length === 0) {
       return html`<div class="loading">No sensors available</div>`;
@@ -581,7 +574,7 @@ export class ActionEditor extends LitElement {
     return html`
       <div class="sensor-categories">
         ${nonEmptyCategories.map((category) => {
-          const sensors = this._sensors![category] || [];
+          const sensors = sensorsByCategory[category] ?? [];
           return html`
             <div class="category">
               <div class="category-header" @click=${() => this._toggleCategory(category)}>
@@ -592,7 +585,7 @@ export class ActionEditor extends LitElement {
                   @click=${(e: Event) => e.stopPropagation()}
                   @change=${() => this._toggleCategory(category)}
                 />
-                <span>${category} (${sensors.length})</span>
+                <span>${category.replace(/_/g, ' ')} (${sensors.length})</span>
               </div>
               <div class="category-items">
                 ${sensors.map(

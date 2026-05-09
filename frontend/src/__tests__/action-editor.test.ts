@@ -9,6 +9,7 @@ import { expect, fixture, html } from '@open-wc/testing';
 
 import '../action-editor.js';
 import type { ActionEditor } from '../action-editor.js';
+import type { SensorEntity } from '../types.js';
 import {
   createMockHass,
   createMockAction,
@@ -71,6 +72,77 @@ describe('ActionEditor', () => {
       // Should show sensor categories (first letter capitalized)
       expect(el.shadowRoot?.textContent).to.include('Door');
       expect(el.shadowRoot?.textContent).to.include('Motion');
+    });
+
+    it('renders categories returned by the backend even when not in the legacy allowlist', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+
+      // Intentionally use device_class keys outside the legacy seven-name
+      // allowlist — this is the shape the HA backend actually returns.
+      const wideSensors: Record<string, SensorEntity[]> = {
+        garage_door: [
+          { entity_id: 'binary_sensor.garage', name: 'Garage Door', state: 'closed' },
+        ],
+        gas: [
+          { entity_id: 'binary_sensor.gas_kitchen', name: 'Kitchen Gas', state: 'off' },
+        ],
+      };
+      // @ts-expect-error - accessing private property for testing
+      el._sensors = wideSensors;
+      // @ts-expect-error - accessing private property for testing
+      el._alarms = createMockAlarms();
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      // Both non-allowlisted categories should appear as category headers,
+      // and each sensor inside should be selectable. Match case-insensitively
+      // so a future title-case label map can't make this test brittle.
+      const categoryHeaders = Array.from(
+        el.shadowRoot?.querySelectorAll('.category-header span') ?? [],
+      ).map((s) => s.textContent ?? '');
+      expect(categoryHeaders.some((l) => /garage[\s_]door/i.test(l))).to.equal(
+        true,
+        `expected a "garage door" category header, got: ${JSON.stringify(categoryHeaders)}`,
+      );
+      expect(categoryHeaders.some((l) => /\bgas\b/i.test(l))).to.equal(
+        true,
+        `expected a "gas" category header, got: ${JSON.stringify(categoryHeaders)}`,
+      );
+      expect(el.shadowRoot?.textContent).to.include('Garage Door');
+      expect(el.shadowRoot?.textContent).to.include('Kitchen Gas');
+    });
+
+    it('skips categories with zero sensors', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+
+      // @ts-expect-error - accessing private property for testing
+      el._sensors = {
+        door: [
+          { entity_id: 'binary_sensor.front', name: 'Front Door', state: 'off' },
+        ],
+        motion: [],
+      };
+      // @ts-expect-error - accessing private property for testing
+      el._alarms = createMockAlarms();
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      const categoryHeaders = Array.from(
+        el.shadowRoot?.querySelectorAll('.category-header span') ?? [],
+      ).map((s) => s.textContent ?? '');
+      expect(categoryHeaders.some((l) => /\bdoor\b/i.test(l))).to.equal(true);
+      expect(categoryHeaders.some((l) => /\bmotion\b/i.test(l))).to.equal(
+        false,
+        'empty motion category should be skipped',
+      );
     });
 
     it('displays alarm options', async () => {
