@@ -287,6 +287,16 @@ def pytest_collection_modifyitems(config, items):
         "test_two_concurrent_recreates_run_one_login_at_a_time",
         "test_failure_counter_reset_after_recreate",
         "test_hung_request_finally_skipped_after_generation_bump",
+        # Client cleanup drain (issue #14)
+        "test_cleanup_waits_for_in_flight_request",
+        "test_cleanup_drain_timeout_forces_close",
+        "test_send_request_after_cleanup_raises",
+        "test_cleanup_called_twice_closes_session_only_once",
+        "test_cleanup_waits_for_concurrent_recreate",
+        "test_parked_request_raises_when_cleanup_wakes_it",
+        "test_recreate_after_cleanup_does_not_allocate_session",
+        "test_second_cleanup_does_not_return_until_first_finishes",
+        "test_cleanup_logs_and_swallows_aiohttp_close_error",
         # Switch unique_id regression guards (issue #7)
         "test_test_mode_switch_unique_id_preserved",
         "test_monitoring_active_switch_unique_id_preserved",
