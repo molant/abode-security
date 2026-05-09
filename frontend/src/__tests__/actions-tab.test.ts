@@ -9,6 +9,7 @@ import { expect, fixture, html } from '@open-wc/testing';
 
 import '../actions-tab.js';
 import type { ActionsTab } from '../actions-tab.js';
+import type { HomeAssistant } from '../types.js';
 import { createMockHass, createMockAction, elementUpdated } from './test-helpers.js';
 
 describe('ActionsTab', () => {
@@ -197,6 +198,123 @@ describe('ActionsTab', () => {
       const dialog = el.shadowRoot?.querySelector('.dialog');
       expect(dialog).to.exist;
       expect(dialog?.textContent).to.include('trigger real alarms');
+    });
+  });
+
+  describe('confirm dialog lifecycle', () => {
+    it('removes the captured action when delete resolves, even if confirm state is cleared mid-await', async () => {
+      let resolveDelete!: () => void;
+      const deletePromise = new Promise<void>((resolve) => {
+        resolveDelete = resolve;
+      });
+
+      const hass = createMockHass({
+        callWS: (async (params: { type: string }) => {
+          if (params.type === 'abode_security/actions/delete') {
+            return deletePromise;
+          }
+          return { success: true };
+        }) as HomeAssistant['callWS'],
+      });
+
+      const actions = [
+        createMockAction({ id: 'a1', name: 'A1' }),
+        createMockAction({ id: 'a2', name: 'A2' }),
+      ];
+
+      const el = await fixture<ActionsTab>(html`
+        <abode-actions-tab .hass=${hass}></abode-actions-tab>
+      `);
+      // @ts-expect-error - accessing private property for testing
+      el._actions = actions;
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      // Open delete confirm for a1, then start the delete (don't await).
+      // @ts-expect-error - accessing private method for testing
+      el._requestDelete(actions[0]);
+      await elementUpdated(el);
+      // @ts-expect-error - accessing private method for testing
+      const inFlight = el._confirmDelete();
+
+      // Simulate state being cleared mid-await (cancel, re-entry, refactor).
+      // The fix captures `action` into a local before await, so this should
+      // not affect which action is removed.
+      // @ts-expect-error - accessing private property for testing
+      el._confirm = null;
+
+      // Resolve the network call.
+      resolveDelete();
+      await inFlight;
+      await elementUpdated(el);
+
+      // a1 should be removed (captured before await); a2 stays.
+      // @ts-expect-error - accessing private property for testing
+      expect(el._actions.map((a: { id: string }) => a.id)).to.deep.equal(['a2']);
+      // @ts-expect-error - accessing private property for testing
+      expect(el._operationError).to.equal(null);
+    });
+
+    it('opening test confirm replaces an open delete confirm (single confirm at a time)', async () => {
+      const hass = createMockHass();
+      const actions = [
+        createMockAction({ id: 'a1', name: 'A1' }),
+        createMockAction({ id: 'a2', name: 'A2' }),
+      ];
+
+      const el = await fixture<ActionsTab>(html`
+        <abode-actions-tab .hass=${hass}></abode-actions-tab>
+      `);
+      // @ts-expect-error - accessing private property for testing
+      el._actions = actions;
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      // Request delete for a1, then test for a2.
+      // @ts-expect-error - accessing private method for testing
+      el._requestDelete(actions[0]);
+      // @ts-expect-error - accessing private method for testing
+      el._requestTest(actions[1]);
+      await elementUpdated(el);
+
+      // Exactly one confirm is open, and it's the test dialog targeting a2.
+      const dialogs = el.shadowRoot?.querySelectorAll('.dialog');
+      expect(dialogs?.length).to.equal(1);
+      expect(dialogs?.[0]?.textContent).to.include('trigger real alarms');
+      expect(dialogs?.[0]?.textContent).to.include('A2');
+    });
+
+    it('cancelling a delete confirm clears confirm state without throwing', async () => {
+      const hass = createMockHass();
+      const actions = [createMockAction({ id: 'a1', name: 'A1' })];
+
+      const el = await fixture<ActionsTab>(html`
+        <abode-actions-tab .hass=${hass}></abode-actions-tab>
+      `);
+      // @ts-expect-error - accessing private property for testing
+      el._actions = actions;
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      // Open delete dialog
+      const deleteButton = el.shadowRoot?.querySelector('.icon-button.delete') as HTMLButtonElement;
+      deleteButton?.click();
+      await elementUpdated(el);
+
+      // Click cancel
+      const cancelButton = el.shadowRoot?.querySelector('.dialog-button.cancel') as HTMLButtonElement;
+      cancelButton?.click();
+      await elementUpdated(el);
+
+      // Dialog gone, action list unchanged.
+      expect(el.shadowRoot?.querySelector('.dialog')).to.equal(null);
+      // @ts-expect-error - accessing private property for testing
+      expect(el._confirm).to.equal(null);
+      // @ts-expect-error - accessing private property for testing
+      expect(el._actions.length).to.equal(1);
     });
   });
 
