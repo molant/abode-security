@@ -2,7 +2,7 @@
  * Tests for the <abode-modal> component.
  */
 
-import { expect, fixture, html } from '@open-wc/testing';
+import { aTimeout, expect, fixture, html } from '@open-wc/testing';
 
 import '../abode-modal.js';
 import type { AbodeModal } from '../abode-modal.js';
@@ -260,6 +260,225 @@ describe('AbodeModal', () => {
       `);
       await elementUpdated(large);
       expect(large.shadowRoot?.querySelector('.modal-box[data-size="lg"]')).to.exist;
+    });
+  });
+
+  describe('focus management', () => {
+    let trigger: HTMLButtonElement;
+
+    beforeEach(() => {
+      // Simulates the element that opens the dialog and should receive focus
+      // back when the modal closes.
+      trigger = document.createElement('button');
+      trigger.id = 'opener';
+      trigger.textContent = 'Open dialog';
+      document.body.appendChild(trigger);
+      trigger.focus();
+    });
+
+    afterEach(() => {
+      trigger.remove();
+    });
+
+    it('moves focus to the first focusable descendant on open', async () => {
+      expect(document.activeElement?.id).to.equal('opener');
+
+      const el = await fixture<AbodeModal>(html`
+        <abode-modal heading="Heading">
+          <button id="first-body">First body</button>
+          <button id="second-body">Second body</button>
+          <button slot="footer" id="cancel">Cancel</button>
+        </abode-modal>
+      `);
+      await elementUpdated(el);
+      await aTimeout(0);
+
+      expect(document.activeElement?.id).to.equal('first-body');
+    });
+
+    it('focuses the modal box (tabindex=-1) when no focusable descendant exists', async () => {
+      const el = await fixture<AbodeModal>(html`
+        <abode-modal heading="Heading">
+          <p>Text only, no focusable controls.</p>
+        </abode-modal>
+      `);
+      await elementUpdated(el);
+      await aTimeout(0);
+
+      const box = el.shadowRoot?.querySelector('.modal-box') as HTMLElement;
+      expect(box.getAttribute('tabindex')).to.equal('-1');
+      // Active element should be the host (or its shadow box) — verify focus
+      // is at least within the modal subtree rather than back on the trigger.
+      expect(document.activeElement === el || document.activeElement === box).to.equal(
+        true,
+        `expected focus inside the modal, got: ${document.activeElement?.tagName}#${(document.activeElement as HTMLElement)?.id}`,
+      );
+    });
+
+    it('restores focus to the previously-focused element on disconnect', async () => {
+      const el = await fixture<AbodeModal>(html`
+        <abode-modal heading="Heading">
+          <button id="first-body">First body</button>
+        </abode-modal>
+      `);
+      await elementUpdated(el);
+      await aTimeout(0);
+
+      // Modal moved focus into itself; remove the modal and verify focus returns.
+      el.remove();
+      await aTimeout(0);
+
+      expect(document.activeElement?.id).to.equal('opener');
+    });
+
+    it('redirects focus to the first focusable when the end sentinel gets focus (Tab past the last)', async () => {
+      const el = await fixture<AbodeModal>(html`
+        <abode-modal heading="Heading">
+          <button id="first-body">First</button>
+          <button slot="footer" id="cancel">Cancel</button>
+        </abode-modal>
+      `);
+      await elementUpdated(el);
+      await aTimeout(0);
+
+      const endSentinel = el.shadowRoot?.querySelector('.focus-sentinel-end') as HTMLElement;
+      expect(endSentinel, 'end sentinel must be present').to.exist;
+      endSentinel.focus();
+
+      // Focus should have been redirected to the first focusable.
+      expect(document.activeElement?.id).to.equal('first-body');
+    });
+
+    it('redirects focus to the last focusable when the start sentinel gets focus (Shift+Tab past the first)', async () => {
+      const el = await fixture<AbodeModal>(html`
+        <abode-modal heading="Heading">
+          <button id="first-body">First</button>
+          <button slot="footer" id="cancel">Cancel</button>
+        </abode-modal>
+      `);
+      await elementUpdated(el);
+      await aTimeout(0);
+
+      const startSentinel = el.shadowRoot?.querySelector('.focus-sentinel-start') as HTMLElement;
+      expect(startSentinel, 'start sentinel must be present').to.exist;
+      startSentinel.focus();
+
+      // Focus should be redirected to the last focusable.
+      expect(document.activeElement?.id).to.equal('cancel');
+    });
+
+    it('skips focusable elements with explicit tabindex="-1"', async () => {
+      const el = await fixture<AbodeModal>(html`
+        <abode-modal heading="Heading">
+          <button id="skip" tabindex="-1">Should be skipped</button>
+          <button id="real">Real focusable</button>
+          <button slot="footer" id="footer-skip" tabindex="-1">Skip footer</button>
+          <button slot="footer" id="footer-real">Footer real</button>
+        </abode-modal>
+      `);
+      await elementUpdated(el);
+      await aTimeout(0);
+
+      // Initial focus must land on the first tabbable button, not the -1 one.
+      expect(document.activeElement?.id).to.equal('real');
+
+      // End sentinel must wrap to the same first tabbable, not the skipped one.
+      const endSentinel = el.shadowRoot?.querySelector('.focus-sentinel-end') as HTMLElement;
+      endSentinel.focus();
+      expect(document.activeElement?.id).to.equal('real');
+
+      // Start sentinel must wrap to the last tabbable (footer-real), not footer-skip.
+      const startSentinel = el.shadowRoot?.querySelector('.focus-sentinel-start') as HTMLElement;
+      startSentinel.focus();
+      expect(document.activeElement?.id).to.equal('footer-real');
+    });
+  });
+
+  describe('document-level Escape', () => {
+    it('dispatches dismiss on Escape from document, even with no descendant focused', async () => {
+      const el = await fixture<AbodeModal>(html`
+        <abode-modal heading="Heading"></abode-modal>
+      `);
+      await elementUpdated(el);
+
+      // Move focus outside the modal so the overlay listener can't catch it.
+      const outside = document.createElement('button');
+      document.body.appendChild(outside);
+      outside.focus();
+
+      let dismissed = false;
+      el.addEventListener('dismiss', () => {
+        dismissed = true;
+      });
+
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+
+      expect(dismissed).to.equal(true);
+      outside.remove();
+    });
+
+    it('does not dispatch dismiss from document Escape when dismissOnEscape=false', async () => {
+      const el = await fixture<AbodeModal>(html`
+        <abode-modal heading="Heading" .dismissOnEscape=${false}></abode-modal>
+      `);
+      await elementUpdated(el);
+
+      let dismissed = false;
+      el.addEventListener('dismiss', () => {
+        dismissed = true;
+      });
+
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+
+      expect(dismissed).to.equal(false);
+    });
+
+    it('removes the document listener on disconnect (no dismiss after removal)', async () => {
+      const el = await fixture<AbodeModal>(html`
+        <abode-modal heading="Heading"></abode-modal>
+      `);
+      await elementUpdated(el);
+
+      let dismissed = false;
+      el.addEventListener('dismiss', () => {
+        dismissed = true;
+      });
+
+      el.remove();
+      // Now press Escape — listener should be gone.
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+
+      expect(dismissed).to.equal(false);
+    });
+
+    it('only the topmost modal dismisses on Escape when stacked', async () => {
+      const a = await fixture<AbodeModal>(html`
+        <abode-modal heading="A"></abode-modal>
+      `);
+      await elementUpdated(a);
+      const b = await fixture<AbodeModal>(html`
+        <abode-modal heading="B"></abode-modal>
+      `);
+      await elementUpdated(b);
+
+      let aDismissed = false;
+      let bDismissed = false;
+      a.addEventListener('dismiss', () => (aDismissed = true));
+      b.addEventListener('dismiss', () => (bDismissed = true));
+
+      // b mounted second → it's topmost. Only b should dismiss.
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+
+      expect(bDismissed).to.equal(true);
+      expect(aDismissed).to.equal(false);
     });
   });
 });
