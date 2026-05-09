@@ -3,6 +3,7 @@ An Abode alarm Python library.
 """
 
 import asyncio
+import builtins
 import json as json_module
 import logging
 import uuid
@@ -150,6 +151,9 @@ class Client:
 
         # These will be initialized during async initialization
         self._initialized = False
+        # Set by `cleanup()` to mark the client terminal so a stray request
+        # can't undo cleanup by re-running `_async_initialize` (issue #14).
+        self._closed = False
         self._auto_login = auto_login
         self._get_devices = get_devices
         self._get_automations = get_automations
@@ -188,14 +192,71 @@ class Client:
         await self.cleanup()
 
     async def cleanup(self):
-        """Clean up async resources."""
-        # Stop background session monitor
+        """Clean up async resources, draining in-flight requests first.
+
+        Reuses the same swap primitives as `_recreate_session` so HA
+        shutdown / config-entry reload can't close the session out from
+        under an in-flight `_send_request` (issue #14). After cleanup the
+        client is terminal: `_closed` blocks new requests so a late caller
+        can't silently allocate a fresh session.
+        """
         self._stop_session_monitor()
 
-        if self._session:
-            await self._session.close()
-            self._session = None
-        self._initialized = False
+        self._ensure_session_swap_primitives()
+        assert self._session_swap_lock is not None
+        assert self._session_ready is not None
+        assert self._inflight_zero_event is not None
+
+        # Idempotent: a concurrent second caller queues on the swap lock,
+        # observes `_closed=True` once the first cleanup releases the lock,
+        # and returns. Both `await cleanup()` calls then resolve only after
+        # the actual teardown has completed.
+        async with self._session_swap_lock:
+            if self._closed:
+                return
+
+            self._closed = True
+            self._session_ready.clear()
+
+            try:
+                await asyncio.wait_for(
+                    self._inflight_zero_event.wait(),
+                    timeout=self._session_drain_timeout,
+                )
+            except TimeoutError:
+                log.warning(
+                    "Cleanup drain timed out after %.1fs (%d still in flight)"
+                    " - closing session anyway",
+                    self._session_drain_timeout,
+                    self._inflight_requests,
+                )
+                # Same generation-bump + counter reset as `_recreate_session`
+                # so a hung request's eventual finally clause skips its
+                # decrement instead of zeroing an unrelated slot.
+                self._session_swap_generation += 1
+                self._inflight_requests = 0
+                self._inflight_zero_event.set()
+
+            if self._session:
+                try:
+                    await self._session.close()
+                except builtins.Exception:
+                    # `Exception` is shadowed by the abode-namespaced
+                    # exception class imported at the top of this module,
+                    # so we use `builtins.Exception` to actually catch
+                    # aiohttp/asyncio/OSError errors and keep cleanup
+                    # idempotent (the half-torn-down state from a raised
+                    # close() would otherwise leave `_session` set even
+                    # though `_closed` is True).
+                    log.warning(
+                        "Error closing session during cleanup", exc_info=True
+                    )
+                self._session = None
+
+            self._initialized = False
+            # Wake any caller still parked on `_session_ready.wait()` so it
+            # observes `_closed` and raises rather than hanging forever.
+            self._session_ready.set()
 
     async def login(self, username=None, password=None, mfa_code=None):
         """Explicit Abode login."""
@@ -322,6 +383,13 @@ class Client:
         assert self._inflight_zero_event is not None
 
         async with self._session_swap_lock:
+            # Don't resurrect a torn-down client. A late retry path
+            # (e.g. `_handle_empty_response_and_retry`) could otherwise
+            # allocate a fresh session after `cleanup()` has run, leaking
+            # the new session and re-opening the shutdown race (issue #14).
+            if self._closed:
+                return
+
             log.info("Recreating aiohttp session due to connection issues")
             self._session_recreate_count += 1
 
@@ -1129,6 +1197,11 @@ class Client:
     async def _send_request(
         self, method, path, headers=None, data=None, raise_on_error=True
     ):
+        # Cleanup is terminal: don't let a late caller re-allocate a session
+        # we just tore down (issue #14).
+        if self._closed:
+            raise Exception(errors.REQUEST)
+
         await self._async_initialize()
 
         if not self._token:
@@ -1166,6 +1239,10 @@ class Client:
         assert self._session_ready is not None
         assert self._inflight_zero_event is not None
         await self._session_ready.wait()
+        # Cleanup may have run while we were parked on the gate; if so the
+        # session is gone and we must raise instead of advancing.
+        if self._closed:
+            raise Exception(errors.REQUEST)
         my_swap_generation = self._session_swap_generation
         self._inflight_requests += 1
         self._inflight_zero_event.clear()
