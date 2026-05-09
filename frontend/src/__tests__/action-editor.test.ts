@@ -34,7 +34,10 @@ describe('ActionEditor', () => {
       el._loading = false;
       await elementUpdated(el);
 
-      expect(el.shadowRoot?.textContent).to.include('New Action');
+      // Heading is rendered inside <abode-modal>'s shadow root, so it's not in
+      // textContent — read it off the heading attribute instead.
+      const modal = el.shadowRoot?.querySelector('abode-modal');
+      expect(modal?.getAttribute('heading')).to.equal('New Action');
     });
 
     it('renders edit form when action provided', async () => {
@@ -52,7 +55,8 @@ describe('ActionEditor', () => {
       el._loading = false;
       await elementUpdated(el);
 
-      expect(el.shadowRoot?.textContent).to.include('Edit Action');
+      const modal = el.shadowRoot?.querySelector('abode-modal');
+      expect(modal?.getAttribute('heading')).to.equal('Edit Action');
     });
 
     it('displays sensors grouped by category', async () => {
@@ -209,7 +213,7 @@ describe('ActionEditor', () => {
       expect(cancelFired).to.be.true;
     });
 
-    it('dispatches cancel event on Escape key', async () => {
+    it('dispatches cancel event when modal dispatches dismiss', async () => {
       const hass = createMockHass();
       const el = await fixture<ActionEditor>(html`
         <abode-action-editor .hass=${hass}></abode-action-editor>
@@ -228,9 +232,10 @@ describe('ActionEditor', () => {
         cancelFired = true;
       });
 
-      // Dispatch Escape key event
-      const overlay = el.shadowRoot?.querySelector('.editor-overlay') as HTMLElement;
-      overlay?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      // The modal owns Escape/overlay-click handling and emits `dismiss`;
+      // the editor responds by firing `cancel`.
+      const modal = el.shadowRoot?.querySelector('abode-modal') as HTMLElement;
+      modal?.dispatchEvent(new CustomEvent('dismiss', { bubbles: true, composed: true }));
 
       expect(cancelFired).to.be.true;
     });
@@ -257,7 +262,7 @@ describe('ActionEditor', () => {
   });
 
   describe('accessibility', () => {
-    it('editor overlay has proper ARIA attributes', async () => {
+    it('renders the editor inside <abode-modal> with the dialog variant', async () => {
       const hass = createMockHass();
       const el = await fixture<ActionEditor>(html`
         <abode-action-editor .hass=${hass}></abode-action-editor>
@@ -271,9 +276,16 @@ describe('ActionEditor', () => {
       el._loading = false;
       await elementUpdated(el);
 
-      const dialog = el.shadowRoot?.querySelector('.editor-dialog');
-      expect(dialog?.getAttribute('role')).to.equal('dialog');
-      expect(dialog?.getAttribute('aria-modal')).to.equal('true');
+      // role/aria-modal correctness is owned by <abode-modal> and covered in
+      // abode-modal.test.ts. Here we verify the editor leaves the variant at
+      // its default by not setting the attribute (no explicit `variant="..."`),
+      // which means the modal renders the standard 'dialog' role rather than
+      // the 'alertdialog' that confirms use.
+      const modal = el.shadowRoot?.querySelector('abode-modal');
+      expect(modal).to.exist;
+      expect(modal?.hasAttribute('variant')).to.equal(false);
+      // The modal's default property value is 'dialog'.
+      expect((modal as unknown as { variant?: string })?.variant).to.equal('dialog');
     });
   });
 });

@@ -171,9 +171,11 @@ describe('ActionsTab', () => {
 
       await elementUpdated(el);
 
-      const dialog = el.shadowRoot?.querySelector('.dialog');
-      expect(dialog).to.exist;
-      expect(dialog?.textContent).to.include('Delete Action');
+      const modal = el.shadowRoot?.querySelector('abode-modal');
+      expect(modal).to.exist;
+      expect(modal?.getAttribute('heading')).to.equal('Delete Action');
+      // Body text is slotted into the modal but lives in the parent's shadow tree.
+      expect(el.shadowRoot?.textContent).to.include('cannot be undone');
     });
 
     it('shows test confirmation dialog', async () => {
@@ -195,9 +197,10 @@ describe('ActionsTab', () => {
 
       await elementUpdated(el);
 
-      const dialog = el.shadowRoot?.querySelector('.dialog');
-      expect(dialog).to.exist;
-      expect(dialog?.textContent).to.include('trigger real alarms');
+      const modal = el.shadowRoot?.querySelector('abode-modal');
+      expect(modal).to.exist;
+      expect(modal?.getAttribute('heading')).to.equal('Test Action');
+      expect(el.shadowRoot?.textContent).to.include('trigger real alarms');
     });
   });
 
@@ -280,10 +283,11 @@ describe('ActionsTab', () => {
       await elementUpdated(el);
 
       // Exactly one confirm is open, and it's the test dialog targeting a2.
-      const dialogs = el.shadowRoot?.querySelectorAll('.dialog');
-      expect(dialogs?.length).to.equal(1);
-      expect(dialogs?.[0]?.textContent).to.include('trigger real alarms');
-      expect(dialogs?.[0]?.textContent).to.include('A2');
+      const modals = el.shadowRoot?.querySelectorAll('abode-modal');
+      expect(modals?.length).to.equal(1);
+      expect(modals?.[0]?.getAttribute('heading')).to.equal('Test Action');
+      expect(el.shadowRoot?.textContent).to.include('trigger real alarms');
+      expect(el.shadowRoot?.textContent).to.include('A2');
     });
 
     it('cancelling a delete confirm clears confirm state without throwing', async () => {
@@ -310,7 +314,7 @@ describe('ActionsTab', () => {
       await elementUpdated(el);
 
       // Dialog gone, action list unchanged.
-      expect(el.shadowRoot?.querySelector('.dialog')).to.equal(null);
+      expect(el.shadowRoot?.querySelector('abode-modal')).to.equal(null);
       // @ts-expect-error - accessing private property for testing
       expect(el._confirm).to.equal(null);
       // @ts-expect-error - accessing private property for testing
@@ -423,7 +427,7 @@ describe('ActionsTab', () => {
       expect(row?.getAttribute('role')).to.equal('listitem');
     });
 
-    it('delete dialog has proper ARIA attributes', async () => {
+    it('delete dialog uses alertdialog variant', async () => {
       const hass = createMockHass();
 
       const el = await fixture<ActionsTab>(html`
@@ -441,9 +445,10 @@ describe('ActionsTab', () => {
       deleteButton?.click();
       await elementUpdated(el);
 
-      const dialog = el.shadowRoot?.querySelector('.dialog');
-      expect(dialog?.getAttribute('role')).to.equal('alertdialog');
-      expect(dialog?.getAttribute('aria-modal')).to.equal('true');
+      // <abode-modal> owns role/aria-modal — those are covered in abode-modal.test.ts.
+      // Here we just verify the action-tab passes the right variant prop.
+      const modal = el.shadowRoot?.querySelector('abode-modal');
+      expect(modal?.getAttribute('variant')).to.equal('alertdialog');
     });
   });
 });
