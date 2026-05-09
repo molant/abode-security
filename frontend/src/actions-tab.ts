@@ -13,9 +13,7 @@ export class ActionsTab extends LitElement {
   @state() private _error: string | null = null;
   @state() private _editingAction: AbodeAction | null = null;
   @state() private _showEditor = false;
-  @state() private _showDeleteConfirm = false;
-  @state() private _showTestConfirm = false;
-  @state() private _pendingAction: AbodeAction | null = null;
+  @state() private _confirm: { kind: 'delete' | 'test'; action: AbodeAction } | null = null;
   @state() private _togglingIds: Set<string> = new Set();
   @state() private _operationError: string | null = null;
 
@@ -456,43 +454,39 @@ export class ActionsTab extends LitElement {
   }
 
   private _requestDelete(action: AbodeAction) {
-    this._pendingAction = action;
-    this._showDeleteConfirm = true;
+    this._confirm = { kind: 'delete', action };
   }
 
   private async _confirmDelete() {
-    if (!this._pendingAction) return;
+    if (this._confirm?.kind !== 'delete') return;
+    const { action } = this._confirm;
+    this._confirm = null;
     this._operationError = null;
 
     try {
-      await deleteAction(this.hass, this._pendingAction.id);
-      this._actions = this._actions.filter((a) => a.id !== this._pendingAction!.id);
+      await deleteAction(this.hass, action.id);
+      this._actions = this._actions.filter((a) => a.id !== action.id);
     } catch (err) {
       console.error('Failed to delete action:', err);
       this._operationError = 'Failed to delete action';
-    } finally {
-      this._showDeleteConfirm = false;
-      this._pendingAction = null;
     }
   }
 
   private _requestTest(action: AbodeAction) {
-    this._pendingAction = action;
-    this._showTestConfirm = true;
+    this._confirm = { kind: 'test', action };
   }
 
   private async _confirmTest() {
-    if (!this._pendingAction) return;
+    if (this._confirm?.kind !== 'test') return;
+    const { action } = this._confirm;
+    this._confirm = null;
     this._operationError = null;
 
     try {
-      await testAction(this.hass, this._pendingAction.id);
+      await testAction(this.hass, action.id);
     } catch (err) {
       console.error('Failed to test action:', err);
       this._operationError = 'Failed to test action';
-    } finally {
-      this._showTestConfirm = false;
-      this._pendingAction = null;
     }
   }
 
@@ -597,8 +591,8 @@ export class ActionsTab extends LitElement {
             ></abode-action-editor>
           `
         : ''}
-      ${this._showDeleteConfirm ? this._renderDeleteDialog() : ''}
-      ${this._showTestConfirm ? this._renderTestDialog() : ''}
+      ${this._confirm?.kind === 'delete' ? this._renderDeleteDialog() : ''}
+      ${this._confirm?.kind === 'test' ? this._renderTestDialog() : ''}
     `;
   }
 
@@ -667,21 +661,21 @@ export class ActionsTab extends LitElement {
       <div
         class="dialog-overlay"
         @click=${(e: Event) => {
-          if (e.target === e.currentTarget) this._showDeleteConfirm = false;
+          if (e.target === e.currentTarget) this._confirm = null;
         }}
         @keydown=${(e: KeyboardEvent) => {
-          if (e.key === 'Escape') this._showDeleteConfirm = false;
+          if (e.key === 'Escape') this._confirm = null;
         }}
       >
         <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title">
           <h3 id="delete-title">Delete Action</h3>
           <p>
-            Delete action "${this._pendingAction?.name}"? This cannot be undone.
+            Delete action "${this._confirm?.action.name}"? This cannot be undone.
           </p>
           <div class="dialog-actions">
             <button
               class="dialog-button cancel"
-              @click=${() => (this._showDeleteConfirm = false)}
+              @click=${() => (this._confirm = null)}
             >
               Cancel
             </button>
@@ -699,22 +693,22 @@ export class ActionsTab extends LitElement {
       <div
         class="dialog-overlay"
         @click=${(e: Event) => {
-          if (e.target === e.currentTarget) this._showTestConfirm = false;
+          if (e.target === e.currentTarget) this._confirm = null;
         }}
         @keydown=${(e: KeyboardEvent) => {
-          if (e.key === 'Escape') this._showTestConfirm = false;
+          if (e.key === 'Escape') this._confirm = null;
         }}
       >
         <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="test-title">
           <h3 id="test-title">Test Action</h3>
           <p>
             This will trigger real alarms. Are you sure you want to test
-            "${this._pendingAction?.name}"?
+            "${this._confirm?.action.name}"?
           </p>
           <div class="dialog-actions">
             <button
               class="dialog-button cancel"
-              @click=${() => (this._showTestConfirm = false)}
+              @click=${() => (this._confirm = null)}
             >
               Cancel
             </button>
