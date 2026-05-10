@@ -161,6 +161,316 @@ describe('ModesTab', () => {
     });
   });
 
+  describe('mode switching (#1)', () => {
+    it('clicking a non-active mode card opens a confirm dialog', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ModesTab>(html`
+        <abode-modes-tab .hass=${hass}></abode-modes-tab>
+      `);
+
+      // createMockModes(): standby (inactive), home (active), away (inactive).
+      // @ts-expect-error - accessing private property for testing
+      el._modes = createMockModes();
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      // Click the switch button on the away (inactive) card.
+      const awayCard = Array.from(
+        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
+      ).find((card) => card.textContent?.includes('Away')) as HTMLElement;
+      const switchBtn = awayCard.querySelector('.switch-button') as HTMLButtonElement;
+      expect(switchBtn, 'inactive card must render a switch button').to.exist;
+      switchBtn.click();
+      await elementUpdated(el);
+
+      const modal = el.shadowRoot?.querySelector('abode-modal');
+      expect(modal, 'confirm dialog must open').to.exist;
+      expect(modal?.getAttribute('variant')).to.equal('alertdialog');
+      // Body text should reference the target mode by name.
+      expect(el.shadowRoot?.textContent).to.include('Away');
+    });
+
+    it('does not render a switch button on the active mode card', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ModesTab>(html`
+        <abode-modes-tab .hass=${hass}></abode-modes-tab>
+      `);
+
+      // @ts-expect-error - accessing private property for testing
+      el._modes = createMockModes(); // home is active
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      const homeCard = Array.from(
+        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
+      ).find((card) => card.classList.contains('active')) as HTMLElement;
+      const switchBtn = homeCard.querySelector('.switch-button');
+      expect(switchBtn, 'active card must not render a switch button').to.equal(null);
+    });
+
+    it('confirming the dialog calls setMode WS with the target mode_id', async () => {
+      let setCall: { type: string; mode_id?: string } | null = null;
+      const hass = createMockHass({
+        callWS: ((params: { type: string; mode_id?: string }) => {
+          if (params.type === 'abode_security/modes/set') {
+            setCall = params;
+            return Promise.resolve({ success: true, mode_id: params.mode_id });
+          }
+          if (params.type === 'abode_security/modes/list') {
+            return Promise.resolve({ modes: createMockModes() });
+          }
+          if (params.type === 'abode_security/actions/list') {
+            return Promise.resolve({ actions: [] });
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ModesTab>(html`
+        <abode-modes-tab .hass=${hass}></abode-modes-tab>
+      `);
+      // @ts-expect-error - accessing private property for testing
+      el._modes = createMockModes();
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      // Open dialog for Away.
+      const awayCard = Array.from(
+        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
+      ).find((card) => card.textContent?.includes('Away')) as HTMLElement;
+      (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
+      await elementUpdated(el);
+
+      // Click the dialog's confirm button (slot="footer", class includes 'primary').
+      const confirmBtn = Array.from(
+        el.shadowRoot?.querySelectorAll('button[slot="footer"]') ?? [],
+      ).find((b) => b.classList.contains('primary')) as HTMLButtonElement;
+      expect(confirmBtn, 'confirm button must exist in the dialog').to.exist;
+      confirmBtn.click();
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      expect(setCall, 'setMode WS must be called').to.not.equal(null);
+      expect(setCall!.type).to.equal('abode_security/modes/set');
+      expect(setCall!.mode_id).to.equal('away');
+    });
+
+    it('cancelling the dialog does not call setMode', async () => {
+      let setCalled = false;
+      const hass = createMockHass({
+        callWS: ((params: { type: string }) => {
+          if (params.type === 'abode_security/modes/set') {
+            setCalled = true;
+            return Promise.resolve({ success: true });
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ModesTab>(html`
+        <abode-modes-tab .hass=${hass}></abode-modes-tab>
+      `);
+      // @ts-expect-error - accessing private property for testing
+      el._modes = createMockModes();
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      const awayCard = Array.from(
+        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
+      ).find((card) => card.textContent?.includes('Away')) as HTMLElement;
+      (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
+      await elementUpdated(el);
+
+      // Cancel button.
+      const cancelBtn = Array.from(
+        el.shadowRoot?.querySelectorAll('button[slot="footer"]') ?? [],
+      ).find((b) => b.classList.contains('cancel')) as HTMLButtonElement;
+      cancelBtn.click();
+      await elementUpdated(el);
+
+      expect(setCalled).to.equal(false);
+      expect(el.shadowRoot?.querySelector('abode-modal')).to.equal(null);
+    });
+
+    it('keeps the mode grid visible during the post-switch refresh (no loading flash)', async () => {
+      // The post-switch refresh must not flip _loading=true — that would
+      // replace the grid (and the "Switching…" pending label on the target
+      // card) with "Loading modes...". Achieved by passing `silent: true`
+      // to _loadData.
+      let modesListCalls = 0;
+      let resolveRefresh!: (v: { modes: ReturnType<typeof createMockModes> }) => void;
+      const refreshPromise = new Promise<{ modes: ReturnType<typeof createMockModes> }>(
+        (resolve) => {
+          resolveRefresh = resolve;
+        },
+      );
+
+      const hass = createMockHass({
+        callWS: ((params: { type: string }) => {
+          if (params.type === 'abode_security/modes/set') {
+            return Promise.resolve({ success: true });
+          }
+          if (params.type === 'abode_security/modes/list') {
+            modesListCalls += 1;
+            // First call: initial connectedCallback load. Resolve immediately.
+            // Second call: post-switch refresh — keep pending so we can
+            // observe the mid-refresh DOM state.
+            if (modesListCalls === 1) {
+              return Promise.resolve({ modes: createMockModes() });
+            }
+            return refreshPromise;
+          }
+          if (params.type === 'abode_security/actions/list') {
+            return Promise.resolve({ actions: [] });
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ModesTab>(html`
+        <abode-modes-tab .hass=${hass}></abode-modes-tab>
+      `);
+      // Wait for initial load to settle.
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      // Click switch on Away → confirm.
+      const awayCard = Array.from(
+        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
+      ).find((card) => card.textContent?.includes('Away')) as HTMLElement;
+      (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
+      await elementUpdated(el);
+      const confirmBtn = Array.from(
+        el.shadowRoot?.querySelectorAll('button[slot="footer"]') ?? [],
+      ).find((b) => b.classList.contains('primary')) as HTMLButtonElement;
+      confirmBtn.click();
+      // setMode resolves → _loadData fires (suspended on refreshPromise).
+      // Yield enough microtasks for the chain to suspend on the controlled
+      // promise.
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      // Mid-refresh assertions: grid is still rendered and the "Loading
+      // modes..." spinner is NOT shown.
+      const cards = el.shadowRoot?.querySelectorAll('.mode-card');
+      expect(cards?.length, 'mode grid must stay visible').to.be.greaterThan(0);
+      expect(el.shadowRoot?.textContent ?? '').to.not.include('Loading modes...');
+      // The target card still shows the pending label.
+      const awayCardMid = Array.from(cards ?? []).find((c) =>
+        c.textContent?.includes('Away'),
+      );
+      expect(awayCardMid?.textContent).to.include('Switching');
+
+      // Resolve so the test runner exits cleanly.
+      resolveRefresh({ modes: createMockModes() });
+      await refreshPromise;
+      await aTimeout(0);
+    });
+
+    it('routes a post-switch _loadData failure to the banner, not the full-page error', async () => {
+      // setMode succeeds, but the immediate refresh fails. The previous
+      // implementation let _loadData write to `_error`, which would render
+      // a full-page error that wipes the just-confirmed switch.
+      let setSucceeded = false;
+      const hass = createMockHass({
+        callWS: ((params: { type: string }) => {
+          if (params.type === 'abode_security/modes/set') {
+            setSucceeded = true;
+            return Promise.resolve({ success: true });
+          }
+          if (params.type === 'abode_security/modes/list' && setSucceeded) {
+            return Promise.reject(new Error('refresh blip'));
+          }
+          if (params.type === 'abode_security/modes/list') {
+            return Promise.resolve({ modes: createMockModes() });
+          }
+          if (params.type === 'abode_security/actions/list') {
+            return Promise.resolve({ actions: [] });
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ModesTab>(html`
+        <abode-modes-tab .hass=${hass}></abode-modes-tab>
+      `);
+      // @ts-expect-error - accessing private property for testing
+      el._modes = createMockModes();
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      const awayCard = Array.from(
+        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
+      ).find((card) => card.textContent?.includes('Away')) as HTMLElement;
+      (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
+      await elementUpdated(el);
+      const confirmBtn = Array.from(
+        el.shadowRoot?.querySelectorAll('button[slot="footer"]') ?? [],
+      ).find((b) => b.classList.contains('primary')) as HTMLButtonElement;
+      confirmBtn.click();
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      // Banner present, full-page error absent, mode grid still rendered.
+      const banner = el.shadowRoot?.querySelector('.operation-error');
+      expect(banner, 'refresh failure must surface as banner').to.exist;
+      expect(banner?.textContent).to.include('refresh failed');
+      const fullPageError = el.shadowRoot?.querySelector('.error');
+      expect(fullPageError, 'full-page error must NOT be rendered').to.equal(null);
+      expect(el.shadowRoot?.querySelectorAll('.mode-card')?.length).to.be.greaterThan(0);
+    });
+
+    it('shows an error banner when setMode rejects', async () => {
+      const hass = createMockHass({
+        callWS: ((params: { type: string }) => {
+          if (params.type === 'abode_security/modes/set') {
+            return Promise.reject(new Error('panel offline'));
+          }
+          if (params.type === 'abode_security/modes/list') {
+            return Promise.resolve({ modes: createMockModes() });
+          }
+          if (params.type === 'abode_security/actions/list') {
+            return Promise.resolve({ actions: [] });
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ModesTab>(html`
+        <abode-modes-tab .hass=${hass}></abode-modes-tab>
+      `);
+      // @ts-expect-error - accessing private property for testing
+      el._modes = createMockModes();
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      const awayCard = Array.from(
+        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
+      ).find((card) => card.textContent?.includes('Away')) as HTMLElement;
+      (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
+      await elementUpdated(el);
+      const confirmBtn = Array.from(
+        el.shadowRoot?.querySelectorAll('button[slot="footer"]') ?? [],
+      ).find((b) => b.classList.contains('primary')) as HTMLButtonElement;
+      confirmBtn.click();
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      const banner = el.shadowRoot?.querySelector('.operation-error');
+      expect(banner, 'error banner must render after setMode rejection').to.exist;
+      // We surface a fixed user-facing label rather than err.message — keeps
+      // backend internals out of the UI (mirrors actions-tab convention).
+      expect(banner?.textContent).to.include('Failed to change mode');
+      expect(banner?.getAttribute('role')).to.equal('alert');
+    });
+  });
+
   describe('lifecycle and async safety', () => {
     it('does not mutate state after disconnection while _loadData is in flight (#29)', async () => {
       let resolveModes!: (value: { modes: unknown[] }) => void;

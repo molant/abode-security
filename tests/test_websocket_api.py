@@ -611,6 +611,122 @@ class TestWebSocketModesAPI:
             assert "icon" in mode
             assert mode["icon"].startswith("mdi:")
 
+    # --- Set mode (#1) ---
+
+    async def test_ws_modes_set_home(self, hass, hass_ws_client) -> None:
+        """Setting mode=home calls alarm_arm_home on the abode panel."""
+        hass.states.async_set("alarm_control_panel.abode_alarm", "disarmed")
+
+        calls = []
+
+        async def mock_service(call):
+            calls.append(call)
+
+        hass.services.async_register(
+            "alarm_control_panel", "alarm_arm_home", mock_service
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/modes/set",
+                "mode_id": "home",
+            }
+        )
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert response["result"]["mode_id"] == "home"
+        assert len(calls) == 1
+        assert calls[0].data["entity_id"] == "alarm_control_panel.abode_alarm"
+
+    async def test_ws_modes_set_away(self, hass, hass_ws_client) -> None:
+        """Setting mode=away calls alarm_arm_away on the abode panel."""
+        hass.states.async_set("alarm_control_panel.abode_alarm", "disarmed")
+
+        calls = []
+
+        async def mock_service(call):
+            calls.append(call)
+
+        hass.services.async_register(
+            "alarm_control_panel", "alarm_arm_away", mock_service
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/modes/set",
+                "mode_id": "away",
+            }
+        )
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert len(calls) == 1
+        assert calls[0].data["entity_id"] == "alarm_control_panel.abode_alarm"
+
+    async def test_ws_modes_set_standby(self, hass, hass_ws_client) -> None:
+        """Setting mode=standby calls alarm_disarm on the abode panel."""
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+
+        calls = []
+
+        async def mock_service(call):
+            calls.append(call)
+
+        hass.services.async_register(
+            "alarm_control_panel", "alarm_disarm", mock_service
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/modes/set",
+                "mode_id": "standby",
+            }
+        )
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert len(calls) == 1
+        assert calls[0].data["entity_id"] == "alarm_control_panel.abode_alarm"
+
+    async def test_ws_modes_set_invalid_mode(self, hass, hass_ws_client) -> None:
+        """Schema validation rejects unknown mode_id."""
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/modes/set",
+                "mode_id": "intruder",
+            }
+        )
+        response = await client.receive_json()
+
+        assert not response["success"]
+        # voluptuous schema validation surfaces as invalid_format
+        assert response["error"]["code"] == "invalid_format"
+
+    async def test_ws_modes_set_no_panel(self, hass, hass_ws_client) -> None:
+        """No abode alarm_control_panel registered → not_found error."""
+        # Intentionally no alarm_control_panel.abode_* state set.
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/modes/set",
+                "mode_id": "home",
+            }
+        )
+        response = await client.receive_json()
+
+        assert not response["success"]
+        assert response["error"]["code"] == "not_found"
+
 
 @pytest.mark.usefixtures("mock_abode", "setup_websocket_api")
 class TestWebSocketSensorsAPI:
