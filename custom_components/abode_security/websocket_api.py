@@ -14,6 +14,7 @@ from homeassistant.helpers import config_validation as cv
 
 from .action_manager import VALID_MODES
 from .const import DOMAIN
+from .helpers import find_abode_alarm_panel
 
 if TYPE_CHECKING:
     from homeassistant.components.websocket_api import ActiveConnection
@@ -359,17 +360,9 @@ assert set(MODE_TO_SERVICE) == VALID_MODES, (
 )
 
 
-def _find_abode_alarm(hass: HomeAssistant):
-    """Return the State of the Abode alarm_control_panel, or None.
-
-    Both `_modes_list` (reads `state.state` to compute the active mode) and
-    `_modes_set` (uses `state.entity_id` to target the service call) need
-    the same lookup, so they share this helper.
-    """
-    for state in hass.states.async_all("alarm_control_panel"):
-        if state.entity_id.startswith("alarm_control_panel.abode"):
-            return state
-    return None
+# `find_abode_alarm_panel` (resolves the panel via entity registry, falling
+# back to entity_id prefix) lives in `helpers` so `action_trigger` can share
+# the same lookup. See helpers.py for the rationale.
 
 
 @websocket_api.websocket_command(
@@ -387,7 +380,7 @@ async def websocket_modes_list(
     action_manager = _get_action_manager(hass)
 
     # Find the active mode from the abode alarm_control_panel entity, if any.
-    panel_state = _find_abode_alarm(hass)
+    panel_state = find_abode_alarm_panel(hass)
     active_mode = STATE_TO_MODE.get(panel_state.state) if panel_state else None
 
     # Build mode list with action counts
@@ -441,7 +434,7 @@ async def websocket_modes_set(
     """
     mode_id = msg["mode_id"]
 
-    panel_state = _find_abode_alarm(hass)
+    panel_state = find_abode_alarm_panel(hass)
     if panel_state is None:
         connection.send_error(
             msg["id"],
