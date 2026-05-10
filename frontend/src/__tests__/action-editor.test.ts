@@ -16,6 +16,7 @@ import {
   createMockSensors,
   createMockAlarms,
   elementUpdated,
+  setState,
 } from './test-helpers.js';
 
 describe('ActionEditor', () => {
@@ -540,6 +541,357 @@ describe('ActionEditor', () => {
       await Promise.all([p1, p2]);
 
       expect(createCalls).to.equal(1, 'microtask-delayed second _handleSave must be a no-op');
+    });
+  });
+
+  // --- #31 Mutation flow tests -------------------------------------------
+  // Cover validation branches, save (create vs update vs error), and the
+  // category tri-state (the most complex piece of UI in this file). Plus
+  // _populateForm for edit mode. Tests against the now-stable post-PR8.5
+  // code; no failing-first phase.
+
+  describe('_validate (#31)', () => {
+    // _validate reads only _name/_modes/_selectedSensors/_selectedAlarms +
+    // writes _errors; _sensors, _alarms, and _loading are intentionally
+    // omitted from these setState patches.
+    it('flags empty name with the expected error', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _name: '   ', // whitespace-only fails .trim()
+        _modes: ['home'],
+        _selectedSensors: ['binary_sensor.front_door'],
+        _selectedAlarms: ['switch.abode_panic_alarm'],
+      } as Partial<ActionEditor>);
+
+      // @ts-expect-error - calling private method for testing
+      const ok = el._validate();
+      expect(ok).to.equal(false);
+      // @ts-expect-error - accessing private property for testing
+      expect(el._errors.name).to.equal('Name is required');
+    });
+
+    it('flags missing modes', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _name: 'OK',
+        _modes: [],
+        _selectedSensors: ['binary_sensor.front_door'],
+        _selectedAlarms: ['switch.abode_panic_alarm'],
+      } as Partial<ActionEditor>);
+
+      // @ts-expect-error - calling private method for testing
+      el._validate();
+      // @ts-expect-error - accessing private property for testing
+      expect(el._errors.modes).to.equal('Select at least one mode');
+    });
+
+    it('flags missing sensors', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _name: 'OK',
+        _modes: ['home'],
+        _selectedSensors: [],
+        _selectedAlarms: ['switch.abode_panic_alarm'],
+      } as Partial<ActionEditor>);
+
+      // @ts-expect-error - calling private method for testing
+      el._validate();
+      // @ts-expect-error - accessing private property for testing
+      expect(el._errors.sensors).to.equal('Select at least one sensor');
+    });
+
+    it('flags missing alarms', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _name: 'OK',
+        _modes: ['home'],
+        _selectedSensors: ['binary_sensor.front_door'],
+        _selectedAlarms: [],
+      } as Partial<ActionEditor>);
+
+      // @ts-expect-error - calling private method for testing
+      el._validate();
+      // @ts-expect-error - accessing private property for testing
+      expect(el._errors.alarms).to.equal('Select at least one alarm');
+    });
+
+    it('clears a field error via _clearError', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _errors: { name: 'Name is required', modes: 'Select at least one mode' },
+      } as Partial<ActionEditor>);
+
+      // @ts-expect-error - calling private method for testing
+      el._clearError('name');
+      // @ts-expect-error - accessing private property for testing
+      expect(el._errors.name).to.equal(undefined);
+      // Other errors untouched.
+      // @ts-expect-error - accessing private property for testing
+      expect(el._errors.modes).to.equal('Select at least one mode');
+    });
+  });
+
+  describe('_handleSave (#31)', () => {
+    it('calls createAction when no action prop is set', async () => {
+      let createPayload: Record<string, unknown> | null = null;
+      const hass = createMockHass({
+        callWS: ((params: Record<string, unknown> & { type: string }) => {
+          if (params.type === 'abode_security/entities/sensors') {
+            return Promise.resolve({ sensors: createMockSensors() });
+          }
+          if (params.type === 'abode_security/entities/alarms') {
+            return Promise.resolve({ alarms: createMockAlarms() });
+          }
+          if (params.type === 'abode_security/actions/create') {
+            createPayload = params;
+            return Promise.resolve({ id: 'new-id' });
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await aTimeout(0);
+      await elementUpdated(el);
+      await setState(el, {
+        _name: 'New One',
+        _modes: ['home'],
+        _delaySeconds: 5,
+        _selectedSensors: ['binary_sensor.front_door'],
+        _selectedAlarms: ['switch.abode_panic_alarm'],
+      } as Partial<ActionEditor>);
+
+      let saveFired = false;
+      el.addEventListener('save', () => {
+        saveFired = true;
+      });
+
+      // @ts-expect-error - calling private method for testing
+      await el._handleSave();
+
+      expect(createPayload).to.not.equal(null);
+      expect(createPayload!.name).to.equal('New One');
+      expect(createPayload!.modes).to.deep.equal(['home']);
+      expect(createPayload!.delay_seconds).to.equal(5);
+      expect(saveFired).to.equal(true);
+    });
+
+    it('calls updateAction with action_id when action prop is set', async () => {
+      const existing = createMockAction({ id: 'existing-id', name: 'Old' });
+      let updatePayload: Record<string, unknown> | null = null;
+      const hass = createMockHass({
+        callWS: ((params: Record<string, unknown> & { type: string }) => {
+          if (params.type === 'abode_security/entities/sensors') {
+            return Promise.resolve({ sensors: createMockSensors() });
+          }
+          if (params.type === 'abode_security/entities/alarms') {
+            return Promise.resolve({ alarms: createMockAlarms() });
+          }
+          if (params.type === 'abode_security/actions/update') {
+            updatePayload = params;
+            return Promise.resolve(existing);
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor
+          .hass=${hass}
+          .action=${existing}
+        ></abode-action-editor>
+      `);
+      await aTimeout(0);
+      await elementUpdated(el);
+      // Override the populated form with edited values.
+      await setState(el, {
+        _name: 'Renamed',
+        _modes: ['away'],
+        _selectedSensors: ['binary_sensor.front_door'],
+        _selectedAlarms: ['switch.abode_panic_alarm'],
+      } as Partial<ActionEditor>);
+
+      // @ts-expect-error - calling private method for testing
+      await el._handleSave();
+
+      expect(updatePayload).to.not.equal(null);
+      expect(updatePayload!.action_id).to.equal('existing-id');
+      expect(updatePayload!.name).to.equal('Renamed');
+      expect(updatePayload!.modes).to.deep.equal(['away']);
+    });
+
+    it('sets _errors.form when the save WS rejects', async () => {
+      const hass = createMockHass({
+        callWS: ((params: { type: string }) => {
+          if (params.type === 'abode_security/entities/sensors') {
+            return Promise.resolve({ sensors: createMockSensors() });
+          }
+          if (params.type === 'abode_security/entities/alarms') {
+            return Promise.resolve({ alarms: createMockAlarms() });
+          }
+          if (params.type === 'abode_security/actions/create') {
+            return Promise.reject(new Error('server rejected'));
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await aTimeout(0);
+      await elementUpdated(el);
+      await setState(el, {
+        _name: 'Test',
+        _modes: ['home'],
+        _selectedSensors: ['binary_sensor.front_door'],
+        _selectedAlarms: ['switch.abode_panic_alarm'],
+      } as Partial<ActionEditor>);
+
+      // @ts-expect-error - calling private method for testing
+      await el._handleSave();
+
+      // @ts-expect-error - accessing private property for testing
+      expect(el._errors.form).to.equal('server rejected');
+      // @ts-expect-error - accessing private property for testing
+      expect(el._saving).to.equal(false, 'finally re-enables save button');
+    });
+  });
+
+  describe('_populateForm (#31)', () => {
+    it('populates state fields from the action prop on connect', async () => {
+      const action = createMockAction({
+        id: 'a1',
+        name: 'Edited',
+        modes: ['away', 'home'],
+        delay_seconds: 15,
+        sensor_entity_ids: ['binary_sensor.front_door'],
+        alarm_entity_ids: ['switch.abode_panic_alarm', 'switch.abode_fire_alarm'],
+      });
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor
+          .hass=${hass}
+          .action=${action}
+        ></abode-action-editor>
+      `);
+      // _populateForm runs synchronously on connect (PR6 race fix), so
+      // every field is populated before the load completes.
+      // @ts-expect-error - accessing private property for testing
+      expect(el._name).to.equal('Edited');
+      // @ts-expect-error - accessing private property for testing
+      expect(el._modes).to.deep.equal(['away', 'home']);
+      // @ts-expect-error - accessing private property for testing
+      expect(el._delaySeconds).to.equal(15);
+      // @ts-expect-error - accessing private property for testing
+      expect(el._selectedSensors).to.deep.equal(['binary_sensor.front_door']);
+      // @ts-expect-error - accessing private property for testing
+      expect(el._selectedAlarms).to.deep.equal([
+        'switch.abode_panic_alarm',
+        'switch.abode_fire_alarm',
+      ]);
+    });
+  });
+
+  describe('_toggleCategory tri-state (#31)', () => {
+    // door has 2 sensors, motion has 1, window has 1 — see createMockSensors.
+    const setupEditor = async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+      } as Partial<ActionEditor>);
+      return el;
+    };
+
+    it('reports neither selected nor partial when no sensors are picked', async () => {
+      const el = await setupEditor();
+      // @ts-expect-error - calling private method for testing
+      expect(el._isCategorySelected('door')).to.equal(false);
+      // @ts-expect-error - calling private method for testing
+      expect(el._isCategoryPartial('door')).to.equal(false);
+    });
+
+    it('reports partial when some but not all sensors in a category are picked', async () => {
+      const el = await setupEditor();
+      await setState(el, {
+        _selectedSensors: ['binary_sensor.front_door'],
+      } as Partial<ActionEditor>);
+      // door has 2 sensors, only 1 picked.
+      // @ts-expect-error - calling private method for testing
+      expect(el._isCategoryPartial('door')).to.equal(true);
+      // @ts-expect-error - calling private method for testing
+      expect(el._isCategorySelected('door')).to.equal(false);
+    });
+
+    it('reports selected when all sensors in a category are picked', async () => {
+      const el = await setupEditor();
+      await setState(el, {
+        _selectedSensors: ['binary_sensor.front_door', 'binary_sensor.back_door'],
+      } as Partial<ActionEditor>);
+      // @ts-expect-error - calling private method for testing
+      expect(el._isCategorySelected('door')).to.equal(true);
+      // @ts-expect-error - calling private method for testing
+      expect(el._isCategoryPartial('door')).to.equal(false);
+    });
+
+    it('toggleCategory selects every sensor when starting from empty/partial', async () => {
+      const el = await setupEditor();
+      await setState(el, {
+        _selectedSensors: ['binary_sensor.front_door'], // partial
+      } as Partial<ActionEditor>);
+      // @ts-expect-error - calling private method for testing
+      el._toggleCategory('door');
+      await elementUpdated(el);
+      // Strict deep-equal: catches both "didn't add the missing one" and
+      // "accidentally added sensors from other categories" regressions.
+      // @ts-expect-error - accessing private property for testing
+      expect(el._selectedSensors).to.deep.equal([
+        'binary_sensor.front_door',
+        'binary_sensor.back_door',
+      ]);
+    });
+
+    it('toggleCategory deselects all sensors in the category when starting from fully-selected', async () => {
+      const el = await setupEditor();
+      await setState(el, {
+        _selectedSensors: [
+          'binary_sensor.front_door',
+          'binary_sensor.back_door',
+          'binary_sensor.living_room_motion', // outside the door category
+        ],
+      } as Partial<ActionEditor>);
+      // @ts-expect-error - calling private method for testing
+      el._toggleCategory('door');
+      await elementUpdated(el);
+      // Door sensors removed, the motion sensor (outside the toggled
+      // category) remains. This is the assertion that catches the
+      // "filter accidentally removes all sensors" regression class.
+      // @ts-expect-error - accessing private property for testing
+      expect(el._selectedSensors).to.deep.equal([
+        'binary_sensor.living_room_motion',
+      ]);
     });
   });
 });

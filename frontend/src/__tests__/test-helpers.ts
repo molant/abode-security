@@ -2,31 +2,53 @@
  * Test helpers and mocks for frontend unit tests.
  */
 
+import type { LitElement } from 'lit';
 import type { HomeAssistant, AbodeAction, SensorsByCategory, AlarmEntity, AbodeMode } from '../types';
 
 /**
  * Create a mock HomeAssistant object.
- * Returns empty arrays/objects for API calls to prevent undefined errors.
+ *
+ * By default, returns empty arrays/objects for known WS endpoints and
+ * `{ success: true }` for unknown ones — keeps existing rendering tests
+ * (which only need _something_ to come back from connectedCallback) terse.
+ *
+ * Pass `strict: true` to throw on any unmocked WS call. Use that in
+ * mutation tests where a silent default response would mask a bug
+ * (e.g., asserting `createAction` was called when in reality the
+ * fall-through `{ success: true }` swallowed it).
+ *
+ * NOTE: `strict` only affects the *default* callWS. If you also pass a
+ * `callWS` override, `strict` has no effect — your override replaces
+ * the default entirely, and is responsible for its own un-mocked-call
+ * handling (typically by `throw new Error(...)` in the fall-through).
  */
-export function createMockHass(overrides: Partial<HomeAssistant> = {}): HomeAssistant {
+export function createMockHass(
+  overrides: { strict?: boolean } & Partial<HomeAssistant> = {},
+): HomeAssistant {
+  const { strict = false, ...rest } = overrides;
+
+  const defaultCallWS = async (params: { type: string }) => {
+    if (params.type === 'abode_security/modes/list') {
+      return { modes: [] };
+    }
+    if (params.type === 'abode_security/actions/list') {
+      return { actions: [] };
+    }
+    if (params.type === 'abode_security/entities/sensors') {
+      return { sensors: {} };
+    }
+    if (params.type === 'abode_security/entities/alarms') {
+      return { alarms: [] };
+    }
+    if (strict) {
+      throw new Error(`Unmocked WS call: ${params.type}`);
+    }
+    return { success: true };
+  };
+
   return {
-    callWS: async (params: { type: string }) => {
-      // Return appropriate mock data based on the API type
-      if (params.type === 'abode_security/modes/list') {
-        return { modes: [] };
-      }
-      if (params.type === 'abode_security/actions/list') {
-        return { actions: [] };
-      }
-      if (params.type === 'abode_security/entities/sensors') {
-        return { sensors: {} };
-      }
-      if (params.type === 'abode_security/entities/alarms') {
-        return { alarms: [] };
-      }
-      return { success: true };
-    },
-    ...overrides,
+    callWS: defaultCallWS,
+    ...rest,
   } as HomeAssistant;
 }
 
@@ -103,4 +125,39 @@ export async function elementUpdated(element: Element & { updateComplete?: Promi
     await element.updateComplete;
   }
   await nextFrame();
+}
+
+/**
+ * Inject test-only state onto a Lit element and wait for the next render.
+ *
+ * Collapses the recurring three-step pattern below into one call:
+ *
+ *     // @ts-expect-error - accessing private property for testing
+ *     el._actions = actions;
+ *     // @ts-expect-error - accessing private property for testing
+ *     el._loading = false;
+ *     await elementUpdated(el);
+ *
+ * Becomes:
+ *
+ *     await setState(el, { _actions: actions, _loading: false } as Partial<X>);
+ *
+ * The `as Partial<TheElement>` cast is required to bypass the
+ * private-modifier compile error. It does NOT enforce strict
+ * excess-property checks — a typo like `_actuons` will still type-check
+ * (TypeScript treats `as` as a developer-asserted compatibility claim).
+ * Treat it as a "this object is meant to be a state patch" hint, not as
+ * a typo guard. Don't substitute `as any`, which loses even the basic
+ * shape constraint and the helper's other type guarantees.
+ *
+ * Used by mutation-flow tests added in #31.
+ */
+export async function setState<T extends LitElement>(
+  element: T,
+  patch: Partial<T>,
+): Promise<void> {
+  // Single, intentional, type-erased assignment — the alternative is
+  // sprinkling @ts-expect-error at every call site.
+  Object.assign(element, patch);
+  await elementUpdated(element);
 }
