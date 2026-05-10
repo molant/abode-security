@@ -11,7 +11,7 @@ function t(t,e,o,i){var s,r=arguments.length,n=r<3?e:null===i?i=Object.getOwnPro
           <div class="mode-info">
             <h3>${t.name}</h3>
             <div class="badges">
-              <span class="badge">${t.action_count} actions</span>
+              <span class="badge">${t.action_count} ${1===t.action_count?"action":"actions"}</span>
               ${t.active?B`<span class="badge active">Active</span>`:""}
             </div>
           </div>

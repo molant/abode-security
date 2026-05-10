@@ -210,7 +210,7 @@ export class ModesTab extends LitElement {
           <div class="mode-info">
             <h3>${mode.name}</h3>
             <div class="badges">
-              <span class="badge">${mode.action_count} actions</span>
+              <span class="badge">${mode.action_count} ${mode.action_count === 1 ? 'action' : 'actions'}</span>
               ${mode.active ? html`<span class="badge active">Active</span>` : ''}
             </div>
           </div>

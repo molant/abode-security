@@ -35,7 +35,7 @@ describe('ModesTab', () => {
       expect(el.shadowRoot?.textContent).to.include('Away');
     });
 
-    it('shows action counts for each mode', async () => {
+    it('shows plural "actions" for count > 1', async () => {
       const hass = createMockHass();
       const modes = createMockModes();
       modes[1].action_count = 5; // Home mode
@@ -50,10 +50,12 @@ describe('ModesTab', () => {
       el._loading = false;
       await elementUpdated(el);
 
-      expect(el.shadowRoot?.textContent).to.include('5 actions');
+      // Word-boundary anchored — substring match could be satisfied by
+      // unrelated content elsewhere in the tree.
+      expect(el.shadowRoot?.textContent).to.match(/\b5 actions\b/);
     });
 
-    it('shows singular "action" for count of 1', async () => {
+    it('shows singular "action" (no trailing s) for count of 1', async () => {
       const hass = createMockHass();
       const modes = createMockModes();
       modes[0].action_count = 1;
@@ -68,7 +70,31 @@ describe('ModesTab', () => {
       el._loading = false;
       await elementUpdated(el);
 
-      expect(el.shadowRoot?.textContent).to.include('1 action');
+      // The negative-lookahead `(?!s)` is what differentiates this from the
+      // pre-fix substring-only assertion: "1 actions" satisfies `'1 action'`
+      // as a substring, but fails this regex because the next char is `s`.
+      expect(el.shadowRoot?.textContent).to.match(/\b1 action\b(?!s)/);
+    });
+
+    it('shows plural "actions" for count of 0', async () => {
+      // English uses plural for zero ("0 actions"); guards against an
+      // overly-aggressive `=== 1 ? singular : plural` ternary that mistakenly
+      // pluralizes only on count > 1.
+      const hass = createMockHass();
+      const modes = createMockModes();
+      modes[0].action_count = 0;
+
+      const el = await fixture<ModesTab>(html`
+        <abode-modes-tab .hass=${hass}></abode-modes-tab>
+      `);
+
+      // @ts-expect-error - accessing private property for testing
+      el._modes = modes;
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      expect(el.shadowRoot?.textContent).to.match(/\b0 actions\b/);
     });
 
     it('highlights active mode', async () => {
