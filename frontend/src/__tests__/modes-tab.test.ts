@@ -18,9 +18,7 @@ describe('ModesTab', () => {
       const hass = createMockHass();
 
       // Create element and manually set loaded state
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
 
       // Manually inject loaded state for testing
       // @ts-expect-error - accessing private property for testing
@@ -40,9 +38,7 @@ describe('ModesTab', () => {
       const modes = createMockModes();
       modes[1].action_count = 5; // Home mode
 
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
 
       // @ts-expect-error - accessing private property for testing
       el._modes = modes;
@@ -60,9 +56,7 @@ describe('ModesTab', () => {
       const modes = createMockModes();
       modes[0].action_count = 1;
 
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
 
       // @ts-expect-error - accessing private property for testing
       el._modes = modes;
@@ -84,9 +78,7 @@ describe('ModesTab', () => {
       const modes = createMockModes();
       modes[0].action_count = 0;
 
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
 
       // @ts-expect-error - accessing private property for testing
       el._modes = modes;
@@ -102,9 +94,7 @@ describe('ModesTab', () => {
       const modes = createMockModes();
       modes[1].active = true; // Home is active
 
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
 
       // @ts-expect-error - accessing private property for testing
       el._modes = modes;
@@ -116,8 +106,8 @@ describe('ModesTab', () => {
       expect(modeCards).to.have.length(3);
 
       // Find the active card
-      const activeCard = Array.from(modeCards || []).find(
-        card => card.classList.contains('active')
+      const activeCard = Array.from(modeCards || []).find((card) =>
+        card.classList.contains('active'),
       );
       expect(activeCard).to.exist;
       expect(activeCard?.textContent).to.include('Home');
@@ -126,9 +116,7 @@ describe('ModesTab', () => {
     it('shows error state', async () => {
       const hass = createMockHass();
 
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
 
       // @ts-expect-error - accessing private property for testing
       el._error = 'Failed to load modes';
@@ -146,9 +134,7 @@ describe('ModesTab', () => {
     it('error has role="alert"', async () => {
       const hass = createMockHass();
 
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
 
       // @ts-expect-error - accessing private property for testing
       el._error = 'Test error';
@@ -164,9 +150,7 @@ describe('ModesTab', () => {
   describe('mode switching (#1)', () => {
     it('clicking a non-active mode card opens a confirm dialog', async () => {
       const hass = createMockHass();
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
 
       // createMockModes(): standby (inactive), home (active), away (inactive).
       // @ts-expect-error - accessing private property for testing
@@ -176,9 +160,9 @@ describe('ModesTab', () => {
       await elementUpdated(el);
 
       // Click the switch button on the away (inactive) card.
-      const awayCard = Array.from(
-        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
-      ).find((card) => card.textContent?.includes('Away')) as HTMLElement;
+      const awayCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (card) => card.textContent?.includes('Away'),
+      ) as HTMLElement;
       const switchBtn = awayCard.querySelector('.switch-button') as HTMLButtonElement;
       expect(switchBtn, 'inactive card must render a switch button').to.exist;
       switchBtn.click();
@@ -193,9 +177,7 @@ describe('ModesTab', () => {
 
     it('does not render a switch button on the active mode card', async () => {
       const hass = createMockHass();
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
 
       // @ts-expect-error - accessing private property for testing
       el._modes = createMockModes(); // home is active
@@ -203,9 +185,9 @@ describe('ModesTab', () => {
       el._loading = false;
       await elementUpdated(el);
 
-      const homeCard = Array.from(
-        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
-      ).find((card) => card.classList.contains('active')) as HTMLElement;
+      const homeCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (card) => card.classList.contains('active'),
+      ) as HTMLElement;
       const switchBtn = homeCard.querySelector('.switch-button');
       expect(switchBtn, 'active card must not render a switch button').to.equal(null);
     });
@@ -228,9 +210,7 @@ describe('ModesTab', () => {
         }) as HomeAssistant['callWS'],
       });
 
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
       // @ts-expect-error - accessing private property for testing
       el._modes = createMockModes();
       // @ts-expect-error - accessing private property for testing
@@ -238,9 +218,9 @@ describe('ModesTab', () => {
       await elementUpdated(el);
 
       // Open dialog for Away.
-      const awayCard = Array.from(
-        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
-      ).find((card) => card.textContent?.includes('Away')) as HTMLElement;
+      const awayCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (card) => card.textContent?.includes('Away'),
+      ) as HTMLElement;
       (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
       await elementUpdated(el);
 
@@ -280,18 +260,16 @@ describe('ModesTab', () => {
         }) as HomeAssistant['callWS'],
       });
 
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
       // @ts-expect-error - accessing private property for testing
       el._modes = createMockModes();
       // @ts-expect-error - accessing private property for testing
       el._loading = false;
       await elementUpdated(el);
 
-      const awayCard = Array.from(
-        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
-      ).find((card) => card.textContent?.includes('Away')) as HTMLElement;
+      const awayCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (card) => card.textContent?.includes('Away'),
+      ) as HTMLElement;
       (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
       await elementUpdated(el);
 
@@ -341,17 +319,15 @@ describe('ModesTab', () => {
         }) as HomeAssistant['callWS'],
       });
 
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
       // Wait for initial load to settle.
       await aTimeout(0);
       await elementUpdated(el);
 
       // Click switch on Away → confirm.
-      const awayCard = Array.from(
-        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
-      ).find((card) => card.textContent?.includes('Away')) as HTMLElement;
+      const awayCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (card) => card.textContent?.includes('Away'),
+      ) as HTMLElement;
       (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
       await elementUpdated(el);
       const confirmBtn = Array.from(
@@ -370,9 +346,7 @@ describe('ModesTab', () => {
       expect(cards?.length, 'mode grid must stay visible').to.be.greaterThan(0);
       expect(el.shadowRoot?.textContent ?? '').to.not.include('Loading modes...');
       // The target card still shows the pending label.
-      const awayCardMid = Array.from(cards ?? []).find((c) =>
-        c.textContent?.includes('Away'),
-      );
+      const awayCardMid = Array.from(cards ?? []).find((c) => c.textContent?.includes('Away'));
       expect(awayCardMid?.textContent).to.include('Switching');
 
       // Resolve so the test runner exits cleanly.
@@ -405,18 +379,16 @@ describe('ModesTab', () => {
         }) as HomeAssistant['callWS'],
       });
 
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
       // @ts-expect-error - accessing private property for testing
       el._modes = createMockModes();
       // @ts-expect-error - accessing private property for testing
       el._loading = false;
       await elementUpdated(el);
 
-      const awayCard = Array.from(
-        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
-      ).find((card) => card.textContent?.includes('Away')) as HTMLElement;
+      const awayCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (card) => card.textContent?.includes('Away'),
+      ) as HTMLElement;
       (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
       await elementUpdated(el);
       const confirmBtn = Array.from(
@@ -451,18 +423,16 @@ describe('ModesTab', () => {
         }) as HomeAssistant['callWS'],
       });
 
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
       // @ts-expect-error - accessing private property for testing
       el._modes = createMockModes();
       // @ts-expect-error - accessing private property for testing
       el._loading = false;
       await elementUpdated(el);
 
-      const awayCard = Array.from(
-        el.shadowRoot?.querySelectorAll('.mode-card') ?? [],
-      ).find((card) => card.textContent?.includes('Away')) as HTMLElement;
+      const awayCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (card) => card.textContent?.includes('Away'),
+      ) as HTMLElement;
       (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
       await elementUpdated(el);
       const confirmBtn = Array.from(
@@ -500,9 +470,7 @@ describe('ModesTab', () => {
         }) as HomeAssistant['callWS'],
       });
 
-      const el = await fixture<ModesTab>(html`
-        <abode-modes-tab .hass=${hass}></abode-modes-tab>
-      `);
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
 
       el.remove();
       resolveModes({ modes: createMockModes() });

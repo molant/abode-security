@@ -11,9 +11,7 @@ export default {
       target: 'auto',
     }),
   ],
-  browsers: [
-    playwrightLauncher({ product: 'chromium' }),
-  ],
+  browsers: [playwrightLauncher({ product: 'chromium' })],
   testFramework: {
     config: {
       timeout: 10000,

@@ -61,7 +61,9 @@ export class AbodeConfigurationPanel extends LitElement {
       cursor: pointer;
       border-bottom: 2px solid transparent;
       margin-bottom: -1px;
-      transition: color 0.2s, border-color 0.2s;
+      transition:
+        color 0.2s,
+        border-color 0.2s;
     }
 
     .tab-bar button:hover {

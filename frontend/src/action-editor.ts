@@ -1,12 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import type {
-  HomeAssistant,
-  AbodeAction,
-  Mode,
-  SensorsByCategory,
-  AlarmEntity,
-} from './types';
+import type { HomeAssistant, AbodeAction, Mode, SensorsByCategory, AlarmEntity } from './types';
 import { MODES } from './types';
 import { fetchSensors, fetchAlarms, createAction, updateAction } from './api';
 import './abode-modal';
@@ -346,8 +340,7 @@ export class ActionEditor extends LitElement {
       this._alarms = alarms;
     } catch (err) {
       if (signal.aborted) return;
-      this._loadError =
-        err instanceof Error ? err.message : 'Failed to load sensors and alarms';
+      this._loadError = err instanceof Error ? err.message : 'Failed to load sensors and alarms';
     } finally {
       if (!signal.aborted) this._loading = false;
     }
@@ -390,9 +383,7 @@ export class ActionEditor extends LitElement {
     if (!this._sensors) return false;
     const sensors = this._sensors[category] || [];
     if (sensors.length === 0) return false;
-    const selected = sensors.filter((s) =>
-      this._selectedSensors.includes(s.entity_id)
-    );
+    const selected = sensors.filter((s) => this._selectedSensors.includes(s.entity_id));
     return selected.length > 0 && selected.length < sensors.length;
   }
 
@@ -403,9 +394,7 @@ export class ActionEditor extends LitElement {
 
     if (this._isCategorySelected(category)) {
       // Deselect all in category
-      this._selectedSensors = this._selectedSensors.filter(
-        (s) => !entityIds.includes(s)
-      );
+      this._selectedSensors = this._selectedSensors.filter((s) => !entityIds.includes(s));
     } else {
       // Select all in category
       const newIds = entityIds.filter((id) => !this._selectedSensors.includes(id));
@@ -523,9 +512,7 @@ export class ActionEditor extends LitElement {
           class=${this._errors.name ? 'error' : ''}
           placeholder="Enter action name"
         />
-        ${this._errors.name
-          ? html`<span class="error-text">${this._errors.name}</span>`
-          : ''}
+        ${this._errors.name ? html`<span class="error-text">${this._errors.name}</span>` : ''}
       </div>
 
       <div class="form-group">
@@ -541,12 +528,10 @@ export class ActionEditor extends LitElement {
                 />
                 ${mode.charAt(0).toUpperCase() + mode.slice(1)}
               </label>
-            `
+            `,
           )}
         </div>
-        ${this._errors.modes
-          ? html`<span class="error-text">${this._errors.modes}</span>`
-          : ''}
+        ${this._errors.modes ? html`<span class="error-text">${this._errors.modes}</span>` : ''}
       </div>
 
       <div class="form-group">
@@ -568,38 +553,25 @@ export class ActionEditor extends LitElement {
       <div class="form-group">
         <label>Sensors (at least one required)</label>
         ${this._renderSensorSelection()}
-        ${this._errors.sensors
-          ? html`<span class="error-text">${this._errors.sensors}</span>`
-          : ''}
+        ${this._errors.sensors ? html`<span class="error-text">${this._errors.sensors}</span>` : ''}
       </div>
 
       <div class="form-group">
         <label>Alarms to trigger (at least one required)</label>
         ${this._renderAlarmSelection()}
-        ${this._errors.alarms
-          ? html`<span class="error-text">${this._errors.alarms}</span>`
-          : ''}
+        ${this._errors.alarms ? html`<span class="error-text">${this._errors.alarms}</span>` : ''}
       </div>
 
       ${this._errors.form
-        ? html`<div class="error-text" style="margin-bottom: 16px;">
-            ${this._errors.form}
-          </div>`
+        ? html`<div class="error-text" style="margin-bottom: 16px;">${this._errors.form}</div>`
         : ''}
     `;
   }
 
   private _renderFooter() {
     return html`
-      <button slot="footer" class="cancel" @click=${this._handleCancel}>
-        Cancel
-      </button>
-      <button
-        slot="footer"
-        class="primary"
-        @click=${this._handleSave}
-        ?disabled=${this._saving}
-      >
+      <button slot="footer" class="cancel" @click=${this._handleCancel}>Cancel</button>
+      <button slot="footer" class="primary" @click=${this._handleSave} ?disabled=${this._saving}>
         ${this._saving ? 'Saving...' : 'Save'}
       </button>
     `;
@@ -648,7 +620,7 @@ export class ActionEditor extends LitElement {
                       />
                       ${sensor.name}
                     </label>
-                  `
+                  `,
                 )}
               </div>
             </div>
@@ -675,7 +647,7 @@ export class ActionEditor extends LitElement {
               />
               ${alarm.name}
             </label>
-          `
+          `,
         )}
       </div>
     `;

@@ -147,7 +147,9 @@ export class ActionsTab extends LitElement {
       align-items: center;
       justify-content: center;
       color: var(--secondary-text-color);
-      transition: background 0.2s, color 0.2s;
+      transition:
+        background 0.2s,
+        color 0.2s;
     }
 
     .icon-button:hover {
@@ -391,10 +393,7 @@ export class ActionsTab extends LitElement {
   private _getRecentTriggers(): AbodeAction[] {
     return this._actions
       .filter((a) => a.last_triggered)
-      .sort(
-        (a, b) =>
-          new Date(b.last_triggered!).getTime() - new Date(a.last_triggered!).getTime()
-      )
+      .sort((a, b) => new Date(b.last_triggered!).getTime() - new Date(a.last_triggered!).getTime())
       .slice(0, 5);
   }
 
@@ -515,11 +514,7 @@ export class ActionsTab extends LitElement {
         : ''}
 
       <div class="actions-header">
-        <button
-          class="add-button"
-          @click=${this._addAction}
-          aria-label="Add new action"
-        >
+        <button class="add-button" @click=${this._addAction} aria-label="Add new action">
           <ha-icon icon="mdi:plus"></ha-icon>
           Add Action
         </button>
@@ -549,20 +544,16 @@ export class ActionsTab extends LitElement {
       <div class="recent-triggers">
         <h3>Recent Triggers</h3>
         ${recentTriggers.length === 0
-          ? html`<div class="empty-state" style="padding: 24px;">
-              No recent triggers
-            </div>`
+          ? html`<div class="empty-state" style="padding: 24px;">No recent triggers</div>`
           : html`
               <div class="trigger-list">
                 ${recentTriggers.map(
                   (action) => html`
                     <div class="trigger-item">
                       <span class="trigger-name">${action.name}</span>
-                      <span class="trigger-time"
-                        >${this._formatTime(action.last_triggered)}</span
-                      >
+                      <span class="trigger-time">${this._formatTime(action.last_triggered)}</span>
                     </div>
-                  `
+                  `,
                 )}
               </div>
             `}
@@ -592,14 +583,10 @@ export class ActionsTab extends LitElement {
           <div class="action-name">${action.name}</div>
           <div class="action-meta">
             <div class="modes-list">
-              ${action.modes.map(
-                (mode) => html`<span class="mode-chip">${mode}</span>`
-              )}
+              ${action.modes.map((mode) => html`<span class="mode-chip">${mode}</span>`)}
             </div>
             ${action.trigger_count > 0
-              ? html`<span class="trigger-info"
-                  >${action.trigger_count} triggers</span
-                >`
+              ? html`<span class="trigger-info">${action.trigger_count} triggers</span>`
               : ''}
           </div>
         </div>
@@ -650,21 +637,11 @@ export class ActionsTab extends LitElement {
         variant="alertdialog"
         @dismiss=${() => (this._confirm = null)}
       >
-        <p>
-          Delete action "${this._confirm?.action.name}"? This cannot be undone.
-        </p>
-        <button
-          slot="footer"
-          class="dialog-button cancel"
-          @click=${() => (this._confirm = null)}
-        >
+        <p>Delete action "${this._confirm?.action.name}"? This cannot be undone.</p>
+        <button slot="footer" class="dialog-button cancel" @click=${() => (this._confirm = null)}>
           Cancel
         </button>
-        <button
-          slot="footer"
-          class="dialog-button danger"
-          @click=${this._confirmDelete}
-        >
+        <button slot="footer" class="dialog-button danger" @click=${this._confirmDelete}>
           Delete
         </button>
       </abode-modal>
@@ -682,18 +659,10 @@ export class ActionsTab extends LitElement {
           This will trigger real alarms. Are you sure you want to test
           "${this._confirm?.action.name}"?
         </p>
-        <button
-          slot="footer"
-          class="dialog-button cancel"
-          @click=${() => (this._confirm = null)}
-        >
+        <button slot="footer" class="dialog-button cancel" @click=${() => (this._confirm = null)}>
           Cancel
         </button>
-        <button
-          slot="footer"
-          class="dialog-button primary"
-          @click=${this._confirmTest}
-        >
+        <button slot="footer" class="dialog-button primary" @click=${this._confirmTest}>
           Test
         </button>
       </abode-modal>

@@ -67,7 +67,7 @@ export async function fetchAlarms(hass: HomeAssistant): Promise<AlarmEntity[]> {
  */
 export async function createAction(
   hass: HomeAssistant,
-  data: Partial<AbodeAction>
+  data: Partial<AbodeAction>,
 ): Promise<AbodeAction> {
   return hass.callWS<AbodeAction>({
     type: 'abode_security/actions/create',
@@ -81,7 +81,7 @@ export async function createAction(
 export async function updateAction(
   hass: HomeAssistant,
   id: string,
-  data: Partial<AbodeAction>
+  data: Partial<AbodeAction>,
 ): Promise<AbodeAction> {
   return hass.callWS<AbodeAction>({
     type: 'abode_security/actions/update',

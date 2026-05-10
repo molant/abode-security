@@ -20,10 +20,11 @@ export default {
       sourceMap: isDev,
       inlineSources: isDev,
     }),
-    !isDev && terser({
-      format: {
-        comments: false,
-      },
-    }),
+    !isDev &&
+      terser({
+        format: {
+          comments: false,
+        },
+      }),
   ],
 };

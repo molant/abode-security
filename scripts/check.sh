@@ -37,13 +37,14 @@ echo ""
 echo "Running unit tests with pytest..."
 uv run pytest tests/ -v --tb=short
 
-# Frontend gates (typecheck + tests) — only when this branch (or working tree)
-# differs from origin/main on frontend files. Mirrors the pre-commit hook's
-# selectivity so backend-only iterations don't pay the Playwright cost.
+# Frontend gates (lint + format + typecheck + tests) — only when this branch
+# (or working tree) differs from origin/main on frontend files. Mirrors the
+# pre-commit hook's selectivity so backend-only iterations don't pay the
+# Playwright cost.
 if git diff --name-only origin/main 2>/dev/null | grep -q '^frontend/'; then
     echo ""
     echo "Frontend changes detected — running frontend gates..."
-    (cd frontend && npm run typecheck && npm test)
+    (cd frontend && npm run lint && npm run format && npm run typecheck && npm test)
 fi
 
 echo ""
