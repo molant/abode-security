@@ -8,6 +8,7 @@ import json as json_module
 import logging
 import uuid
 from datetime import datetime, timedelta
+from typing import Any
 
 import aiohttp
 
@@ -21,6 +22,55 @@ from .exceptions import AuthenticationException, Exception, RateLimitException
 from .helpers import errors, urls
 
 log = logging.getLogger(__name__)
+
+
+# Keys whose values must never appear in DEBUG logs. Compared case-insensitively
+# against dict keys at every level of nested response bodies. See issue #49.
+_REDACT_KEYS = frozenset(
+    {
+        "token",
+        "access_token",
+        "refresh_token",
+        "id_token",
+        "password",
+        "cookie",
+        "set-cookie",
+        "email",
+        "phone",
+        "uuid",
+        "mfa_code",
+    }
+)
+
+
+def _redact(payload: Any) -> Any:
+    """Return a copy of ``payload`` with secret-looking values masked.
+
+    Walks dicts and lists recursively, masking values whose key matches
+    ``_REDACT_KEYS`` (case-insensitive). Primitives are returned unchanged.
+    The input is not mutated.
+    """
+    if isinstance(payload, dict):
+        return {
+            k: ("<redacted>" if k.lower() in _REDACT_KEYS else _redact(v))
+            for k, v in payload.items()
+        }
+    if isinstance(payload, list):
+        return [_redact(x) for x in payload]
+    return payload
+
+
+def _redact_text(raw: str) -> str:
+    """Redact a raw response-body string before logging.
+
+    If ``raw`` parses as JSON, apply :func:`_redact` and re-serialize so the
+    log line stays readable. Otherwise, log a structural summary (length only)
+    rather than the body itself — opaque bodies can still contain secrets.
+    """
+    try:
+        return json_module.dumps(_redact(json_module.loads(raw)))
+    except (ValueError, TypeError):
+        return f"<non-json body len={len(raw) if raw is not None else 0}>"
 
 
 class Everything:
@@ -303,7 +353,7 @@ class Client:
             oauth_response_object = await oauth_response.json()
 
         log.debug("Login URL: %s", urls.LOGIN)
-        log.debug("Login Response: %s", response_object)
+        log.debug("Login Response: %s", _redact(response_object))
 
         self._token = response_object["token"]
         self._panel = response_object["panel"]
@@ -348,7 +398,7 @@ class Client:
             ) as response:
                 await AuthenticationException.raise_for(response)
                 log.debug("Logout URL: %s", urls.LOGOUT)
-                log.debug("Logout Response: %s", await response.text())
+                log.debug("Logout Response: %s", _redact_text(await response.text()))
         except (aiohttp.ClientError, OSError) as exc:
             log.warning("Caught exception during logout: %s", exc)
             return
@@ -599,7 +649,7 @@ class Client:
         devices = always_iterable(devices_data)
 
         log.debug("Get Devices URL (get): %s", urls.DEVICES)
-        log.debug("Get Devices Response: %s", devices_data)
+        log.debug("Get Devices Response: %s", _redact(devices_data))
 
         for device_doc in devices:
             await self._load_device(device_doc)
@@ -611,7 +661,7 @@ class Client:
         self._panel.update(panel_data)
 
         log.debug("Get Mode Panel URL (get): %s", urls.PANEL)
-        log.debug("Get Mode Panel Response: %s", panel_data)
+        log.debug("Get Mode Panel Response: %s", _redact(panel_data))
 
         alarm_device = self._devices.get(alarm.id(1))
 
@@ -682,7 +732,7 @@ class Client:
         else:
             resp_data = await resp.json()
         log.debug("Get Automations URL (get): %s", urls.AUTOMATION)
-        log.debug("Get Automations Response: %s", resp_data)
+        log.debug("Get Automations Response: %s", _redact(resp_data))
 
         for state in always_iterable(resp_data):
             # Attempt to reuse an existing automation object
@@ -762,7 +812,9 @@ class Client:
             raise Exception(errors.REQUEST)
 
         log.debug("Timeline Event URL (post): %s", url)
-        log.debug("Timeline Event Response: %s", await response.text())
+        log.debug(
+            "Timeline Event Response: %s", _redact_text(await response.text())
+        )
 
         # Check if request was successful
         if response.status < 400:
@@ -823,7 +875,7 @@ class Client:
 
         timeline_events = await response.json()
 
-        log.debug("Get Timeline Events Response: %s", timeline_events)
+        log.debug("Get Timeline Events Response: %s", _redact(timeline_events))
 
         if not isinstance(timeline_events, list):
             log.warning(
@@ -968,7 +1020,7 @@ class Client:
             return {}
 
         log.debug("Get CMS Settings URL (get): %s", urls.SECURITY_PANEL)
-        log.debug("Get CMS Settings Response (parsed): %s", response_data)
+        log.debug("Get CMS Settings Response (parsed): %s", _redact(response_data))
 
         return response_data.get("attributes", {}).get("cms", {}) or {}
 
@@ -1008,7 +1060,7 @@ class Client:
                 return {}
 
         log.debug("Get CMS Settings URL (get): %s", urls.CMS_SETTINGS)
-        log.debug("Get CMS Settings Response (parsed): %s", response_data)
+        log.debug("Get CMS Settings Response (parsed): %s", _redact(response_data))
         return response_data if isinstance(response_data, dict) else {}
 
     @staticmethod
@@ -1069,7 +1121,7 @@ class Client:
         response_object = await response.json()
 
         log.debug("Set CMS Setting URL (post): %s", urls.CMS_SETTINGS)
-        log.debug("Set CMS Setting Response (parsed): %s", response_object)
+        log.debug("Set CMS Setting Response (parsed): %s", _redact(response_object))
 
         response_object = response_object if isinstance(response_object, dict) else {}
 
