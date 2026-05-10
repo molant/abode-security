@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .models import AbodeSystem
+
+# unique_id is the user's Abode username (an email) — see config_flow.py.
+# Other keys are listed defensively for future additions to the payload.
+TO_REDACT = {"unique_id", "email", "username", "phone", "cookie", "token", "password"}
 
 
 async def async_get_config_entry_diagnostics(
@@ -76,7 +81,7 @@ async def async_get_config_entry_diagnostics(
     except (AttributeError, TypeError):
         connection_diagnostics = {"status": "unavailable"}
 
-    return {
+    payload = {
         "polling": abode_system.polling,
         "polling_interval": abode_system.polling_interval,
         "enable_events": abode_system.enable_events,
@@ -93,3 +98,4 @@ async def async_get_config_entry_diagnostics(
         },
         "unique_id": entry.unique_id,
     }
+    return async_redact_data(payload, TO_REDACT)
