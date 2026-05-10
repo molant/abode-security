@@ -322,6 +322,16 @@ def pytest_collection_modifyitems(config, items):
         "test_alarm_attached_device_info_consistent_manual_alarm",
         "test_alarm_attached_device_info_consistent_cms",
         "test_alarm_attached_device_info_consistent_test_mode",
+        # Debug-log redaction (issue #49)
+        "test_login_response_redacts_token_and_user_pii",
+        "test_oauth_nested_dict_is_redacted",
+        "test_redact_is_case_insensitive",
+        "test_redact_walks_lists",
+        "test_redact_passes_through_primitives",
+        "test_redact_does_not_mutate_input",
+        "test_redact_text_handles_json_payload",
+        "test_redact_text_returns_summary_for_non_json",
+        "test_login_debug_log_redacts_token",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:
