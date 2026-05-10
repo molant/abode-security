@@ -15,6 +15,7 @@ from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later
 
 from .const import DOMAIN
+from .helpers import find_abode_alarm_panel
 
 if TYPE_CHECKING:
     from .action_manager import AbodeAction, ActionManager
@@ -76,10 +77,10 @@ class ActionTriggerCoordinator:
         Returns:
             Mode string ('standby', 'home', 'away') or None if no alarm panel found.
         """
-        for state in self._hass.states.async_all("alarm_control_panel"):
-            if state.entity_id.startswith("alarm_control_panel.abode"):
-                return STATE_TO_MODE.get(state.state)
-        return None
+        panel_state = find_abode_alarm_panel(self._hass)
+        if panel_state is None:
+            return None
+        return STATE_TO_MODE.get(panel_state.state)
 
     @callback
     def _handle_state_change(self, event: Event) -> None:

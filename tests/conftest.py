@@ -231,6 +231,8 @@ def pytest_collection_modifyitems(config, items):
         "test_ws_modes_set_standby",
         "test_ws_modes_set_invalid_mode",
         "test_ws_modes_set_no_panel",
+        "test_ws_modes_set_finds_renamed_entity_via_registry",
+        "test_ws_modes_list_finds_renamed_entity_via_registry",
         "test_ws_entities_sensors_empty",
         "test_ws_entities_sensors_grouped_by_device_class",
         "test_ws_entities_sensors_includes_state",

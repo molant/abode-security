@@ -1,6 +1,7 @@
 """Tests for the WebSocket API module."""
 
 import pytest
+from homeassistant.helpers import entity_registry as er
 
 from custom_components.abode_security.action_manager import ActionManager
 from custom_components.abode_security.config_store import ConfigStore
@@ -726,6 +727,71 @@ class TestWebSocketModesAPI:
 
         assert not response["success"]
         assert response["error"]["code"] == "not_found"
+
+    async def test_ws_modes_set_finds_renamed_entity_via_registry(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Renamed entity_id (e.g. alarm_control_panel.house) still resolves
+        via entity registry lookup by platform=abode_security (#44).
+
+        The pre-fix prefix heuristic (`startswith("alarm_control_panel.abode")`)
+        misses any user-renamed entity. Registering with a non-standard entity_id
+        in the entity registry simulates a rename: the registry entry retains
+        platform=abode_security regardless of what the user renames it to.
+        """
+        registry = er.async_get(hass)
+        # Register an Abode alarm panel under a non-prefix entity_id.
+        registry.async_get_or_create(
+            domain="alarm_control_panel",
+            platform=DOMAIN,
+            unique_id="abode-test-uid",
+            suggested_object_id="house",  # → alarm_control_panel.house
+        )
+        hass.states.async_set("alarm_control_panel.house", "disarmed")
+
+        calls = []
+
+        async def mock_service(call):
+            calls.append(call)
+
+        hass.services.async_register(
+            "alarm_control_panel", "alarm_arm_home", mock_service
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/modes/set",
+                "mode_id": "home",
+            }
+        )
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert len(calls) == 1
+        assert calls[0].data["entity_id"] == "alarm_control_panel.house"
+
+    async def test_ws_modes_list_finds_renamed_entity_via_registry(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Active-mode flag must resolve correctly even after entity rename (#44)."""
+        registry = er.async_get(hass)
+        registry.async_get_or_create(
+            domain="alarm_control_panel",
+            platform=DOMAIN,
+            unique_id="abode-test-uid-list",
+            suggested_object_id="my_security_system",
+        )
+        hass.states.async_set("alarm_control_panel.my_security_system", "armed_home")
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/modes/list"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        home_mode = next(m for m in response["result"]["modes"] if m["id"] == "home")
+        assert home_mode["active"] is True
 
 
 @pytest.mark.usefixtures("mock_abode", "setup_websocket_api")
