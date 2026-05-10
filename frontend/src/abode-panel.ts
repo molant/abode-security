@@ -4,6 +4,13 @@ import type { HomeAssistant } from './types';
 import './modes-tab';
 import './actions-tab';
 
+/**
+ * Top-level Abode panel. Renders a tab bar that switches between the
+ * Actions and Modes tabs. Mounted by HA via `panel_custom`; HA injects
+ * the `hass` property at construction.
+ *
+ * @prop {HomeAssistant} hass - Required. Provided by HA at panel mount.
+ */
 @customElement('abode-configuration-panel')
 export class AbodeConfigurationPanel extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;

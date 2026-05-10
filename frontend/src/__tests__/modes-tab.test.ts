@@ -266,6 +266,16 @@ describe('ModesTab', () => {
             setCalled = true;
             return Promise.resolve({ success: true });
           }
+          // Explicit list/actions mocks — fetchModes/fetchActions extract
+          // `.modes`/`.actions` from the response. Returning the loose
+          // `{ success: true }` would resolve those to `undefined`, which
+          // (post-PR10's `?? []` removal) would crash the next render.
+          if (params.type === 'abode_security/modes/list') {
+            return Promise.resolve({ modes: [] });
+          }
+          if (params.type === 'abode_security/actions/list') {
+            return Promise.resolve({ actions: [] });
+          }
           return Promise.resolve({ success: true });
         }) as HomeAssistant['callWS'],
       });

@@ -65,7 +65,3 @@ export interface AlarmEntity {
   name: string;
   type: string;
 }
-
-export interface AbodeConfig {
-  debounce_seconds: number;
-}

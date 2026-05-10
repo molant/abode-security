@@ -6,6 +6,14 @@ import { fetchActions, updateAction, deleteAction, testAction } from './api';
 import './action-editor';
 import './abode-modal';
 
+/**
+ * Actions tab — lists configured Abode actions and orchestrates the
+ * create/edit/delete/test/toggle flows. The `<abode-action-editor>` is
+ * opened in-place when the user clicks Add or Edit; delete and test
+ * each go through an `<abode-modal variant="alertdialog">` confirm.
+ *
+ * @prop {HomeAssistant} hass - Required.
+ */
 @customElement('abode-actions-tab')
 export class ActionsTab extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;
@@ -369,7 +377,7 @@ export class ActionsTab extends LitElement {
     this._error = null;
 
     try {
-      const actions = (await fetchActions(this.hass)) ?? [];
+      const actions = await fetchActions(this.hass);
       if (signal.aborted) return;
       this._actions = actions;
     } catch (err) {
@@ -381,7 +389,7 @@ export class ActionsTab extends LitElement {
   }
 
   private _getRecentTriggers(): AbodeAction[] {
-    return (this._actions ?? [])
+    return this._actions
       .filter((a) => a.last_triggered)
       .sort(
         (a, b) =>

@@ -234,7 +234,7 @@ export class AbodeModal extends LitElement {
     // overwrite the legitimate trigger element with whatever happened to be
     // focused later (which could be the modal box itself).
     if (this._previouslyFocused === null) {
-      this._previouslyFocused = (document.activeElement as HTMLElement | null) ?? null;
+      this._previouslyFocused = document.activeElement as HTMLElement | null;
     }
     modalStack.push(this);
     document.addEventListener('keydown', this._onDocKeydown);

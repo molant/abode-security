@@ -18,6 +18,20 @@ function toggleIn<T extends string>(arr: readonly T[], value: T): T[] {
   return arr.includes(value) ? arr.filter((x) => x !== value) : [...arr, value];
 }
 
+/**
+ * Modal editor for creating or updating an Abode action. Rendered
+ * inside an `<abode-modal>` (size="lg"); the parent listens for the
+ * `save` and `cancel` events to close it.
+ *
+ * @fires save   - Dispatched after a successful create or update WS call.
+ *                 Detail: undefined. The parent should refresh its list.
+ * @fires cancel - Dispatched on the Cancel button, Escape, or overlay
+ *                 click (the modal forwards `dismiss` here).
+ *
+ * @prop {HomeAssistant} hass        - Required.
+ * @prop {AbodeAction | null} action - Existing action to edit, or null
+ *                                     to start a fresh "create" form.
+ */
 @customElement('abode-action-editor')
 export class ActionEditor extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;
@@ -328,8 +342,8 @@ export class ActionEditor extends LitElement {
         fetchAlarms(this.hass),
       ]);
       if (signal.aborted) return;
-      this._sensors = sensors ?? null;
-      this._alarms = alarms ?? [];
+      this._sensors = sensors;
+      this._alarms = alarms;
     } catch (err) {
       if (signal.aborted) return;
       this._loadError =
