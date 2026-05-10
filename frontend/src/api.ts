@@ -9,7 +9,6 @@ import type {
   Mode,
   SensorsByCategory,
   AlarmEntity,
-  AbodeConfig,
 } from './types';
 
 /**
@@ -61,15 +60,6 @@ export async function fetchAlarms(hass: HomeAssistant): Promise<AlarmEntity[]> {
     type: 'abode_security/entities/alarms',
   });
   return response.alarms;
-}
-
-/**
- * Fetch configuration.
- */
-export async function fetchConfig(hass: HomeAssistant): Promise<AbodeConfig> {
-  return hass.callWS<AbodeConfig>({
-    type: 'abode_security/config/get',
-  });
 }
 
 /**

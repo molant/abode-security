@@ -4,6 +4,15 @@ import type { HomeAssistant, AbodeMode, AbodeAction, Mode } from './types';
 import { fetchModes, fetchActions, setMode } from './api';
 import './abode-modal';
 
+/**
+ * Modes tab — displays the three Abode arming modes (standby/home/away)
+ * with their action counts and the active flag, and lets the user
+ * switch modes from the panel via a confirm dialog (#1). Switching
+ * delegates to the `abode_security/modes/set` WS endpoint, which in
+ * turn calls the standard `alarm_control_panel` arm/disarm services.
+ *
+ * @prop {HomeAssistant} hass - Required.
+ */
 @customElement('abode-modes-tab')
 export class ModesTab extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;
@@ -272,8 +281,8 @@ export class ModesTab extends LitElement {
         fetchActions(this.hass),
       ]);
       if (signal.aborted) return;
-      this._modes = modes ?? [];
-      this._actions = actions ?? [];
+      this._modes = modes;
+      this._actions = actions;
     } catch (err) {
       if (signal.aborted) return;
       this._error = err instanceof Error ? err.message : 'Failed to load data';
