@@ -33,6 +33,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_actions_test)
     # Entity query endpoints
     websocket_api.async_register_command(hass, websocket_modes_list)
+    websocket_api.async_register_command(hass, websocket_modes_set)
     websocket_api.async_register_command(hass, websocket_entities_sensors)
     websocket_api.async_register_command(hass, websocket_entities_alarms)
     # Config endpoints
@@ -340,6 +341,36 @@ STATE_TO_MODE = {
     "armed_away": "away",
 }
 
+# Inverse: mode ID → alarm_control_panel service to invoke. The frontend
+# panel calls these via websocket_modes_set, which delegates to the standard
+# alarm_control_panel domain so we don't duplicate the underlying SDK calls.
+MODE_TO_SERVICE = {
+    "standby": "alarm_disarm",
+    "home": "alarm_arm_home",
+    "away": "alarm_arm_away",
+}
+
+# Defense-in-depth against drift: voluptuous already gates `mode_id` on
+# VALID_MODES, but if VALID_MODES grows and MODE_TO_SERVICE doesn't, the
+# `MODE_TO_SERVICE[mode_id]` lookup below would KeyError under a request
+# that passed schema validation. Fail at import time instead.
+assert set(MODE_TO_SERVICE) == VALID_MODES, (
+    "MODE_TO_SERVICE keys must match VALID_MODES exactly"
+)
+
+
+def _find_abode_alarm(hass: HomeAssistant):
+    """Return the State of the Abode alarm_control_panel, or None.
+
+    Both `_modes_list` (reads `state.state` to compute the active mode) and
+    `_modes_set` (uses `state.entity_id` to target the service call) need
+    the same lookup, so they share this helper.
+    """
+    for state in hass.states.async_all("alarm_control_panel"):
+        if state.entity_id.startswith("alarm_control_panel.abode"):
+            return state
+    return None
+
 
 @websocket_api.websocket_command(
     {
@@ -355,12 +386,9 @@ async def websocket_modes_list(
     """Handle listing available modes with metadata."""
     action_manager = _get_action_manager(hass)
 
-    # Find the active mode from alarm_control_panel entity
-    active_mode = None
-    for state in hass.states.async_all("alarm_control_panel"):
-        if state.entity_id.startswith("alarm_control_panel.abode"):
-            active_mode = STATE_TO_MODE.get(state.state)
-            break
+    # Find the active mode from the abode alarm_control_panel entity, if any.
+    panel_state = _find_abode_alarm(hass)
+    active_mode = STATE_TO_MODE.get(panel_state.state) if panel_state else None
 
     # Build mode list with action counts
     modes = []
@@ -386,6 +414,58 @@ async def websocket_modes_list(
         )
 
     connection.send_result(msg["id"], {"modes": modes})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "abode_security/modes/set",
+        vol.Required("mode_id"): vol.In(VALID_MODES),
+    }
+)
+@websocket_api.async_response
+async def websocket_modes_set(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Set the active Abode mode by delegating to alarm_control_panel.
+
+    Maps mode_id → alarm_control_panel service:
+      standby → alarm_disarm
+      home    → alarm_arm_home
+      away    → alarm_arm_away
+
+    The frontend Modes tab calls this after a confirm dialog. We don't go
+    straight to the Abode SDK because alarm_control_panel already wraps it
+    and handles entity-state updates uniformly.
+    """
+    mode_id = msg["mode_id"]
+
+    panel_state = _find_abode_alarm(hass)
+    if panel_state is None:
+        connection.send_error(
+            msg["id"],
+            "not_found",
+            "No Abode alarm_control_panel entity registered",
+        )
+        return
+
+    service = MODE_TO_SERVICE[mode_id]
+
+    try:
+        await hass.services.async_call(
+            "alarm_control_panel",
+            service,
+            {"entity_id": panel_state.entity_id},
+            blocking=True,
+        )
+    except (HomeAssistantError, ServiceNotFound, ValueError) as err:
+        _LOGGER.warning("Failed to set mode %s: %s", mode_id, err)
+        connection.send_error(msg["id"], "set_mode_failed", str(err))
+        return
+
+    _LOGGER.info("Mode set to %s by user %s", mode_id, connection.user.id)
+    connection.send_result(msg["id"], {"success": True, "mode_id": mode_id})
 
 
 @websocket_api.websocket_command(

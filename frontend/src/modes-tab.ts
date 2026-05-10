@@ -1,7 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { HomeAssistant, AbodeMode, AbodeAction, Mode } from './types';
-import { fetchModes, fetchActions } from './api';
+import { fetchModes, fetchActions, setMode } from './api';
+import './abode-modal';
 
 @customElement('abode-modes-tab')
 export class ModesTab extends LitElement {
@@ -10,6 +11,15 @@ export class ModesTab extends LitElement {
   @state() private _actions: AbodeAction[] = [];
   @state() private _loading = true;
   @state() private _error: string | null = null;
+
+  // Mode-switching state (#1):
+  // - _confirmMode holds the target mode while the confirm dialog is open.
+  // - _settingModeId is set during the in-flight WS call so the UI can show
+  //   a busy state and prevent re-entry.
+  // - _setError surfaces a failed switch as a dismissible banner.
+  @state() private _confirmMode: AbodeMode | null = null;
+  @state() private _settingModeId: Mode | null = null;
+  @state() private _setError: string | null = null;
 
   // Aborted on disconnect so a late-resolving fetch can't write state to a
   // detached element (panel tab switches destroy the inactive tab — closes #29).
@@ -138,6 +148,98 @@ export class ModesTab extends LitElement {
       color: white;
       border-radius: 4px;
     }
+
+    .operation-error {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background-color: var(--error-color, #f44336);
+      color: white;
+      border-radius: 4px;
+      margin-bottom: 16px;
+    }
+
+    .dismiss-error {
+      background: transparent;
+      border: none;
+      color: white;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 0 4px;
+      opacity: 0.8;
+    }
+
+    .dismiss-error:hover {
+      opacity: 1;
+    }
+
+    .switch-button {
+      width: 100%;
+      margin-top: 16px;
+      padding: 10px 16px;
+      border: 1px solid var(--primary-color, #03a9f4);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--primary-color, #03a9f4);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .switch-button:hover:not(:disabled) {
+      background: var(--primary-color, #03a9f4);
+      color: white;
+    }
+
+    .switch-button:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: 2px;
+    }
+
+    .switch-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .current-mode-label {
+      margin-top: 16px;
+      padding: 10px 16px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--secondary-text-color);
+      font-style: italic;
+    }
+
+    /* Confirm dialog button styles — applied to <button slot="footer"> inside <abode-modal>. */
+    .dialog-button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .dialog-button.cancel {
+      background: transparent;
+      color: var(--secondary-text-color);
+    }
+
+    .dialog-button.cancel:hover {
+      background: var(--secondary-background-color);
+    }
+
+    .dialog-button.primary {
+      background: var(--primary-color, #03a9f4);
+      color: white;
+    }
+
+    .dialog-button.primary:hover {
+      background: var(--primary-color-dark, #0288d1);
+    }
   `;
 
   async connectedCallback() {
@@ -151,13 +253,17 @@ export class ModesTab extends LitElement {
     super.disconnectedCallback();
   }
 
-  private async _loadData() {
+  private async _loadData(options: { silent?: boolean } = {}) {
     this._abort?.abort();
     const controller = new AbortController();
     this._abort = controller;
     const { signal } = controller;
 
-    this._loading = true;
+    // `silent` keeps `_loading` untouched so an in-place refresh doesn't
+    // flash the full-page "Loading modes..." spinner over the visible grid.
+    // The initial connectedCallback load is loud (default); post-switch
+    // refresh is silent.
+    if (!options.silent) this._loading = true;
     this._error = null;
 
     try {
@@ -172,7 +278,7 @@ export class ModesTab extends LitElement {
       if (signal.aborted) return;
       this._error = err instanceof Error ? err.message : 'Failed to load data';
     } finally {
-      if (!signal.aborted) this._loading = false;
+      if (!signal.aborted && !options.silent) this._loading = false;
     }
   }
 
@@ -180,6 +286,49 @@ export class ModesTab extends LitElement {
     return this._actions.filter(
       (action) => action.enabled && action.modes.includes(modeId)
     );
+  }
+
+  private _requestSwitch(mode: AbodeMode) {
+    // No-op for already-active mode (the UI suppresses the button anyway,
+    // this is a defense-in-depth check in case a programmatic caller fires).
+    if (mode.active || this._settingModeId !== null) return;
+    // Clear any stale error from a prior failed attempt — opening a fresh
+    // confirm dialog implies the user has acknowledged the previous one.
+    this._setError = null;
+    this._confirmMode = mode;
+  }
+
+  private async _confirmSwitch() {
+    if (!this._confirmMode) return;
+    const target = this._confirmMode;
+    this._confirmMode = null;
+    this._settingModeId = target.id;
+    this._setError = null;
+    try {
+      await setMode(this.hass, target.id);
+    } catch (err) {
+      // Match actions-tab convention: log the raw exception for diagnostics,
+      // surface a fixed user-facing label so backend internals don't leak.
+      console.error('Failed to set mode:', err);
+      this._setError = 'Failed to change mode';
+      this._settingModeId = null;
+      return;
+    }
+    // Switch succeeded — refresh so the active flag flips. Pass
+    // `silent: true` so the grid stays visible (with its "Switching…"
+    // pending label on the targeted card) instead of flashing
+    // "Loading modes..." over the full tab during the refresh.
+    //
+    // _loadData catches its own exception and writes to `this._error`,
+    // which would trigger the full-page error branch in render() and wipe
+    // the successful-switch UX. Detect that case and re-route the message
+    // through the dismissible banner instead.
+    await this._loadData({ silent: true });
+    if (this._error) {
+      this._setError = `Mode changed; refresh failed: ${this._error}`;
+      this._error = null;
+    }
+    this._settingModeId = null;
   }
 
   render() {
@@ -192,14 +341,62 @@ export class ModesTab extends LitElement {
     }
 
     return html`
+      ${this._setError
+        ? html`
+            <div class="operation-error" role="alert">
+              ${this._setError}
+              <button
+                class="dismiss-error"
+                @click=${() => (this._setError = null)}
+                aria-label="Dismiss error"
+              >
+                ×
+              </button>
+            </div>
+          `
+        : ''}
+
       <div class="modes-grid">
         ${this._modes.map((mode) => this._renderModeCard(mode))}
       </div>
+
+      ${this._confirmMode ? this._renderConfirmDialog(this._confirmMode) : ''}
+    `;
+  }
+
+  private _renderConfirmDialog(target: AbodeMode) {
+    return html`
+      <abode-modal
+        heading="Switch mode?"
+        variant="alertdialog"
+        @dismiss=${() => (this._confirmMode = null)}
+      >
+        <p>
+          Switch the system to <strong>${target.name}</strong>? This changes
+          the live arming state and runs any actions configured for this mode.
+        </p>
+        <button
+          slot="footer"
+          class="dialog-button cancel"
+          @click=${() => (this._confirmMode = null)}
+        >
+          Cancel
+        </button>
+        <button
+          slot="footer"
+          class="dialog-button primary"
+          @click=${this._confirmSwitch}
+        >
+          Switch
+        </button>
+      </abode-modal>
     `;
   }
 
   private _renderModeCard(mode: AbodeMode) {
     const actionsForMode = this._getActionsForMode(mode.id);
+    const isPending = this._settingModeId === mode.id;
+    const anySwitchPending = this._settingModeId !== null;
 
     return html`
       <div class="mode-card ${mode.active ? 'active' : ''}">
@@ -230,6 +427,19 @@ export class ModesTab extends LitElement {
               </ul>
             `
           : html`<div class="empty-actions">No actions configured</div>`}
+
+        ${mode.active
+          ? html`<div class="current-mode-label">Current mode</div>`
+          : html`
+              <button
+                class="switch-button"
+                ?disabled=${anySwitchPending}
+                aria-label=${`Switch to ${mode.name} mode`}
+                @click=${() => this._requestSwitch(mode)}
+              >
+                ${isPending ? 'Switching…' : `Switch to ${mode.name}`}
+              </button>
+            `}
       </div>
     `;
   }

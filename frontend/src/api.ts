@@ -6,6 +6,7 @@ import type {
   HomeAssistant,
   AbodeAction,
   AbodeMode,
+  Mode,
   SensorsByCategory,
   AlarmEntity,
   AbodeConfig,
@@ -29,6 +30,17 @@ export async function fetchModes(hass: HomeAssistant): Promise<AbodeMode[]> {
     type: 'abode_security/modes/list',
   });
   return response.modes;
+}
+
+/**
+ * Switch the active Abode mode. Backend delegates to the corresponding
+ * alarm_control_panel service (alarm_disarm / alarm_arm_home / alarm_arm_away).
+ */
+export async function setMode(hass: HomeAssistant, modeId: Mode): Promise<void> {
+  await hass.callWS({
+    type: 'abode_security/modes/set',
+    mode_id: modeId,
+  });
 }
 
 /**
