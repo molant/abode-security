@@ -332,6 +332,9 @@ def pytest_collection_modifyitems(config, items):
         "test_redact_text_handles_json_payload",
         "test_redact_text_returns_summary_for_non_json",
         "test_login_debug_log_redacts_token",
+        # Diagnostics PII redaction (issue #50)
+        "test_unique_id_is_redacted",
+        "test_email_does_not_appear_anywhere_in_payload",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:
