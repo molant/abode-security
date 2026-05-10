@@ -93,9 +93,7 @@ describe('AbodeModal', () => {
 
   describe('aria attributes', () => {
     it('defaults to role="dialog" and aria-modal="true"', async () => {
-      const el = await fixture<AbodeModal>(html`
-        <abode-modal heading="Heading"></abode-modal>
-      `);
+      const el = await fixture<AbodeModal>(html` <abode-modal heading="Heading"></abode-modal> `);
       await elementUpdated(el);
 
       const box = el.shadowRoot?.querySelector('.modal-box');
@@ -114,9 +112,7 @@ describe('AbodeModal', () => {
     });
 
     it('points aria-labelledby at the heading element', async () => {
-      const el = await fixture<AbodeModal>(html`
-        <abode-modal heading="Heading"></abode-modal>
-      `);
+      const el = await fixture<AbodeModal>(html` <abode-modal heading="Heading"></abode-modal> `);
       await elementUpdated(el);
 
       const box = el.shadowRoot?.querySelector('.modal-box');
@@ -129,9 +125,7 @@ describe('AbodeModal', () => {
 
   describe('dismiss', () => {
     it('dispatches dismiss when overlay clicked (target === overlay)', async () => {
-      const el = await fixture<AbodeModal>(html`
-        <abode-modal heading="Heading"></abode-modal>
-      `);
+      const el = await fixture<AbodeModal>(html` <abode-modal heading="Heading"></abode-modal> `);
       await elementUpdated(el);
 
       let dismissed = false;
@@ -167,9 +161,7 @@ describe('AbodeModal', () => {
     });
 
     it('dispatches dismiss on Escape keydown bubbling from a descendant', async () => {
-      const el = await fixture<AbodeModal>(html`
-        <abode-modal heading="Heading"></abode-modal>
-      `);
+      const el = await fixture<AbodeModal>(html` <abode-modal heading="Heading"></abode-modal> `);
       await elementUpdated(el);
 
       let dismissed = false;
@@ -189,9 +181,7 @@ describe('AbodeModal', () => {
     });
 
     it('does not dispatch dismiss on non-Escape keys', async () => {
-      const el = await fixture<AbodeModal>(html`
-        <abode-modal heading="Heading"></abode-modal>
-      `);
+      const el = await fixture<AbodeModal>(html` <abode-modal heading="Heading"></abode-modal> `);
       await elementUpdated(el);
 
       let dismissed = false;
@@ -203,9 +193,7 @@ describe('AbodeModal', () => {
       box?.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true }),
       );
-      box?.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'a', bubbles: true, composed: true }),
-      );
+      box?.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true, composed: true }));
 
       expect(dismissed).to.equal(false);
     });
@@ -396,9 +384,7 @@ describe('AbodeModal', () => {
 
   describe('document-level Escape', () => {
     it('dispatches dismiss on Escape from document, even with no descendant focused', async () => {
-      const el = await fixture<AbodeModal>(html`
-        <abode-modal heading="Heading"></abode-modal>
-      `);
+      const el = await fixture<AbodeModal>(html` <abode-modal heading="Heading"></abode-modal> `);
       await elementUpdated(el);
 
       // Move focus outside the modal so the overlay listener can't catch it.
@@ -411,9 +397,7 @@ describe('AbodeModal', () => {
         dismissed = true;
       });
 
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-      );
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
       expect(dismissed).to.equal(true);
       outside.remove();
@@ -430,17 +414,13 @@ describe('AbodeModal', () => {
         dismissed = true;
       });
 
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-      );
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
       expect(dismissed).to.equal(false);
     });
 
     it('removes the document listener on disconnect (no dismiss after removal)', async () => {
-      const el = await fixture<AbodeModal>(html`
-        <abode-modal heading="Heading"></abode-modal>
-      `);
+      const el = await fixture<AbodeModal>(html` <abode-modal heading="Heading"></abode-modal> `);
       await elementUpdated(el);
 
       let dismissed = false;
@@ -450,21 +430,15 @@ describe('AbodeModal', () => {
 
       el.remove();
       // Now press Escape — listener should be gone.
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-      );
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
       expect(dismissed).to.equal(false);
     });
 
     it('only the topmost modal dismisses on Escape when stacked', async () => {
-      const a = await fixture<AbodeModal>(html`
-        <abode-modal heading="A"></abode-modal>
-      `);
+      const a = await fixture<AbodeModal>(html` <abode-modal heading="A"></abode-modal> `);
       await elementUpdated(a);
-      const b = await fixture<AbodeModal>(html`
-        <abode-modal heading="B"></abode-modal>
-      `);
+      const b = await fixture<AbodeModal>(html` <abode-modal heading="B"></abode-modal> `);
       await elementUpdated(b);
 
       let aDismissed = false;
@@ -473,9 +447,7 @@ describe('AbodeModal', () => {
       b.addEventListener('dismiss', () => (bDismissed = true));
 
       // b mounted second → it's topmost. Only b should dismiss.
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-      );
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
       expect(bDismissed).to.equal(true);
       expect(aDismissed).to.equal(false);

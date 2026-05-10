@@ -88,12 +88,8 @@ describe('ActionEditor', () => {
       // Intentionally use device_class keys outside the legacy seven-name
       // allowlist — this is the shape the HA backend actually returns.
       const wideSensors: Record<string, SensorEntity[]> = {
-        garage_door: [
-          { entity_id: 'binary_sensor.garage', name: 'Garage Door', state: 'closed' },
-        ],
-        gas: [
-          { entity_id: 'binary_sensor.gas_kitchen', name: 'Kitchen Gas', state: 'off' },
-        ],
+        garage_door: [{ entity_id: 'binary_sensor.garage', name: 'Garage Door', state: 'closed' }],
+        gas: [{ entity_id: 'binary_sensor.gas_kitchen', name: 'Kitchen Gas', state: 'off' }],
       };
       // @ts-expect-error - accessing private property for testing
       el._sensors = wideSensors;
@@ -129,9 +125,7 @@ describe('ActionEditor', () => {
 
       // @ts-expect-error - accessing private property for testing
       el._sensors = {
-        door: [
-          { entity_id: 'binary_sensor.front', name: 'Front Door', state: 'off' },
-        ],
+        door: [{ entity_id: 'binary_sensor.front', name: 'Front Door', state: 'off' }],
         motion: [],
       };
       // @ts-expect-error - accessing private property for testing
@@ -414,9 +408,9 @@ describe('ActionEditor', () => {
       expect(errorText).to.include('WS connection lost');
 
       // A Retry button should be rendered.
-      const retryButton = Array.from(
-        el.shadowRoot?.querySelectorAll('button') ?? [],
-      ).find((b) => /retry/i.test(b.textContent ?? ''));
+      const retryButton = Array.from(el.shadowRoot?.querySelectorAll('button') ?? []).find((b) =>
+        /retry/i.test(b.textContent ?? ''),
+      );
       expect(retryButton, 'expected a Retry button after load failure').to.exist;
 
       // Clicking Retry re-runs the load; second call succeeds.
@@ -713,10 +707,7 @@ describe('ActionEditor', () => {
       });
 
       const el = await fixture<ActionEditor>(html`
-        <abode-action-editor
-          .hass=${hass}
-          .action=${existing}
-        ></abode-action-editor>
+        <abode-action-editor .hass=${hass} .action=${existing}></abode-action-editor>
       `);
       await aTimeout(0);
       await elementUpdated(el);
@@ -787,10 +778,7 @@ describe('ActionEditor', () => {
       });
       const hass = createMockHass();
       const el = await fixture<ActionEditor>(html`
-        <abode-action-editor
-          .hass=${hass}
-          .action=${action}
-        ></abode-action-editor>
+        <abode-action-editor .hass=${hass} .action=${action}></abode-action-editor>
       `);
       // _populateForm runs synchronously on connect (PR6 race fix), so
       // every field is populated before the load completes.
@@ -889,9 +877,7 @@ describe('ActionEditor', () => {
       // category) remains. This is the assertion that catches the
       // "filter accidentally removes all sensors" regression class.
       // @ts-expect-error - accessing private property for testing
-      expect(el._selectedSensors).to.deep.equal([
-        'binary_sensor.living_room_motion',
-      ]);
+      expect(el._selectedSensors).to.deep.equal(['binary_sensor.living_room_motion']);
     });
   });
 });

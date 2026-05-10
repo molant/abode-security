@@ -29,7 +29,7 @@ python3 -m pytest tests/ -v --tb=short
 # Frontend gates — only run when frontend files are staged
 if git diff --name-only --cached | grep -q '^frontend/'; then
     echo "Frontend changes detected — running frontend gates..."
-    (cd frontend && npm run typecheck && npm test)
+    (cd frontend && npm run lint && npm run format && npm run typecheck && npm test)
 fi
 
 echo "Pre-commit checks passed!"

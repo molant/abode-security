@@ -40,6 +40,15 @@ The frontend panel (`frontend/src/abode-panel.ts`) currently implements Actions 
   - Would require updating panel registration to use dynamic filename
   - Could use a manifest file or HA's resource versioning
 
+- [ ] **Enable `@typescript-eslint/no-floating-promises`** (deferred from PR #30)
+  - Would catch unhandled promise rejections in async event handlers and
+    fire-and-forget calls. The codebase has ~10 intentional patterns
+    (`@click=${this._handleSave}`, `connectedCallback() { this._loadData(); }`)
+    that would each need a `void` prefix or other annotation.
+  - Requires `tseslint.configs.recommendedTypeChecked` (or scoped a la carte)
+    plus `parserOptions.project: true` — slows lint runs.
+  - PR11 deferred this to keep the baseline stack lean.
+
 ## Test Coverage
 
 **Source**: Phase 4.5 of better-development

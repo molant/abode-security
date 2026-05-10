@@ -3,7 +3,13 @@
  */
 
 import type { LitElement } from 'lit';
-import type { HomeAssistant, AbodeAction, SensorsByCategory, AlarmEntity, AbodeMode } from '../types';
+import type {
+  HomeAssistant,
+  AbodeAction,
+  SensorsByCategory,
+  AlarmEntity,
+  AbodeMode,
+} from '../types';
 
 /**
  * Create a mock HomeAssistant object.
@@ -82,9 +88,7 @@ export function createMockSensors(): SensorsByCategory {
     motion: [
       { entity_id: 'binary_sensor.living_room_motion', name: 'Living Room Motion', state: 'off' },
     ],
-    window: [
-      { entity_id: 'binary_sensor.kitchen_window', name: 'Kitchen Window', state: 'off' },
-    ],
+    window: [{ entity_id: 'binary_sensor.kitchen_window', name: 'Kitchen Window', state: 'off' }],
   };
 }
 
@@ -114,13 +118,15 @@ export function createMockModes(): AbodeMode[] {
  * Wait for the next render cycle.
  */
 export async function nextFrame(): Promise<void> {
-  return new Promise(resolve => requestAnimationFrame(() => resolve()));
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 /**
  * Wait for element to update.
  */
-export async function elementUpdated(element: Element & { updateComplete?: Promise<unknown> }): Promise<void> {
+export async function elementUpdated(
+  element: Element & { updateComplete?: Promise<unknown> },
+): Promise<void> {
   if (element.updateComplete) {
     await element.updateComplete;
   }
@@ -152,10 +158,7 @@ export async function elementUpdated(element: Element & { updateComplete?: Promi
  *
  * Used by mutation-flow tests added in #31.
  */
-export async function setState<T extends LitElement>(
-  element: T,
-  patch: Partial<T>,
-): Promise<void> {
+export async function setState<T extends LitElement>(element: T, patch: Partial<T>): Promise<void> {
   // Single, intentional, type-erased assignment — the alternative is
   // sprinkling @ts-expect-error at every call site.
   Object.assign(element, patch);

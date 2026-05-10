@@ -250,8 +250,7 @@ export class AbodeModal extends LitElement {
     // the disconnecting modal subtree — don't fight a consumer that moved
     // focus elsewhere in their dismiss handler.
     const active = document.activeElement as HTMLElement | null;
-    const focusLost =
-      !active || active === document.body || this.contains(active);
+    const focusLost = !active || active === document.body || this.contains(active);
     if (focusLost) {
       this._previouslyFocused?.focus?.();
     }

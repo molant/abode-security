@@ -52,7 +52,9 @@ export class ModesTab extends LitElement {
       padding: 20px;
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       border: 2px solid transparent;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      transition:
+        border-color 0.2s,
+        box-shadow 0.2s;
     }
 
     .mode-card.active {
@@ -194,7 +196,9 @@ export class ModesTab extends LitElement {
       font-size: 14px;
       font-weight: 500;
       cursor: pointer;
-      transition: background 0.2s, color 0.2s;
+      transition:
+        background 0.2s,
+        color 0.2s;
     }
 
     .switch-button:hover:not(:disabled) {
@@ -276,10 +280,7 @@ export class ModesTab extends LitElement {
     this._error = null;
 
     try {
-      const [modes, actions] = await Promise.all([
-        fetchModes(this.hass),
-        fetchActions(this.hass),
-      ]);
+      const [modes, actions] = await Promise.all([fetchModes(this.hass), fetchActions(this.hass)]);
       if (signal.aborted) return;
       this._modes = modes;
       this._actions = actions;
@@ -292,9 +293,7 @@ export class ModesTab extends LitElement {
   }
 
   private _getActionsForMode(modeId: Mode): AbodeAction[] {
-    return this._actions.filter(
-      (action) => action.enabled && action.modes.includes(modeId)
-    );
+    return this._actions.filter((action) => action.enabled && action.modes.includes(modeId));
   }
 
   private _requestSwitch(mode: AbodeMode) {
@@ -365,9 +364,7 @@ export class ModesTab extends LitElement {
           `
         : ''}
 
-      <div class="modes-grid">
-        ${this._modes.map((mode) => this._renderModeCard(mode))}
-      </div>
+      <div class="modes-grid">${this._modes.map((mode) => this._renderModeCard(mode))}</div>
 
       ${this._confirmMode ? this._renderConfirmDialog(this._confirmMode) : ''}
     `;
@@ -381,8 +378,8 @@ export class ModesTab extends LitElement {
         @dismiss=${() => (this._confirmMode = null)}
       >
         <p>
-          Switch the system to <strong>${target.name}</strong>? This changes
-          the live arming state and runs any actions configured for this mode.
+          Switch the system to <strong>${target.name}</strong>? This changes the live arming state
+          and runs any actions configured for this mode.
         </p>
         <button
           slot="footer"
@@ -391,11 +388,7 @@ export class ModesTab extends LitElement {
         >
           Cancel
         </button>
-        <button
-          slot="footer"
-          class="dialog-button primary"
-          @click=${this._confirmSwitch}
-        >
+        <button slot="footer" class="dialog-button primary" @click=${this._confirmSwitch}>
           Switch
         </button>
       </abode-modal>
@@ -416,7 +409,9 @@ export class ModesTab extends LitElement {
           <div class="mode-info">
             <h3>${mode.name}</h3>
             <div class="badges">
-              <span class="badge">${mode.action_count} ${mode.action_count === 1 ? 'action' : 'actions'}</span>
+              <span class="badge"
+                >${mode.action_count} ${mode.action_count === 1 ? 'action' : 'actions'}</span
+              >
               ${mode.active ? html`<span class="badge active">Active</span>` : ''}
             </div>
           </div>
@@ -431,12 +426,11 @@ export class ModesTab extends LitElement {
                       <ha-icon icon="mdi:bell-ring"></ha-icon>
                       ${action.name}
                     </li>
-                  `
+                  `,
                 )}
               </ul>
             `
           : html`<div class="empty-actions">No actions configured</div>`}
-
         ${mode.active
           ? html`<div class="current-mode-label">Current mode</div>`
           : html`

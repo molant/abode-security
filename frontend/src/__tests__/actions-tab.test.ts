@@ -10,12 +10,7 @@ import { aTimeout, expect, fixture, html } from '@open-wc/testing';
 import '../actions-tab.js';
 import type { ActionsTab } from '../actions-tab.js';
 import type { AbodeAction, HomeAssistant } from '../types.js';
-import {
-  createMockHass,
-  createMockAction,
-  elementUpdated,
-  setState,
-} from './test-helpers.js';
+import { createMockHass, createMockAction, elementUpdated, setState } from './test-helpers.js';
 
 describe('ActionsTab', () => {
   describe('rendering with data', () => {
@@ -77,9 +72,7 @@ describe('ActionsTab', () => {
 
     it('shows mode chips for each action', async () => {
       const hass = createMockHass();
-      const actions = [
-        createMockAction({ modes: ['home', 'away'] }),
-      ];
+      const actions = [createMockAction({ modes: ['home', 'away'] })];
 
       const el = await fixture<ActionsTab>(html`
         <abode-actions-tab .hass=${hass}></abode-actions-tab>
@@ -97,9 +90,7 @@ describe('ActionsTab', () => {
 
     it('shows disabled styling for disabled actions', async () => {
       const hass = createMockHass();
-      const actions = [
-        createMockAction({ enabled: false }),
-      ];
+      const actions = [createMockAction({ enabled: false })];
 
       const el = await fixture<ActionsTab>(html`
         <abode-actions-tab .hass=${hass}></abode-actions-tab>
@@ -197,7 +188,9 @@ describe('ActionsTab', () => {
       el._loading = false;
       await elementUpdated(el);
 
-      const testButton = el.shadowRoot?.querySelector('button[aria-label="Test action"]') as HTMLButtonElement;
+      const testButton = el.shadowRoot?.querySelector(
+        'button[aria-label="Test action"]',
+      ) as HTMLButtonElement;
       testButton?.click();
 
       await elementUpdated(el);
@@ -314,7 +307,9 @@ describe('ActionsTab', () => {
       await elementUpdated(el);
 
       // Click cancel
-      const cancelButton = el.shadowRoot?.querySelector('.dialog-button.cancel') as HTMLButtonElement;
+      const cancelButton = el.shadowRoot?.querySelector(
+        '.dialog-button.cancel',
+      ) as HTMLButtonElement;
       cancelButton?.click();
       await elementUpdated(el);
 
@@ -551,9 +546,7 @@ describe('ActionsTab', () => {
       `);
       await setState(el, { _actions: [original], _loading: false } as Partial<ActionsTab>);
 
-      const toggle = el.shadowRoot?.querySelector(
-        'input[type="checkbox"]',
-      ) as HTMLInputElement;
+      const toggle = el.shadowRoot?.querySelector('input[type="checkbox"]') as HTMLInputElement;
       toggle.click();
       await aTimeout(0);
       await elementUpdated(el);
@@ -593,9 +586,7 @@ describe('ActionsTab', () => {
       `);
       await setState(el, { _actions: [original], _loading: false } as Partial<ActionsTab>);
 
-      (el.shadowRoot?.querySelector(
-        'input[type="checkbox"]',
-      ) as HTMLInputElement).click();
+      (el.shadowRoot?.querySelector('input[type="checkbox"]') as HTMLInputElement).click();
       // Microtask drain — handler has assigned to _togglingIds but the WS
       // call is still suspended on updatePromise.
       await Promise.resolve();
@@ -630,9 +621,7 @@ describe('ActionsTab', () => {
       `);
       await setState(el, { _actions: [original], _loading: false } as Partial<ActionsTab>);
 
-      (el.shadowRoot?.querySelector(
-        'input[type="checkbox"]',
-      ) as HTMLInputElement).click();
+      (el.shadowRoot?.querySelector('input[type="checkbox"]') as HTMLInputElement).click();
       await aTimeout(0);
       await elementUpdated(el);
 
@@ -667,9 +656,7 @@ describe('ActionsTab', () => {
       `);
       await setState(el, { _actions: [original], _loading: false } as Partial<ActionsTab>);
 
-      (el.shadowRoot?.querySelector(
-        'input[type="checkbox"]',
-      ) as HTMLInputElement).click();
+      (el.shadowRoot?.querySelector('input[type="checkbox"]') as HTMLInputElement).click();
       await aTimeout(0);
       await elementUpdated(el);
 

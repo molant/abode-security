@@ -125,9 +125,7 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
             </div>
           `:""}
 
-      <div class="modes-grid">
-        ${this._modes.map(t=>this._renderModeCard(t))}
-      </div>
+      <div class="modes-grid">${this._modes.map(t=>this._renderModeCard(t))}</div>
 
       ${this._confirmMode?this._renderConfirmDialog(this._confirmMode):""}
     `}_renderConfirmDialog(t){return B`
@@ -137,8 +135,8 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
         @dismiss=${()=>this._confirmMode=null}
       >
         <p>
-          Switch the system to <strong>${t.name}</strong>? This changes
-          the live arming state and runs any actions configured for this mode.
+          Switch the system to <strong>${t.name}</strong>? This changes the live arming state
+          and runs any actions configured for this mode.
         </p>
         <button
           slot="footer"
@@ -147,11 +145,7 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
         >
           Cancel
         </button>
-        <button
-          slot="footer"
-          class="dialog-button primary"
-          @click=${this._confirmSwitch}
-        >
+        <button slot="footer" class="dialog-button primary" @click=${this._confirmSwitch}>
           Switch
         </button>
       </abode-modal>
@@ -164,7 +158,9 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
           <div class="mode-info">
             <h3>${t.name}</h3>
             <div class="badges">
-              <span class="badge">${t.action_count} ${1===t.action_count?"action":"actions"}</span>
+              <span class="badge"
+                >${t.action_count} ${1===t.action_count?"action":"actions"}</span
+              >
               ${t.active?B`<span class="badge active">Active</span>`:""}
             </div>
           </div>
@@ -180,7 +176,6 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
                   `)}
               </ul>
             `:B`<div class="empty-actions">No actions configured</div>`}
-
         ${t.active?B`<div class="current-mode-label">Current mode</div>`:B`
               <button
                 class="switch-button"
@@ -209,7 +204,9 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
       padding: 20px;
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       border: 2px solid transparent;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      transition:
+        border-color 0.2s,
+        box-shadow 0.2s;
     }
 
     .mode-card.active {
@@ -351,7 +348,9 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
       font-size: 14px;
       font-weight: 500;
       cursor: pointer;
-      transition: background 0.2s, color 0.2s;
+      transition:
+        background 0.2s,
+        color 0.2s;
     }
 
     .switch-button:hover:not(:disabled) {
@@ -477,19 +476,10 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
         ${this._errors.alarms?B`<span class="error-text">${this._errors.alarms}</span>`:""}
       </div>
 
-      ${this._errors.form?B`<div class="error-text" style="margin-bottom: 16px;">
-            ${this._errors.form}
-          </div>`:""}
+      ${this._errors.form?B`<div class="error-text" style="margin-bottom: 16px;">${this._errors.form}</div>`:""}
     `}_renderFooter(){return B`
-      <button slot="footer" class="cancel" @click=${this._handleCancel}>
-        Cancel
-      </button>
-      <button
-        slot="footer"
-        class="primary"
-        @click=${this._handleSave}
-        ?disabled=${this._saving}
-      >
+      <button slot="footer" class="cancel" @click=${this._handleCancel}>Cancel</button>
+      <button slot="footer" class="primary" @click=${this._handleSave} ?disabled=${this._saving}>
         ${this._saving?"Saving...":"Save"}
       </button>
     `}_renderSensorSelection(){const t=this._sensors;if(!t)return B`<div class="loading">Loading sensors...</div>`;const e=Object.keys(t).filter(e=>(t[e]??[]).length>0).sort();return 0===e.length?B`<div class="loading">No sensors available</div>`:B`
@@ -799,11 +789,7 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
           `:""}
 
       <div class="actions-header">
-        <button
-          class="add-button"
-          @click=${this._addAction}
-          aria-label="Add new action"
-        >
+        <button class="add-button" @click=${this._addAction} aria-label="Add new action">
           <ha-icon icon="mdi:plus"></ha-icon>
           Add Action
         </button>
@@ -826,16 +812,12 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
 
       <div class="recent-triggers">
         <h3>Recent Triggers</h3>
-        ${0===t.length?B`<div class="empty-state" style="padding: 24px;">
-              No recent triggers
-            </div>`:B`
+        ${0===t.length?B`<div class="empty-state" style="padding: 24px;">No recent triggers</div>`:B`
               <div class="trigger-list">
                 ${t.map(t=>B`
                     <div class="trigger-item">
                       <span class="trigger-name">${t.name}</span>
-                      <span class="trigger-time"
-                        >${this._formatTime(t.last_triggered)}</span
-                      >
+                      <span class="trigger-time">${this._formatTime(t.last_triggered)}</span>
                     </div>
                   `)}
               </div>
@@ -860,9 +842,7 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
             <div class="modes-list">
               ${t.modes.map(t=>B`<span class="mode-chip">${t}</span>`)}
             </div>
-            ${t.trigger_count>0?B`<span class="trigger-info"
-                  >${t.trigger_count} triggers</span
-                >`:""}
+            ${t.trigger_count>0?B`<span class="trigger-info">${t.trigger_count} triggers</span>`:""}
           </div>
         </div>
         <div class="action-controls">
@@ -908,21 +888,11 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
         variant="alertdialog"
         @dismiss=${()=>this._confirm=null}
       >
-        <p>
-          Delete action "${this._confirm?.action.name}"? This cannot be undone.
-        </p>
-        <button
-          slot="footer"
-          class="dialog-button cancel"
-          @click=${()=>this._confirm=null}
-        >
+        <p>Delete action "${this._confirm?.action.name}"? This cannot be undone.</p>
+        <button slot="footer" class="dialog-button cancel" @click=${()=>this._confirm=null}>
           Cancel
         </button>
-        <button
-          slot="footer"
-          class="dialog-button danger"
-          @click=${this._confirmDelete}
-        >
+        <button slot="footer" class="dialog-button danger" @click=${this._confirmDelete}>
           Delete
         </button>
       </abode-modal>
@@ -936,18 +906,10 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
           This will trigger real alarms. Are you sure you want to test
           "${this._confirm?.action.name}"?
         </p>
-        <button
-          slot="footer"
-          class="dialog-button cancel"
-          @click=${()=>this._confirm=null}
-        >
+        <button slot="footer" class="dialog-button cancel" @click=${()=>this._confirm=null}>
           Cancel
         </button>
-        <button
-          slot="footer"
-          class="dialog-button primary"
-          @click=${this._confirmTest}
-        >
+        <button slot="footer" class="dialog-button primary" @click=${this._confirmTest}>
           Test
         </button>
       </abode-modal>
@@ -1067,7 +1029,9 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
       align-items: center;
       justify-content: center;
       color: var(--secondary-text-color);
-      transition: background 0.2s, color 0.2s;
+      transition:
+        background 0.2s,
+        color 0.2s;
     }
 
     .icon-button:hover {
@@ -1357,7 +1321,9 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
       cursor: pointer;
       border-bottom: 2px solid transparent;
       margin-bottom: -1px;
-      transition: color 0.2s, border-color 0.2s;
+      transition:
+        color 0.2s,
+        border-color 0.2s;
     }
 
     .tab-bar button:hover {
