@@ -9,10 +9,12 @@ from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP_KELVIN,
     ATTR_HS_COLOR,
+    LightEntity,
+)
+from homeassistant.components.light.const import (
     DEFAULT_MAX_KELVIN,
     DEFAULT_MIN_KELVIN,
     ColorMode,
-    LightEntity,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
