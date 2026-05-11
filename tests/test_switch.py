@@ -44,7 +44,6 @@ TEST_MODE_ID = TEST_MODE_ENTITY_ID
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_switch_entity_registry(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],
@@ -92,7 +91,6 @@ async def test_switch_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_switch_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -130,7 +128,6 @@ async def test_switch_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_switch_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -177,7 +174,6 @@ async def test_switch_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_switch_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -224,7 +220,6 @@ async def test_switch_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_automation_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -263,7 +258,6 @@ async def test_automation_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_turn_automation_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -310,7 +304,6 @@ async def test_turn_automation_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_turn_automation_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -357,7 +350,6 @@ async def test_turn_automation_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_trigger_automation(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -404,7 +396,6 @@ async def test_trigger_automation(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_manual_alarm_switch_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -442,7 +433,6 @@ async def test_manual_alarm_switch_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_manual_alarm_switch_turn_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -490,7 +480,6 @@ async def test_manual_alarm_switch_turn_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_test_mode_switch_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -527,7 +516,6 @@ async def test_test_mode_switch_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_test_mode_switch_initial_status_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -569,7 +557,6 @@ async def test_test_mode_switch_initial_status_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_test_mode_switch_initial_status_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -611,7 +598,6 @@ async def test_test_mode_switch_initial_status_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_test_mode_switch_turn_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -658,7 +644,6 @@ async def test_test_mode_switch_turn_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_test_mode_switch_turn_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -705,7 +690,6 @@ async def test_test_mode_switch_turn_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_trigger_alarm_service(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -752,7 +736,6 @@ async def test_trigger_alarm_service(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_acknowledge_alarm_service(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -798,7 +781,6 @@ async def test_acknowledge_alarm_service(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dismiss_alarm_service(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -844,7 +826,6 @@ async def test_dismiss_alarm_service(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_abode_switch_error_handling(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -894,7 +875,6 @@ async def test_abode_switch_error_handling(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_automation_switch_error_handling(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -944,7 +924,6 @@ async def test_automation_switch_error_handling(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_automation_trigger_error_handling(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:

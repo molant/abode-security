@@ -25,7 +25,6 @@ DEVICE_ID = "lock.test_lock"
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_lock_entity_registry(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],
@@ -65,7 +64,6 @@ async def test_lock_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_lock_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -108,7 +106,6 @@ async def test_lock_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_lock_lock(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -152,7 +149,6 @@ async def test_lock_lock(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_lock_unlock(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:

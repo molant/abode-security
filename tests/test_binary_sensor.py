@@ -46,7 +46,6 @@ async def test_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_binary_sensor_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -99,7 +98,6 @@ async def test_binary_sensor_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_binary_sensor_with_mock_server(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],

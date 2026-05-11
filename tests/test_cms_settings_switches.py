@@ -43,7 +43,6 @@ from .test_constants import (
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_monitoring_active_entity_registry(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],
@@ -85,7 +84,6 @@ async def test_monitoring_active_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_monitoring_active_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -126,7 +124,6 @@ async def test_monitoring_active_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_monitoring_active_initial_status_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -167,7 +164,6 @@ async def test_monitoring_active_initial_status_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_monitoring_active_initial_status_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -213,7 +209,6 @@ async def test_monitoring_active_initial_status_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_monitoring_active_turn_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -264,7 +259,6 @@ async def test_monitoring_active_turn_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_monitoring_active_turn_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -315,7 +309,6 @@ async def test_monitoring_active_turn_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_monitoring_active_error_handling(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -374,7 +367,6 @@ async def test_monitoring_active_error_handling(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_send_media_entity_registry(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],
@@ -416,7 +408,6 @@ async def test_send_media_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_send_media_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -457,7 +448,6 @@ async def test_send_media_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_send_media_initial_status_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -498,7 +488,6 @@ async def test_send_media_initial_status_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_send_media_initial_status_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -544,7 +533,6 @@ async def test_send_media_initial_status_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_send_media_turn_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -595,7 +583,6 @@ async def test_send_media_turn_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_send_media_turn_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -646,7 +633,6 @@ async def test_send_media_turn_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_send_media_error_handling(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -706,7 +692,6 @@ async def test_send_media_error_handling(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_without_verification_entity_registry(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],
@@ -748,7 +733,6 @@ async def test_dispatch_without_verification_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_without_verification_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -789,7 +773,6 @@ async def test_dispatch_without_verification_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_without_verification_initial_status_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -835,7 +818,6 @@ async def test_dispatch_without_verification_initial_status_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_without_verification_initial_status_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -881,7 +863,6 @@ async def test_dispatch_without_verification_initial_status_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_without_verification_turn_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -932,7 +913,6 @@ async def test_dispatch_without_verification_turn_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_without_verification_turn_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -983,7 +963,6 @@ async def test_dispatch_without_verification_turn_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_without_verification_error_handling(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1043,7 +1022,6 @@ async def test_dispatch_without_verification_error_handling(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_police_entity_registry(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],
@@ -1085,7 +1063,6 @@ async def test_dispatch_police_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_police_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1126,7 +1103,6 @@ async def test_dispatch_police_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_police_initial_status_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1167,7 +1143,6 @@ async def test_dispatch_police_initial_status_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_police_initial_status_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1213,7 +1188,6 @@ async def test_dispatch_police_initial_status_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_police_turn_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1264,7 +1238,6 @@ async def test_dispatch_police_turn_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_police_turn_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1315,7 +1288,6 @@ async def test_dispatch_police_turn_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_police_error_handling(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1375,7 +1347,6 @@ async def test_dispatch_police_error_handling(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_fire_entity_registry(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],
@@ -1417,7 +1388,6 @@ async def test_dispatch_fire_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_fire_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1458,7 +1428,6 @@ async def test_dispatch_fire_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_fire_initial_status_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1499,7 +1468,6 @@ async def test_dispatch_fire_initial_status_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_fire_initial_status_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1545,7 +1513,6 @@ async def test_dispatch_fire_initial_status_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_fire_turn_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1596,7 +1563,6 @@ async def test_dispatch_fire_turn_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_fire_turn_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1647,7 +1613,6 @@ async def test_dispatch_fire_turn_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_fire_error_handling(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1707,7 +1672,6 @@ async def test_dispatch_fire_error_handling(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_medical_entity_registry(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],
@@ -1749,7 +1713,6 @@ async def test_dispatch_medical_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_medical_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1790,7 +1753,6 @@ async def test_dispatch_medical_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_medical_initial_status_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1831,7 +1793,6 @@ async def test_dispatch_medical_initial_status_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_medical_initial_status_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1877,7 +1838,6 @@ async def test_dispatch_medical_initial_status_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_medical_turn_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1928,7 +1888,6 @@ async def test_dispatch_medical_turn_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_medical_turn_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -1979,7 +1938,6 @@ async def test_dispatch_medical_turn_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_dispatch_medical_error_handling(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:

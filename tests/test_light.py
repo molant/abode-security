@@ -36,7 +36,6 @@ DEVICE_ID = "light.living_room_lamp"
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_light_entity_registry(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],
@@ -76,7 +75,6 @@ async def test_light_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_light_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -128,7 +126,6 @@ async def test_light_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_light_switch_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -175,7 +172,6 @@ async def test_light_switch_off(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_light_switch_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -222,7 +218,6 @@ async def test_light_switch_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_light_set_brightness(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -270,7 +265,6 @@ async def test_light_set_brightness(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_light_set_color(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -317,7 +311,6 @@ async def test_light_set_color(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_light_set_color_temp(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -350,11 +343,13 @@ async def test_light_set_color_temp(
             await hass.services.async_call(
                 LIGHT_DOMAIN,
                 SERVICE_TURN_ON,
-                {ATTR_ENTITY_ID: DEVICE_ID, "color_temp": 309},
+                {ATTR_ENTITY_ID: DEVICE_ID, "color_temp_kelvin": 3236},
                 blocking=True,
             )
             await hass.async_block_till_done()
-            # Color temp is converted in abode.light.AbodeLight.turn_on
+            # HA renamed `color_temp` (mireds) -> `color_temp_kelvin` in the
+            # light.turn_on service schema; the underlying Abode set_color_temp
+            # still takes kelvin.
             mock_set_color_temp.assert_called_once_with(3236)
 
     finally:

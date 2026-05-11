@@ -25,7 +25,6 @@ DEVICE_ID = "cover.garage_door"
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_cover_entity_registry(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],
@@ -65,7 +64,6 @@ async def test_cover_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_cover_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -108,7 +106,6 @@ async def test_cover_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_cover_open(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -154,7 +151,6 @@ async def test_cover_open(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_cover_close(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:

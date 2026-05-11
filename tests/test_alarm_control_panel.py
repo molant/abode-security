@@ -32,7 +32,6 @@ DEVICE_ID = ALARM_ENTITY_ID
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_alarm_entity_registry(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],
@@ -75,7 +74,6 @@ async def test_alarm_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_alarm_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -120,7 +118,6 @@ async def test_alarm_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_alarm_arm_away(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -174,7 +171,6 @@ async def test_alarm_arm_away(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_alarm_arm_home(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -228,7 +224,6 @@ async def test_alarm_arm_home(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_alarm_disarm(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
