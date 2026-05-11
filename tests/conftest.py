@@ -20,357 +20,6 @@ URL = url
 pytest_plugins = "pytest_homeassistant_custom_component"
 
 
-def pytest_collection_modifyitems(config, items):
-    """Skip tests that aren't ready yet."""
-    del config  # Unused parameter required by pytest hook
-    skip_marker = pytest.mark.skip(
-        reason="Test infrastructure complete but test needs updates - see phase-4-5.md"
-    )
-    # Tests enabled for Phase 4.5.1-4.5.2: Config flow + init tests
-    enabled_tests = {
-        # Config flow tests (Phase 4.5.1)
-        "test_one_config_allowed",
-        "test_user_flow",
-        "test_step_mfa",
-        "test_step_reauth",
-        "test_step_reauth_username_change_aborts",
-        "test_step_reauth_preserves_polling",
-        "test_user_flow_cleanup_on_success",
-        "test_user_flow_cleanup_on_login_failure",
-        "test_step_mfa_cleanup",
-        # Init tests (Phase 4.5.2)
-        "test_change_settings",
-        "test_add_unique_id",
-        "test_unload_entry",
-        "test_invalid_credentials",
-        "test_raise_config_entry_not_ready_when_offline",
-        # Platform tests with mock server (Phase 4.5.3)
-        # Binary sensor (2/2)
-        "test_binary_sensor_with_mock_server",
-        "test_binary_sensor_attributes",
-        # Cover (4/4)
-        "test_cover_entity_registry",
-        "test_cover_attributes",
-        "test_cover_open",
-        "test_cover_close",
-        # Lock (4/4)
-        "test_lock_entity_registry",
-        "test_lock_attributes",
-        "test_lock_lock",
-        "test_lock_unlock",
-        # Sensor (2/2)
-        "test_sensor_entity_registry",
-        "test_sensor_attributes",
-        # Light (7/7)
-        "test_light_entity_registry",
-        "test_light_attributes",
-        "test_light_switch_off",
-        "test_light_switch_on",
-        "test_light_set_brightness",
-        "test_light_set_color",
-        "test_light_set_color_temp",
-        # Alarm control panel (5/6) - Phase 4.5.3
-        # Note: test_alarm_state_unknown removed - edge case difficult to test in integration context
-        "test_alarm_entity_registry",
-        "test_alarm_attributes",
-        "test_alarm_arm_away",
-        "test_alarm_arm_home",
-        "test_alarm_disarm",
-        # Camera (5/5) - Phase 4.5.3
-        "test_camera_entity_registry",
-        "test_camera_attributes",
-        "test_camera_capture_image",
-        "test_camera_on",
-        "test_camera_off",
-        # Switch (21/21) - Phase 4.5.3
-        "test_switch_entity_registry",
-        "test_switch_attributes",
-        "test_switch_on",
-        "test_switch_off",
-        "test_automation_attributes",
-        "test_turn_automation_off",
-        "test_turn_automation_on",
-        "test_trigger_automation",
-        "test_manual_alarm_switch_attributes",
-        "test_manual_alarm_switch_turn_on",
-        "test_test_mode_switch_attributes",
-        "test_test_mode_switch_initial_status_on",
-        "test_test_mode_switch_initial_status_off",
-        "test_test_mode_switch_turn_on",
-        "test_test_mode_switch_turn_off",
-        "test_trigger_alarm_service",
-        # Services null-safety regression tests (issue #70)
-        "test_trigger_alarm_no_alarm_device_logs_and_returns",
-        "test_trigger_alarm_with_alarm_device_calls_through",
-        # Switch platform null-safety regression tests (issue #70)
-        "test_setup_entry_skips_alarm_attached_when_no_alarm",
-        "test_setup_entry_adds_alarm_attached_when_alarm_present",
-        # Alarm control panel null-safety regression tests (issue #70)
-        "test_setup_entry_skips_panel_when_no_alarm",
-        "test_setup_entry_adds_panel_when_alarm_present",
-        "test_acknowledge_alarm_service",
-        "test_dismiss_alarm_service",
-        "test_abode_switch_error_handling",
-        "test_automation_switch_error_handling",
-        "test_automation_trigger_error_handling",
-        # CMS Settings Switches (42/42) - Phase 4.5.3
-        # Monitoring Active (7)
-        "test_monitoring_active_entity_registry",
-        "test_monitoring_active_attributes",
-        "test_monitoring_active_initial_status_on",
-        "test_monitoring_active_initial_status_off",
-        "test_monitoring_active_turn_on",
-        "test_monitoring_active_turn_off",
-        "test_monitoring_active_error_handling",
-        # Send Media (7)
-        "test_send_media_entity_registry",
-        "test_send_media_attributes",
-        "test_send_media_initial_status_on",
-        "test_send_media_initial_status_off",
-        "test_send_media_turn_on",
-        "test_send_media_turn_off",
-        "test_send_media_error_handling",
-        # Dispatch Without Verification (7)
-        "test_dispatch_without_verification_entity_registry",
-        "test_dispatch_without_verification_attributes",
-        "test_dispatch_without_verification_initial_status_on",
-        "test_dispatch_without_verification_initial_status_off",
-        "test_dispatch_without_verification_turn_on",
-        "test_dispatch_without_verification_turn_off",
-        "test_dispatch_without_verification_error_handling",
-        # Dispatch Police (7)
-        "test_dispatch_police_entity_registry",
-        "test_dispatch_police_attributes",
-        "test_dispatch_police_initial_status_on",
-        "test_dispatch_police_initial_status_off",
-        "test_dispatch_police_turn_on",
-        "test_dispatch_police_turn_off",
-        "test_dispatch_police_error_handling",
-        # Dispatch Fire (7)
-        "test_dispatch_fire_entity_registry",
-        "test_dispatch_fire_attributes",
-        "test_dispatch_fire_initial_status_on",
-        "test_dispatch_fire_initial_status_off",
-        "test_dispatch_fire_turn_on",
-        "test_dispatch_fire_turn_off",
-        "test_dispatch_fire_error_handling",
-        # Dispatch Medical (7)
-        "test_dispatch_medical_entity_registry",
-        "test_dispatch_medical_attributes",
-        "test_dispatch_medical_initial_status_on",
-        "test_dispatch_medical_initial_status_off",
-        "test_dispatch_medical_turn_on",
-        "test_dispatch_medical_turn_off",
-        "test_dispatch_medical_error_handling",
-        # Action Manager tests (Phase 1 - Dashboard Configuration)
-        "test_action_creation_defaults",
-        "test_action_creation_all_fields",
-        "test_action_to_dict",
-        "test_action_to_dict_with_datetime",
-        "test_action_from_dict",
-        "test_action_from_dict_with_datetime_string",
-        "test_action_round_trip",
-        # ActionStore tests (Phase 1 - Dashboard Configuration)
-        "test_store_init",
-        "test_store_add_and_get",
-        "test_store_persistence",
-        "test_store_remove",
-        "test_store_remove_not_found",
-        "test_store_get_all",
-        # ActionManager tests - Sub-Phase A (Phase 2 - Dashboard Configuration)
-        "test_manager_create_valid",
-        "test_manager_create_empty_name",
-        "test_manager_create_whitespace_name",
-        "test_manager_create_name_too_long",
-        "test_manager_create_empty_modes",
-        "test_manager_create_invalid_mode",
-        "test_manager_create_empty_sensors",
-        "test_manager_create_empty_alarms",
-        "test_manager_create_invalid_delay",
-        "test_manager_create_negative_delay",
-        "test_manager_create_missing_entity_warning",
-        "test_manager_get",
-        "test_manager_get_not_found",
-        "test_manager_get_all",
-        "test_manager_update",
-        "test_manager_update_partial",
-        "test_manager_update_not_found",
-        "test_manager_update_validation_error",
-        "test_manager_delete",
-        "test_manager_delete_not_found",
-        # ActionManager tests - Sub-Phase B (Phase 2 - Dashboard Configuration)
-        "test_manager_get_by_mode",
-        "test_manager_get_by_mode_excludes_disabled",
-        "test_manager_get_enabled",
-        "test_manager_toggle",
-        "test_manager_toggle_not_found",
-        "test_manager_record_trigger",
-        "test_manager_record_trigger_increments",
-        "test_manager_record_trigger_not_found",
-        # WebSocket API tests - Sub-Phase A (Phase 3 - Dashboard Configuration)
-        "test_ws_actions_list_empty",
-        "test_ws_actions_list_with_data",
-        "test_ws_actions_get",
-        "test_ws_actions_get_not_found",
-        "test_ws_actions_create",
-        "test_ws_actions_create_with_delay",
-        "test_ws_actions_create_validation_error",
-        "test_ws_actions_create_invalid_mode_schema",
-        "test_ws_actions_create_name_too_long",
-        "test_ws_actions_create_too_many_modes",
-        "test_ws_actions_create_too_many_sensors",
-        "test_ws_actions_create_too_many_alarms",
-        "test_ws_actions_create_rejects_bool_delay",
-        "test_ws_actions_update",
-        "test_ws_actions_update_not_found",
-        "test_ws_actions_update_validation_error",
-        "test_ws_actions_update_name_too_long",
-        "test_ws_actions_delete",
-        "test_ws_actions_delete_not_found",
-        "test_ws_actions_toggle",
-        "test_ws_actions_toggle_not_found",
-        "test_ws_actions_test",
-        "test_ws_actions_test_not_found",
-        "test_ws_actions_test_multiple_alarms",
-        "test_ws_actions_list_no_admin_required",
-        "test_ws_actions_get_no_admin_required",
-        "test_ws_actions_list_not_ready",
-        # WebSocket API tests - Sub-Phase B (Phase 3 - Dashboard Configuration)
-        "test_ws_modes_list",
-        "test_ws_modes_list_with_active_mode",
-        "test_ws_modes_list_disarmed",
-        "test_ws_modes_list_with_action_count",
-        "test_ws_modes_list_has_metadata",
-        "test_ws_modes_set_home",
-        "test_ws_modes_set_away",
-        "test_ws_modes_set_standby",
-        "test_ws_modes_set_invalid_mode",
-        "test_ws_modes_set_no_panel",
-        "test_ws_modes_set_finds_renamed_entity_via_registry",
-        "test_ws_modes_list_finds_renamed_entity_via_registry",
-        "test_ws_entities_sensors_empty",
-        "test_ws_entities_sensors_grouped_by_device_class",
-        "test_ws_entities_sensors_includes_state",
-        "test_ws_entities_sensors_no_device_class",
-        "test_ws_entities_alarms_empty",
-        "test_ws_entities_alarms_filters_abode_alarms",
-        "test_ws_entities_alarms_includes_type",
-        # WebSocket API tests - Sub-Phase C (Phase 3 - Dashboard Configuration)
-        "test_ws_config_get",
-        "test_ws_config_set",
-        "test_ws_config_set_min_value",
-        "test_ws_config_set_max_value",
-        "test_ws_config_set_below_min",
-        "test_ws_config_set_above_max",
-        "test_ws_config_set_no_fields",
-        "test_ws_config_persistence",
-        "test_ws_config_get_not_ready",
-        "test_ws_config_set_not_ready",
-        # ActionTriggerCoordinator tests (Phase 4 - Dashboard Configuration)
-        # Sub-Phase A: Coordinator Core
-        "test_coordinator_init",
-        "test_coordinator_start_stop",
-        "test_coordinator_get_mode_standby",
-        "test_coordinator_get_mode_home",
-        "test_coordinator_get_mode_away",
-        "test_coordinator_get_mode_no_panel",
-        # Sub-Phase B: State Change Handling
-        "test_coordinator_ignores_non_binary_sensor",
-        "test_coordinator_ignores_off_state",
-        "test_coordinator_matches_sensor_and_mode",
-        "test_coordinator_no_match_wrong_mode",
-        "test_coordinator_no_match_wrong_sensor",
-        "test_coordinator_debounce",
-        # Sub-Phase C: Action Execution
-        "test_coordinator_triggers_alarm_service",
-        "test_coordinator_fires_event",
-        "test_coordinator_multiple_actions",
-        "test_coordinator_disabled_action_not_triggered",
-        "test_coordinator_delayed_action",
-        "test_coordinator_delayed_action_cancelled_on_delete",
-        "test_coordinator_delayed_action_cancelled_on_disable",
-        "test_coordinator_multi_alarm_continues_on_failure",
-        "test_coordinator_cancel_pending_for_action",
-        # State-transition regressions
-        "test_unavailable_to_on_does_not_trigger",
-        "test_unknown_to_on_does_not_trigger",
-        "test_refire_during_pending_delay_fires_once",
-        "test_delayed_action_skipped_when_mode_changes_during_delay",
-        # SocketIO reconnect (issue #2)
-        "test_fires_after_threshold_connect_failures",
-        "test_does_not_fire_below_threshold",
-        "test_resets_after_successful_connect_then_refires",
-        "test_websocket_connected_resets_counter",
-        "test_cookie_cleared_before_subsequent_iterations",
-        "test_seeds_only_on_first_started",
-        "test_persistent_disconnect_handler_updates_client_status",
-        "test_connection_recovered_handler_updates_client_status",
-        # Client session recreation (issue #3)
-        "test_recreate_waits_for_in_flight_request",
-        "test_two_concurrent_recreates_run_one_login_at_a_time",
-        "test_failure_counter_reset_after_recreate",
-        "test_hung_request_finally_skipped_after_generation_bump",
-        # Client cleanup drain (issue #14)
-        "test_cleanup_waits_for_in_flight_request",
-        "test_cleanup_drain_timeout_forces_close",
-        "test_send_request_after_cleanup_raises",
-        "test_cleanup_called_twice_closes_session_only_once",
-        "test_cleanup_waits_for_concurrent_recreate",
-        "test_parked_request_raises_when_cleanup_wakes_it",
-        "test_recreate_after_cleanup_does_not_allocate_session",
-        "test_second_cleanup_does_not_return_until_first_finishes",
-        "test_cleanup_logs_and_swallows_aiohttp_close_error",
-        # Test fixture hygiene — TCPConnector stub (issue #15)
-        "test_recreate_session_does_not_construct_real_connector",
-        # Switch unique_id regression guards (issue #7)
-        "test_test_mode_switch_unique_id_preserved",
-        "test_monitoring_active_switch_unique_id_preserved",
-        "test_send_media_switch_unique_id_preserved",
-        "test_dispatch_without_verification_switch_unique_id_preserved",
-        "test_dispatch_police_switch_unique_id_preserved",
-        "test_dispatch_fire_switch_unique_id_preserved",
-        "test_dispatch_medical_switch_unique_id_preserved",
-        "test_test_mode_switch_name_and_icon",
-        "test_test_mode_switch_uses_test_mode_supported_flag",
-        "test_cms_setting_base_default_support_flag",
-        "test_cms_switches_table_covers_all_legacy_entities",
-        # Alarm-attached entity base (issue #8)
-        "test_alarm_attached_device_info_consistent_manual_alarm",
-        "test_alarm_attached_device_info_consistent_cms",
-        "test_alarm_attached_device_info_consistent_test_mode",
-        # Debug-log redaction (issue #49)
-        "test_login_response_redacts_token_and_user_pii",
-        "test_oauth_nested_dict_is_redacted",
-        "test_redact_is_case_insensitive",
-        "test_redact_walks_lists",
-        "test_redact_passes_through_primitives",
-        "test_redact_does_not_mutate_input",
-        "test_redact_text_handles_json_payload",
-        "test_redact_text_returns_summary_for_non_json",
-        "test_login_debug_log_redacts_token",
-        # Diagnostics PII redaction (issue #50)
-        "test_unique_id_is_redacted",
-        "test_email_does_not_appear_anywhere_in_payload",
-        # ActionStore load resilience (issue #54)
-        "test_load_skips_record_missing_required_key",
-        "test_load_skips_record_with_wrong_type",
-        "test_load_empty_file_no_regression",
-        "test_load_non_dict_root",
-        "test_load_non_dict_actions",
-        "test_load_duplicate_ids",
-        "test_load_clears_repair_issue_on_clean_reload",
-        "test_load_invalid_delay_seconds",
-        "test_load_invalid_mode_value",
-        "test_load_invalid_last_triggered",
-        "test_load_last_triggered_wrong_type",
-        "test_load_missing_optional_keys_uses_defaults",
-    }
-    # Skip tests with hass fixture except enabled tests
-    for item in items:
-        if "hass" in item.fixturenames and item.name not in enabled_tests:
-            item.add_marker(skip_marker)
-
-
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations):
     """Enable custom integrations for all tests."""
@@ -391,7 +40,33 @@ def mock_setup_entry() -> Generator[AsyncMock]:
 def mock_abode() -> Generator[Mock]:
     """Provide a mock Abode client."""
     mock_client = Mock()
-    mock_client.get_alarm = AsyncMock(return_value=Mock())
+    # The alarm Mock needs concrete (JSON-serializable) values for every
+    # attribute touched during entity setup, otherwise the entity_registry's
+    # serialization step fails on Mock objects (TypeError "Type is not JSON
+    # serializable: Mock") and tears down the entire test.
+    # - `id`/`name`/`type` flow into `device_info` and the device-slug part of
+    #   `entity_id` (tests in test_entity_lifecycle.py expect `test_alarm_*`).
+    # - `uuid` is `_attr_unique_id` for AbodeDevice.
+    # - `battery`/`battery_low`/`is_cellular`/`is_standby`/`is_away`/`is_home`/
+    #   `no_response` are accessed by `_sync_attrs` on AbodeAlarm/AbodeDevice.
+    mock_alarm = Mock()
+    mock_alarm.id = "test_alarm_id"
+    mock_alarm.uuid = "test_alarm_uuid"
+    mock_alarm.name = "Test Alarm"
+    mock_alarm.type = "alarm"
+    mock_alarm.battery = "ok"
+    mock_alarm.battery_low = False
+    mock_alarm.is_cellular = False
+    mock_alarm.is_standby = True
+    mock_alarm.is_away = False
+    mock_alarm.is_home = False
+    mock_alarm.no_response = False
+    mock_alarm.trigger_manual_alarm = AsyncMock(return_value=None)
+    mock_alarm.set_standby = AsyncMock(return_value=None)
+    mock_alarm.set_home = AsyncMock(return_value=None)
+    mock_alarm.set_away = AsyncMock(return_value=None)
+    # `get_alarm` is sync in production (client.py:758) — use Mock, not AsyncMock.
+    mock_client.get_alarm = Mock(return_value=mock_alarm)
     mock_client.get_devices = AsyncMock(return_value=[])
     mock_client.get_automations = AsyncMock(return_value=[])
     mock_client.get_test_mode = AsyncMock(return_value=False)

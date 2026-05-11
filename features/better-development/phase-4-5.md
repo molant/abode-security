@@ -1,20 +1,27 @@
 # Phase 4.5: Continue Test Enablement
 
-**Status**: ✅ Complete (2025-01-16)
+**Status**: ✅ Complete — silent-skip tail fully cleared (2026-05-11, issue #74)
 **Prerequisite**: Phase 4 (Infrastructure Complete)
 
 ## Overview
 
-Phase 4 successfully completed the test infrastructure. This document outlines the work to enable the skipped tests.
+Phase 4 successfully completed the test infrastructure. Phase 4.5 progressively
+enabled the skipped tests; issue #74 finished the job by removing the
+`enabled_tests` allowlist + `pytest_collection_modifyitems` skip hook from
+`tests/conftest.py` entirely.
 
-## Final State (2025-01-16)
+## Final State (2026-05-11)
 
 - ✅ **Infrastructure**: Complete and proven working
-- ✅ **Tests enabled**: 101 passing (9 unit + 92 integration)
-- ⏳ **Tests remaining**: 125 skipped (require HA environment or mock server)
+- ✅ **Tests enabled**: 321 passing in the default `uv run pytest` run
+  (unit + integration); 0 tests skipped with the historical "Test
+  infrastructure complete but test needs updates" reason
 - ✅ **Phase 4.5.1**: Complete (config flow exception handling)
 - ✅ **Phase 4.5.2**: Complete (init exception handling)
 - ✅ **Phase 4.5.3**: Complete (platform tests with mock server)
+- ✅ **Phase 4.5 final cleanup (#74)**: removed allowlist; fixed stale
+  fixtures and assertions; the remaining mock-server-only tests are now
+  gated by `@pytest.mark.integration` instead of the name-based filter
 
 ## Challenges Identified
 

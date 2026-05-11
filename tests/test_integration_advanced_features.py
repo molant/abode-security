@@ -42,14 +42,16 @@ class TestSmartPollingIntegration:
                 "username": "user@email.com",
                 "password": "password",
                 CONF_POLLING: False,
-                CONF_POLLING_INTERVAL: POLLING_PRESETS["balanced"]["interval"],
+                CONF_POLLING_INTERVAL: POLLING_PRESETS["balanced"][
+                    CONF_POLLING_INTERVAL
+                ],
             },
         )
         mock_entry.add_to_hass(hass)
 
         with (
             patch("custom_components.abode_security.PLATFORMS", [ALARM_DOMAIN]),
-            patch("abode.event_controller.sio"),
+            patch("custom_components.abode_security.abode.event_controller.sio"),
         ):
             assert await async_setup_component(hass, DOMAIN, {})
         await hass.async_block_till_done()
@@ -67,10 +69,10 @@ class TestSmartPollingIntegration:
 
         # Get the AbodeSystem instance
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        abode_system: AbodeSystem = hass.data[DOMAIN][entry.entry_id]["system"]
-
-        # Verify smart polling was initialized
+        abode_system: AbodeSystem = entry.runtime_data
+        # Verify smart polling and event filter were initialized
         assert abode_system.smart_polling is not None
+        assert abode_system.event_filter is not None
 
         # Record an update
         abode_system.smart_polling.record_update(duration=0.5)
@@ -93,7 +95,9 @@ class TestSmartPollingIntegration:
         await setup_platform(hass, ALARM_DOMAIN)
 
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        abode_system: AbodeSystem = hass.data[DOMAIN][entry.entry_id]["system"]
+        abode_system: AbodeSystem = entry.runtime_data
+        assert abode_system.smart_polling is not None
+        assert abode_system.event_filter is not None
 
         initial_interval = abode_system.smart_polling.get_optimal_interval()
 
@@ -115,7 +119,9 @@ class TestSmartPollingIntegration:
         await setup_platform(hass, ALARM_DOMAIN)
 
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        abode_system: AbodeSystem = hass.data[DOMAIN][entry.entry_id]["system"]
+        abode_system: AbodeSystem = entry.runtime_data
+        assert abode_system.smart_polling is not None
+        assert abode_system.event_filter is not None
 
         # Record good performance (fast updates, no errors)
         for _ in range(10):
@@ -149,42 +155,54 @@ class TestEventFilteringIntegration:
 
         with (
             patch("custom_components.abode_security.PLATFORMS", [ALARM_DOMAIN]),
-            patch("abode.event_controller.sio"),
+            patch("custom_components.abode_security.abode.event_controller.sio"),
         ):
             assert await async_setup_component(hass, DOMAIN, {})
         await hass.async_block_till_done()
 
         assert mock_entry.state is ConfigEntryState.LOADED
 
-    async def test_event_filter_allows_all_by_default(
+    async def test_event_filter_allows_known_event_types_by_default(
         self,
         hass: HomeAssistant,
         mock_abode,  # noqa: ARG002
     ) -> None:
-        """Test that event filter allows all events by default."""
+        """Test that event filter allows known event types by default.
+
+        With no explicit `CONF_EVENT_FILTER` configured, the filter falls
+        back to the full `EVENT_TYPES` list — every known event passes,
+        unknown ones are filtered out.
+        """
         await setup_platform(hass, ALARM_DOMAIN)
 
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        abode_system: AbodeSystem = hass.data[DOMAIN][entry.entry_id]["system"]
+        abode_system: AbodeSystem = entry.runtime_data
+        assert abode_system.smart_polling is not None
+        assert abode_system.event_filter is not None
 
-        # With empty filter (default), all events should be allowed
         assert abode_system.event_filter.should_process("device_update")
         assert abode_system.event_filter.should_process("alarm_state_change")
-        assert abode_system.event_filter.should_process("unknown_event")
+        # Unknown event types are filtered out — the "default" is "known types",
+        # not "everything".
+        assert not abode_system.event_filter.should_process("unknown_event")
 
     async def test_event_filter_filters_specified_events(
         self,
         hass: HomeAssistant,
         mock_abode,  # noqa: ARG002
     ) -> None:
-        """Test that event filter filters specified events."""
+        """Test that an explicit filter narrows accepted events."""
         await setup_platform(hass, ALARM_DOMAIN)
 
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        abode_system: AbodeSystem = hass.data[DOMAIN][entry.entry_id]["system"]
+        abode_system: AbodeSystem = entry.runtime_data
+        assert abode_system.smart_polling is not None
+        assert abode_system.event_filter is not None
 
-        # Configure the filter to only accept specific events
-        abode_system.event_filter.set_filter(["device_update"])
+        # Reach in and narrow the active filter list to a single event type.
+        # EventFilter has no public setter — this matches the production code
+        # path in `__init__` where the config flow passes the list directly.
+        abode_system.event_filter.filter_types = ["device_update"]
 
         assert abode_system.event_filter.should_process("device_update")
         assert not abode_system.event_filter.should_process("alarm_state_change")
@@ -198,17 +216,20 @@ class TestEventFilteringIntegration:
         await setup_platform(hass, ALARM_DOMAIN)
 
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        abode_system: AbodeSystem = hass.data[DOMAIN][entry.entry_id]["system"]
+        abode_system: AbodeSystem = entry.runtime_data
+        assert abode_system.smart_polling is not None
+        assert abode_system.event_filter is not None
 
-        abode_system.event_filter.set_filter(["device_update"])
+        abode_system.event_filter.filter_types = ["device_update"]
 
         # Process some events
         abode_system.event_filter.should_process("device_update")
         abode_system.event_filter.should_process("alarm_state_change")
 
         stats = abode_system.event_filter.get_stats()
-        assert stats["total_checks"] == 2
-        assert stats["filtered_count"] == 1
+        assert stats["total"] == 2
+        assert stats["filtered"] == 1
+        assert stats["allowed"] == 1
 
 
 class TestBatchOperationsIntegration:
@@ -315,7 +336,7 @@ class TestOptionsFlowIntegration:
 
         with (
             patch("custom_components.abode_security.PLATFORMS", [ALARM_DOMAIN]),
-            patch("abode.event_controller.sio"),
+            patch("custom_components.abode_security.abode.event_controller.sio"),
         ):
             assert await async_setup_component(hass, DOMAIN, {})
         await hass.async_block_till_done()
@@ -350,7 +371,7 @@ class TestOptionsFlowIntegration:
 
         with (
             patch("custom_components.abode_security.PLATFORMS", [ALARM_DOMAIN]),
-            patch("abode.event_controller.sio"),
+            patch("custom_components.abode_security.abode.event_controller.sio"),
         ):
             assert await async_setup_component(hass, DOMAIN, {})
         await hass.async_block_till_done()
@@ -384,7 +405,7 @@ class TestOptionsFlowIntegration:
 
         with (
             patch("custom_components.abode_security.PLATFORMS", [ALARM_DOMAIN]),
-            patch("abode.event_controller.sio"),
+            patch("custom_components.abode_security.abode.event_controller.sio"),
         ):
             assert await async_setup_component(hass, DOMAIN, {})
         await hass.async_block_till_done()
@@ -408,7 +429,7 @@ class TestEndToEndScenarios:
         mock_abode,  # noqa: ARG002
     ) -> None:
         """Test complete setup with all advanced features enabled."""
-        from custom_components.abode_security.const import CONF_USERNAME
+        from homeassistant.const import CONF_USERNAME
 
         mock_entry = MockConfigEntry(
             domain=DOMAIN,
@@ -426,7 +447,7 @@ class TestEndToEndScenarios:
 
         with (
             patch("custom_components.abode_security.PLATFORMS", [ALARM_DOMAIN]),
-            patch("abode.event_controller.sio"),
+            patch("custom_components.abode_security.abode.event_controller.sio"),
         ):
             assert await async_setup_component(hass, DOMAIN, {})
         await hass.async_block_till_done()
@@ -435,7 +456,7 @@ class TestEndToEndScenarios:
 
         # Verify all systems are initialized
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        abode_system: AbodeSystem = hass.data[DOMAIN][entry.entry_id]["system"]
+        abode_system: AbodeSystem = entry.runtime_data
 
         assert abode_system.smart_polling is not None
         assert abode_system.event_filter is not None
@@ -449,7 +470,9 @@ class TestEndToEndScenarios:
         await setup_platform(hass, ALARM_DOMAIN)
 
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        abode_system: AbodeSystem = hass.data[DOMAIN][entry.entry_id]["system"]
+        abode_system: AbodeSystem = entry.runtime_data
+        assert abode_system.smart_polling is not None
+        assert abode_system.event_filter is not None
 
         # Simulate a series of updates with increasing errors
         for i in range(20):
@@ -479,11 +502,14 @@ class TestEndToEndScenarios:
         await setup_platform(hass, ALARM_DOMAIN)
 
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        abode_system: AbodeSystem = hass.data[DOMAIN][entry.entry_id]["system"]
+        abode_system: AbodeSystem = entry.runtime_data
+        assert abode_system.smart_polling is not None
+        assert abode_system.event_filter is not None
 
-        # Set filter to allow only specific events
+        # Narrow the active filter list (see notes above the equivalent
+        # change in test_event_filter_filters_specified_events).
         allowed_events = ["device_update", "alarm_state_change"]
-        abode_system.event_filter.set_filter(allowed_events)
+        abode_system.event_filter.filter_types = allowed_events
 
         # Test filtering
         test_events = [

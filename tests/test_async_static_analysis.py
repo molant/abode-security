@@ -43,6 +43,14 @@ class AsyncAwaitStaticAnalyzer:
                             return True
         return False
 
+    def function_has_docstring(self, func_name: str) -> bool:
+        """Check if a function has a docstring."""
+        for node in ast.walk(self.tree):
+            if isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef):  # noqa: SIM102
+                if node.name == func_name and ast.get_docstring(node) is not None:
+                    return True
+        return False
+
     def count_await_statements(self) -> int:
         """Count total await statements in the code."""
         count = 0
@@ -163,47 +171,38 @@ class TestAsyncAwaitStaticPatterns:
         return path.read_text()
 
     def test_service_handler_signatures(self, services_file: str) -> None:
-        """Verify service handler function signatures are correct."""
+        """Verify every service handler is declared `async def`.
+
+        Convention: all handlers are async so they can await Abode client
+        methods uniformly. Regression guard against accidental sync drift.
+        """
         analyzer = AsyncAwaitStaticAnalyzer(services_file, "services.py")
         async_funcs = analyzer.find_async_functions()
 
-        # These should be async
-        assert async_funcs.get("_change_setting") is True, (
-            "_change_setting should be async def"
-        )
-        assert async_funcs.get("_trigger_alarm_handler") is True, (
-            "_trigger_alarm_handler should be async def"
-        )
-
-        # These should be sync
-        assert async_funcs.get("_capture_image") is False, (
-            "_capture_image should be sync def"
-        )
-        assert async_funcs.get("_trigger_automation") is False, (
-            "_trigger_automation should be sync def"
-        )
+        for name in (
+            "_change_setting",
+            "_trigger_alarm_handler",
+            "_capture_image",
+            "_trigger_automation",
+        ):
+            assert async_funcs.get(name) is True, f"{name} should be async def"
 
     def test_service_handlers_have_correct_await_usage(
         self, services_file: str
     ) -> None:
-        """Verify service handlers use await correctly."""
+        """Verify handlers that touch the Abode client actually `await` it.
+
+        `_capture_image` and `_trigger_automation` are async by convention
+        (handlers are uniformly async, see `test_service_handler_signatures`)
+        but dispatch via the sync `async_dispatcher_send` rather than awaiting
+        the client, so they aren't checked here.
+        """
         analyzer = AsyncAwaitStaticAnalyzer(services_file, "services.py")
 
-        # Async handlers should have await
-        assert analyzer.function_contains_await("_change_setting"), (
-            "_change_setting should contain await"
-        )
-        assert analyzer.function_contains_await("_trigger_alarm_handler"), (
-            "_trigger_alarm_handler should contain await"
-        )
-
-        # Sync handlers should not have await
-        assert not analyzer.function_contains_await("_capture_image"), (
-            "_capture_image should not contain await"
-        )
-        assert not analyzer.function_contains_await("_trigger_automation"), (
-            "_trigger_automation should not contain await"
-        )
+        for name in ("_change_setting", "_trigger_alarm_handler"):
+            assert analyzer.function_contains_await(name), (
+                f"{name} should contain `await` on its Abode client call"
+            )
 
     def test_factory_handler_is_async(self, services_file: str) -> None:
         """Verify service handler factory creates async handler."""
@@ -235,13 +234,21 @@ class TestAsyncAwaitStaticPatterns:
             )
 
     def test_timeout_protection_in_entity(self, entity_file: str) -> None:
-        """Verify executor jobs have timeout protection."""
+        """Verify executor jobs have timeout protection via a helper.
+
+        Earlier versions inlined `asyncio.wait_for(...)` at each call site
+        (≥4 occurrences). The current code factors this into
+        `_run_executor_with_timeout`, so the regression guard now checks that
+        the helper exists and at least one `wait_for` call remains.
+        """
         analyzer = AsyncAwaitStaticAnalyzer(entity_file, "entity.py")
         wait_for_calls = analyzer.find_wait_for_calls()
 
-        # Should have multiple asyncio.wait_for calls
-        assert len(wait_for_calls) >= 4, (
-            f"Entity should have at least 4 asyncio.wait_for calls, "
+        assert "_run_executor_with_timeout" in entity_file, (
+            "entity.py should define the _run_executor_with_timeout helper"
+        )
+        assert len(wait_for_calls) >= 1, (
+            "Entity should keep at least one asyncio.wait_for call, "
             f"found {len(wait_for_calls)}"
         )
 
@@ -311,11 +318,11 @@ class TestAsyncAwaitStaticPatterns:
         assert "hass.loop" not in init_file, "__init__.py should not use hass.loop"
 
     def test_timeout_protection_pattern(self, entity_file: str) -> None:
-        """Verify timeout protection pattern with try/except."""
-        # Count asyncio.wait_for calls
+        """Verify timeout protection pattern with try/except via the helper."""
         wait_for_count = entity_file.count("asyncio.wait_for(")
-        assert wait_for_count >= 4, (
-            f"Expected at least 4 asyncio.wait_for calls, found {wait_for_count}"
+        assert wait_for_count >= 1, (
+            "Expected at least one asyncio.wait_for call in entity.py, "
+            f"found {wait_for_count}"
         )
 
         # Should have timeout parameter
@@ -329,19 +336,24 @@ class TestAsyncAwaitDocumentation:
     """Test that async/await patterns are documented."""
 
     def test_service_handlers_have_docstrings(self) -> None:
-        """Verify service handlers have docstring explanations."""
+        """Verify service handlers each carry a docstring."""
         services_file = (
             Path(__file__).parent.parent
             / "custom_components"
             / "abode_security"
             / "services.py"
         )
-        content = services_file.read_text()
+        analyzer = AsyncAwaitStaticAnalyzer(services_file.read_text(), "services.py")
 
-        # Check for docstring on _capture_image
-        assert "dispatcher_send()" in content and "sync" in content.lower(), (
-            "Service handlers should document why they are sync/async"
-        )
+        for handler in (
+            "_change_setting",
+            "_trigger_alarm_handler",
+            "_capture_image",
+            "_trigger_automation",
+        ):
+            assert analyzer.function_has_docstring(handler), (
+                f"{handler} should have a docstring"
+            )
 
     def test_async_patterns_documented(self) -> None:
         """Verify async patterns are documented in code."""

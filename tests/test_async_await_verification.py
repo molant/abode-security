@@ -7,6 +7,7 @@ without requiring a full Home Assistant instance setup.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import sys
 from pathlib import Path
@@ -22,29 +23,24 @@ class TestAsyncAwaitPatterns:
     """Test async/await patterns in the integration."""
 
     def test_service_handlers_have_correct_types(self) -> None:
-        """Verify service handler functions have correct async/sync types."""
+        """Verify service handler functions are async coroutine functions.
+
+        HA's `async_register` accepts either sync or async handlers, but the
+        integration's convention is that every service handler is `async def`
+        so they can await Abode client methods uniformly. Regression guard.
+        """
         from custom_components.abode_security import services
 
-        # Handlers that should be async (contain await)
         async_handlers = [
             ("_change_setting", services._change_setting),
             ("_trigger_alarm_handler", services._trigger_alarm_handler),
+            ("_capture_image", services._capture_image),
+            ("_trigger_automation", services._trigger_automation),
         ]
 
         for name, func in async_handlers:
             assert inspect.iscoroutinefunction(func), (
                 f"{name} should be async def but is {type(func)}"
-            )
-
-        # Handlers that should be sync (no await)
-        sync_handlers = [
-            ("_capture_image", services._capture_image),
-            ("_trigger_automation", services._trigger_automation),
-        ]
-
-        for name, func in sync_handlers:
-            assert not inspect.iscoroutinefunction(func), (
-                f"{name} should be sync def but is async"
             )
 
     def test_entity_lifecycle_methods_are_async(self) -> None:
@@ -145,7 +141,13 @@ class TestAsyncAwaitPatterns:
             )
 
     def test_timeout_protection_on_executor_jobs(self) -> None:
-        """Verify executor jobs are protected with asyncio.wait_for()."""
+        """Verify executor jobs are protected with `asyncio.wait_for`.
+
+        Earlier versions inlined `asyncio.wait_for(...)` at each call site
+        (hence the original ≥4 count). The current code factors this into
+        `_run_executor_with_timeout`, so the regression guard is now "the
+        helper exists and uses wait_for with a timeout".
+        """
         entity_file = (
             Path(__file__).parent.parent
             / "custom_components"
@@ -154,13 +156,12 @@ class TestAsyncAwaitPatterns:
         )
         content = entity_file.read_text()
 
-        # Count asyncio.wait_for usage
-        wait_for_count = content.count("asyncio.wait_for(")
-        assert wait_for_count >= 4, (
-            f"Expected at least 4 asyncio.wait_for calls in entity.py, found {wait_for_count}"
+        assert "async def _run_executor_with_timeout(" in content, (
+            "entity.py should define the _run_executor_with_timeout helper"
         )
-
-        # Verify timeout parameter
+        assert "asyncio.wait_for(" in content, (
+            "entity.py should use asyncio.wait_for for timeout protection"
+        )
         assert "timeout=" in content, "asyncio.wait_for should have timeout parameter"
 
     def test_service_handler_factory_creates_async_handler(self) -> None:
@@ -306,8 +307,8 @@ class TestAsyncAwaitSemantics:
             pass  # May fail due to mock, but should be awaitable
 
     @pytest.mark.asyncio
-    async def test_capture_image_handler_not_awaitable(self) -> None:
-        """Verify _capture_image handler is NOT async."""
+    async def test_capture_image_handler_is_awaitable(self) -> None:
+        """Verify `_capture_image` is async (matches the rest of the handlers)."""
         from custom_components.abode_security.services import _capture_image
 
         mock_call = MagicMock()
@@ -315,16 +316,14 @@ class TestAsyncAwaitSemantics:
         mock_call.hass = MagicMock()
         mock_call.hass.config_entries.async_entries.return_value = []
 
-        # Should NOT be a coroutine
-        result = _capture_image(mock_call)
-        assert not inspect.iscoroutine(result), (
-            "_capture_image should not return a coroutine"
-        )
-        assert result is None, "_capture_image should return None"
+        coro = _capture_image(mock_call)
+        assert inspect.iscoroutine(coro), "_capture_image should return a coroutine"
+        with contextlib.suppress(Exception):
+            await coro  # may fail on mocks, but must be awaitable
 
     @pytest.mark.asyncio
-    async def test_trigger_automation_handler_not_awaitable(self) -> None:
-        """Verify _trigger_automation handler is NOT async."""
+    async def test_trigger_automation_handler_is_awaitable(self) -> None:
+        """Verify `_trigger_automation` is async (matches the rest of the handlers)."""
         from custom_components.abode_security.services import _trigger_automation
 
         mock_call = MagicMock()
@@ -332,12 +331,12 @@ class TestAsyncAwaitSemantics:
         mock_call.hass = MagicMock()
         mock_call.hass.config_entries.async_entries.return_value = []
 
-        # Should NOT be a coroutine
-        result = _trigger_automation(mock_call)
-        assert not inspect.iscoroutine(result), (
-            "_trigger_automation should not return a coroutine"
+        coro = _trigger_automation(mock_call)
+        assert inspect.iscoroutine(coro), (
+            "_trigger_automation should return a coroutine"
         )
-        assert result is None, "_trigger_automation should return None"
+        with contextlib.suppress(Exception):
+            await coro
 
     @pytest.mark.asyncio
     async def test_factory_handler_is_awaitable(self) -> None:

@@ -42,7 +42,7 @@ class TestFullSetupWorkflow:
         # Step 2: Integration is set up
         with (
             patch("custom_components.abode_security.PLATFORMS", [ALARM_DOMAIN]),
-            patch("abode.event_controller.sio"),
+            patch("custom_components.abode_security.abode.event_controller.sio"),
         ):
             assert await async_setup_component(hass, DOMAIN, {})
         await hass.async_block_till_done()
@@ -63,7 +63,14 @@ class TestFullSetupWorkflow:
     async def test_integration_recovers_from_temporary_failure(
         self, hass: HomeAssistant
     ) -> None:
-        """Test that integration recovers from temporary API failure."""
+        """Test that integration recovers from temporary API failure.
+
+        `__init__.py` maps `AbodeException` and `aiohttp.ClientError` to
+        `ConfigEntryNotReady` (→ SETUP_RETRY). Bare `Exception` is unhandled
+        and lands in SETUP_ERROR, so simulate a recoverable error here.
+        """
+        import aiohttp
+
         mock_entry = MockConfigEntry(
             domain=DOMAIN,
             data={
@@ -74,35 +81,61 @@ class TestFullSetupWorkflow:
         )
         mock_entry.add_to_hass(hass)
 
-        # First attempt fails
+        # First attempt fails with a recoverable error.
         with patch(
-            "custom_components.abode_security.Abode",
-            side_effect=Exception("Temporary API failure"),
+            "custom_components.abode_security.abode.client.Client",
+            side_effect=aiohttp.ClientConnectionError("Temporary API failure"),
         ):
             with (
                 patch("custom_components.abode_security.PLATFORMS", [ALARM_DOMAIN]),
-                patch("abode.event_controller.sio"),
+                patch("custom_components.abode_security.abode.event_controller.sio"),
             ):
                 await async_setup_component(hass, DOMAIN, {})
 
             await hass.async_block_till_done()
-            # Should be in setup retry state
             assert mock_entry.state is ConfigEntryState.SETUP_RETRY
 
-        # Second attempt succeeds
+        # Second attempt succeeds. Async methods (get_devices/get_automations/
+        # logout) must be AsyncMock; get_alarm is sync (client.py:758). The
+        # alarm Mock needs concrete `id`/`name`/`type` so the entity_registry
+        # can JSON-serialize the resulting device entry on teardown.
+        # NB: Mock() interprets `name=` as its own debug name, not the
+        # attribute `.name`. Set attributes after construction.
+        working_alarm = Mock(
+            id="recovered_alarm_id",
+            uuid="recovered_alarm_uuid",
+            type="alarm",
+            battery="ok",
+            battery_low=False,
+            is_cellular=False,
+            is_standby=True,
+            is_away=False,
+            is_home=False,
+            no_response=False,
+        )
+        working_alarm.name = "Recovered Alarm"
+        # `__init__.py` short-circuits on truthy `_token` / `_devices` /
+        # `_automations`, and `Mock()` auto-attributes are truthy, so the
+        # implicit login/get_devices/get_automations calls are intentionally
+        # skipped by this mock — we only care that the reload path succeeds.
+        working_client = Mock(
+            get_alarm=Mock(return_value=working_alarm),
+            get_devices=AsyncMock(return_value=[]),
+            get_automations=AsyncMock(return_value=[]),
+            events=Mock(),
+            logout=AsyncMock(),
+            cleanup=AsyncMock(),
+            _async_initialize=AsyncMock(),
+            get_test_mode=AsyncMock(return_value=False),
+            get_cms_settings=AsyncMock(return_value={}),
+        )
         with patch(
-            "custom_components.abode_security.Abode",
-            return_value=Mock(
-                get_alarm=Mock(return_value=Mock()),
-                get_devices=Mock(return_value=[]),
-                get_automations=Mock(return_value=[]),
-                events=Mock(),
-                logout=Mock(),
-            ),
+            "custom_components.abode_security.abode.client.Client",
+            return_value=working_client,
         ):
             with (
                 patch("custom_components.abode_security.PLATFORMS", [ALARM_DOMAIN]),
-                patch("abode.event_controller.sio"),
+                patch("custom_components.abode_security.abode.event_controller.sio"),
             ):
                 await hass.config_entries.async_reload(mock_entry.entry_id)
             await hass.async_block_till_done()
@@ -119,10 +152,14 @@ class TestFullSetupWorkflow:
         await setup_platform(hass, ALARM_DOMAIN)
 
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        abode_system: AbodeSystem = hass.data[DOMAIN][entry.entry_id]["system"]
+        abode_system: AbodeSystem = entry.runtime_data
+        assert abode_system.smart_polling is not None
+        assert abode_system.event_filter is not None
 
-        # Initial polling stats
-        stats_before = abode_system.smart_polling.stats
+        # Snapshot the counters — `stats` returns a live reference, so we
+        # can't compare object-to-object; record the scalar values up front.
+        update_count_before = abode_system.smart_polling.stats.update_count
+        error_count_before = abode_system.smart_polling.stats.error_count
 
         # Simulate multiple successful updates (good performance)
         for _ in range(5):
@@ -132,13 +169,12 @@ class TestFullSetupWorkflow:
         for _ in range(3):
             abode_system.smart_polling.record_error()
 
-        # Get updated stats
-        stats_after = abode_system.smart_polling.stats
+        update_count_after = abode_system.smart_polling.stats.update_count
+        error_count_after = abode_system.smart_polling.stats.error_count
         interval_after = abode_system.smart_polling.get_optimal_interval()
 
-        # Verify stats were tracked
-        assert stats_after.update_count > stats_before.update_count
-        assert stats_after.error_count > stats_before.error_count
+        assert update_count_after > update_count_before
+        assert error_count_after > error_count_before
 
         # Verify polling interval is still within bounds
         assert 15 <= interval_after <= 120
@@ -152,11 +188,14 @@ class TestFullSetupWorkflow:
         await setup_platform(hass, ALARM_DOMAIN)
 
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        abode_system: AbodeSystem = hass.data[DOMAIN][entry.entry_id]["system"]
+        abode_system: AbodeSystem = entry.runtime_data
+        assert abode_system.smart_polling is not None
+        assert abode_system.event_filter is not None
 
-        # Set filter to only allow critical events
+        # Narrow the filter list directly (EventFilter has no setter; the
+        # production code path is to pass the list at construction time).
         critical_events = ["alarm_state_change", "test_mode_change"]
-        abode_system.event_filter.set_filter(critical_events)
+        abode_system.event_filter.filter_types = critical_events
 
         # Simulate receiving various events
         events_received = [
@@ -177,10 +216,12 @@ class TestFullSetupWorkflow:
         # Only 2 out of 6 events should be processed (alarm_state_change, test_mode_change)
         assert processed_count == 2
 
-        # Verify filtering stats
+        # Verify filtering stats — `get_stats()` returns keys
+        # filtered/allowed/total (see EventFilter in models.py).
         stats = abode_system.event_filter.get_stats()
-        assert stats["total_checks"] == 6
-        assert stats["filtered_count"] == 4
+        assert stats["total"] == 6
+        assert stats["filtered"] == 4
+        assert stats["allowed"] == 2
 
 
 class TestBatchOperationsWorkflow:
@@ -276,21 +317,24 @@ class TestConfigurationPresets:
                 CONF_USERNAME: "user@example.com",
                 CONF_PASSWORD: "password123",
                 CONF_POLLING: True,
-                CONF_POLLING_INTERVAL: aggressive_preset["interval"],
+                CONF_POLLING_INTERVAL: aggressive_preset[CONF_POLLING_INTERVAL],
             },
         )
         mock_entry.add_to_hass(hass)
 
         with (
             patch("custom_components.abode_security.PLATFORMS", [ALARM_DOMAIN]),
-            patch("abode.event_controller.sio"),
+            patch("custom_components.abode_security.abode.event_controller.sio"),
         ):
             assert await async_setup_component(hass, DOMAIN, {})
         await hass.async_block_till_done()
 
         # Verify entry was set up with aggressive preset
         assert mock_entry.state is ConfigEntryState.LOADED
-        assert mock_entry.data[CONF_POLLING_INTERVAL] == aggressive_preset["interval"]
+        assert (
+            mock_entry.data[CONF_POLLING_INTERVAL]
+            == aggressive_preset[CONF_POLLING_INTERVAL]
+        )
 
     async def test_user_switches_between_presets(
         self,
@@ -307,14 +351,16 @@ class TestConfigurationPresets:
                 CONF_USERNAME: "user@example.com",
                 CONF_PASSWORD: "password123",
                 CONF_POLLING: True,
-                CONF_POLLING_INTERVAL: POLLING_PRESETS["balanced"]["interval"],
+                CONF_POLLING_INTERVAL: POLLING_PRESETS["balanced"][
+                    CONF_POLLING_INTERVAL
+                ],
             },
         )
         mock_entry.add_to_hass(hass)
 
         with (
             patch("custom_components.abode_security.PLATFORMS", [ALARM_DOMAIN]),
-            patch("abode.event_controller.sio"),
+            patch("custom_components.abode_security.abode.event_controller.sio"),
         ):
             assert await async_setup_component(hass, DOMAIN, {})
         await hass.async_block_till_done()
@@ -324,14 +370,18 @@ class TestConfigurationPresets:
             mock_entry,
             data={
                 **mock_entry.data,
-                CONF_POLLING_INTERVAL: POLLING_PRESETS["conservative"]["interval"],
+                CONF_POLLING_INTERVAL: POLLING_PRESETS["conservative"][
+                    CONF_POLLING_INTERVAL
+                ],
             },
         )
         await hass.async_block_till_done()
 
         # Verify update
         updated_interval = mock_entry.data[CONF_POLLING_INTERVAL]
-        assert updated_interval == POLLING_PRESETS["conservative"]["interval"]
+        assert (
+            updated_interval == POLLING_PRESETS["conservative"][CONF_POLLING_INTERVAL]
+        )
 
 
 class TestErrorRecoveryScenarios:
@@ -346,7 +396,9 @@ class TestErrorRecoveryScenarios:
         await setup_platform(hass, ALARM_DOMAIN)
 
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        abode_system: AbodeSystem = hass.data[DOMAIN][entry.entry_id]["system"]
+        abode_system: AbodeSystem = entry.runtime_data
+        assert abode_system.smart_polling is not None
+        assert abode_system.event_filter is not None
 
         # Simulate network errors
         for _ in range(10):
@@ -381,12 +433,12 @@ class TestErrorRecoveryScenarios:
         mock_entry.add_to_hass(hass)
 
         with patch(
-            "custom_components.abode_security.Abode",
+            "custom_components.abode_security.abode.client.Client",
             side_effect=Exception("Missing required credentials"),
         ):
             with (
                 patch("custom_components.abode_security.PLATFORMS", [ALARM_DOMAIN]),
-                patch("abode.event_controller.sio"),
+                patch("custom_components.abode_security.abode.event_controller.sio"),
             ):
                 await async_setup_component(hass, DOMAIN, {})
 
