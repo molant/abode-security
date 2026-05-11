@@ -22,6 +22,11 @@ python3 -m ruff format --check custom_components/abode_security tests
 echo "Type checking with mypy..."
 python3 -m mypy custom_components/abode_security --ignore-missing-imports
 
+# Strict type check with pyright (catches cached_property / variable-override
+# issues mypy is permissive about; see scripts/check.sh for full rationale).
+echo "Type checking with pyright..."
+python3 -m pyright custom_components/abode_security
+
 # Run tests with pytest
 echo "Running tests with pytest..."
 python3 -m pytest tests/ -v --tb=short

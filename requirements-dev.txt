@@ -4,6 +4,11 @@
 # Type checking
 mypy==1.13.0
 types-requests==2.32.4.20250913
+# Pyright complements mypy by catching cached_property / variable-override
+# compatibility issues against HA's entity base classes (issue #70). Pinned to
+# match the locally-validated version; bump deliberately with the next pyright
+# release.
+pyright==1.1.409
 
 # Testing
 pytest==9.0.0

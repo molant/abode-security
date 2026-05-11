@@ -32,6 +32,15 @@ echo ""
 echo "Type checking with mypy..."
 uv run mypy custom_components/abode_security --ignore-missing-imports
 
+# Strict type check with pyright. mypy and pyright catch different classes of
+# issues (mypy is stricter on Any leakage, pyright on cached_property /
+# variable-override compatibility against HA's entity base classes), so we run
+# both. The integration was driven to 0 pyright errors in #70 and this gate
+# protects future contributions from silently regressing.
+echo ""
+echo "Type checking with pyright..."
+uv run pyright custom_components/abode_security
+
 # Run tests with pytest
 echo ""
 echo "Running unit tests with pytest..."

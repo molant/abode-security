@@ -6,6 +6,5 @@
     "**/__pycache__",
     "**/node_modules"
   ],
-  "pythonVersion": "3.11",
-  "reportUnusedParameter": "none"
+  "pythonVersion": "3.11"
 }
