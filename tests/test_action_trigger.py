@@ -780,3 +780,52 @@ class TestStateTransitionRegressions:
         assert len(service_calls) == 1
 
         await coordinator.async_stop()
+
+    async def test_delayed_action_skipped_when_mode_changes_during_delay(
+        self, hass
+    ) -> None:
+        """Disarming during a pending delay must suppress an away-only action.
+
+        Reproduces #53: `_delayed_execute` re-checked existence + enabled but
+        not the current alarm mode, so an away-only delayed action would still
+        fire after the user disarmed during the delay window. The test uses a
+        5s delay for speed; the real-world report involved a 60s delay.
+        """
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        service_calls = []
+
+        async def mock_service(call):
+            service_calls.append(call)
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        await manager.async_create(
+            name="Away Only Delayed",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.front_door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+            delay_seconds=5,
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_away")
+        hass.states.async_set("binary_sensor.front_door", "off")
+        await hass.async_block_till_done()
+
+        hass.states.async_set("binary_sensor.front_door", "on")
+        await hass.async_block_till_done()
+
+        assert len(coordinator._pending_delays) == 1
+
+        # User disarms during the delay.
+        hass.states.async_set("alarm_control_panel.abode_alarm", "disarmed")
+        await hass.async_block_till_done()
+
+        # Advance past the delay; the timer fires but mode no longer matches.
+        await async_fire_time_changed_and_wait(hass, timedelta(seconds=6))
+
+        assert service_calls == []
+
+        await coordinator.async_stop()

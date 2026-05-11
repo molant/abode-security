@@ -280,6 +280,7 @@ def pytest_collection_modifyitems(config, items):
         "test_unavailable_to_on_does_not_trigger",
         "test_unknown_to_on_does_not_trigger",
         "test_refire_during_pending_delay_fires_once",
+        "test_delayed_action_skipped_when_mode_changes_during_delay",
         # SocketIO reconnect (issue #2)
         "test_fires_after_threshold_connect_failures",
         "test_does_not_fire_below_threshold",
