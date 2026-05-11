@@ -102,6 +102,12 @@ def pytest_collection_modifyitems(config, items):
         # Services null-safety regression tests (issue #70)
         "test_trigger_alarm_no_alarm_device_logs_and_returns",
         "test_trigger_alarm_with_alarm_device_calls_through",
+        # Switch platform null-safety regression tests (issue #70)
+        "test_setup_entry_skips_alarm_attached_when_no_alarm",
+        "test_setup_entry_adds_alarm_attached_when_alarm_present",
+        # Alarm control panel null-safety regression tests (issue #70)
+        "test_setup_entry_skips_panel_when_no_alarm",
+        "test_setup_entry_adds_panel_when_alarm_present",
         "test_acknowledge_alarm_service",
         "test_dismiss_alarm_service",
         "test_abode_switch_error_handling",
