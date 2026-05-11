@@ -169,27 +169,32 @@ class TestWebSocketActionsAPI:
     async def test_ws_actions_create_validation_error(
         self, hass, hass_ws_client
     ) -> None:
-        """Test creating an action with invalid data returns validation error.
+        """An empty `name` is a business-rule violation, not a shape error.
 
-        Uses a whitespace-only name — passes the schema length check (min=1)
-        but the manager's ``name.strip()`` validation rejects it, so this
-        still exercises the manager-level ValueError -> validation_error path.
+        The voluptuous schema only enforces *shape* bounds (type and the
+        upper-length cap). The `"name must not be empty"` rule lives in
+        `ActionManager._validate_action` so the error message is richer
+        than voluptuous's generic `expected str with length >= 1`. We
+        check both whitespace-only and empty-string here to lock down
+        the runtime-validation boundary against accidental schema
+        tightening (#102).
         """
         client = await hass_ws_client(hass)
-        await client.send_json(
-            {
-                "id": 1,
-                "type": "abode_security/actions/create",
-                "name": "   ",  # Invalid: whitespace-only name
-                "modes": ["home"],
-                "sensor_entity_ids": ["binary_sensor.door"],
-                "alarm_entity_ids": ["switch.panic_alarm"],
-            }
-        )
-        response = await client.receive_json()
+        for msg_id, bad_name in ((1, ""), (2, "   ")):
+            await client.send_json(
+                {
+                    "id": msg_id,
+                    "type": "abode_security/actions/create",
+                    "name": bad_name,
+                    "modes": ["home"],
+                    "sensor_entity_ids": ["binary_sensor.door"],
+                    "alarm_entity_ids": ["switch.panic_alarm"],
+                }
+            )
+            response = await client.receive_json()
 
-        assert not response["success"]
-        assert response["error"]["code"] == "validation_error"
+            assert not response["success"]
+            assert response["error"]["code"] == "validation_error"
 
     async def test_ws_actions_create_invalid_mode_schema(
         self, hass, hass_ws_client
@@ -366,11 +371,12 @@ class TestWebSocketActionsAPI:
     async def test_ws_actions_update_validation_error(
         self, hass, hass_ws_client
     ) -> None:
-        """Test updating an action with invalid data returns error.
+        """Empty / whitespace `name` on update is a business-rule violation.
 
-        Uses a whitespace-only name so the manager's ``name.strip()`` check
-        is what rejects it (the schema's length check accepts non-empty
-        strings).
+        Mirrors the create-path contract (#102): the schema only enforces
+        shape and the upper-length cap; emptiness is rejected by
+        `_validate_action` so the error code is `validation_error`, not
+        `invalid_format`.
         """
         manager = _get_manager(hass)
         action = await manager.async_create(
@@ -381,18 +387,19 @@ class TestWebSocketActionsAPI:
         )
 
         client = await hass_ws_client(hass)
-        await client.send_json(
-            {
-                "id": 1,
-                "type": "abode_security/actions/update",
-                "action_id": action.id,
-                "name": "   ",  # Invalid: whitespace-only name
-            }
-        )
-        response = await client.receive_json()
+        for msg_id, bad_name in ((1, ""), (2, "   ")):
+            await client.send_json(
+                {
+                    "id": msg_id,
+                    "type": "abode_security/actions/update",
+                    "action_id": action.id,
+                    "name": bad_name,
+                }
+            )
+            response = await client.receive_json()
 
-        assert not response["success"]
-        assert response["error"]["code"] == "validation_error"
+            assert not response["success"]
+            assert response["error"]["code"] == "validation_error"
 
     async def test_ws_actions_update_name_too_long(self, hass, hass_ws_client) -> None:
         """Update schema applies the same oversize guards as create."""
