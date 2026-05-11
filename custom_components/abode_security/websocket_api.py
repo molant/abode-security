@@ -58,7 +58,26 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def async_register_websocket_commands(hass: HomeAssistant) -> None:
-    """Register WebSocket commands for Abode Security."""
+    """Register WebSocket commands for Abode Security.
+
+    Admin-gating policy (per #52 audit):
+
+    - All mutating commands require admin: `actions/{create,update,delete,
+      toggle,test}`, `modes/set`, `config/set`.
+    - Read-only commands that expose alarm-system topology (which sensors
+      trigger which alarms in which modes) also require admin:
+      `actions/{list,get}`, `entities/{sensors,alarms}`. Non-admin users
+      should not be able to enumerate the alarm wiring even read-only.
+    - Read-only commands that expose only generic metadata are open to
+      any authenticated HA user: `modes/list` (just mode names),
+      `config/get` (currently just `debounce_seconds`). If you add a
+      sensitive field to `ConfigStore`, either gate `config/get` or
+      split the schema — don't quietly widen what non-admins can read.
+
+    If you add a new command, check `@require_admin` matches one of the
+    three buckets above. New mutating commands or topology-exposing reads
+    MUST add `@require_admin`.
+    """
     # Action CRUD endpoints
     websocket_api.async_register_command(hass, websocket_actions_list)
     websocket_api.async_register_command(hass, websocket_actions_get)
@@ -90,6 +109,7 @@ def _get_action_manager(hass: HomeAssistant) -> ActionManager | None:
         vol.Required("type"): "abode_security/actions/list",
     }
 )
+@require_admin
 @async_response
 async def websocket_actions_list(
     hass: HomeAssistant,
@@ -115,6 +135,7 @@ async def websocket_actions_list(
         vol.Required("action_id"): str,
     }
 )
+@require_admin
 @async_response
 async def websocket_actions_get(
     hass: HomeAssistant,
@@ -452,6 +473,7 @@ async def websocket_modes_list(
         vol.Required("mode_id"): vol.In(VALID_MODES),
     }
 )
+@require_admin
 @async_response
 async def websocket_modes_set(
     hass: HomeAssistant,
@@ -503,6 +525,7 @@ async def websocket_modes_set(
         vol.Required("type"): "abode_security/entities/sensors",
     }
 )
+@require_admin
 @async_response
 async def websocket_entities_sensors(
     hass: HomeAssistant,
@@ -542,6 +565,7 @@ ALARM_TYPES = {
         vol.Required("type"): "abode_security/entities/alarms",
     }
 )
+@require_admin
 @async_response
 async def websocket_entities_alarms(
     hass: HomeAssistant,
