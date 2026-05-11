@@ -6,7 +6,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.helpers.storage import Store
 
@@ -270,7 +270,7 @@ class ActionManager:
         """Get all actions."""
         return self._store.get_all()
 
-    async def async_update(self, action_id: str, **kwargs) -> AbodeAction | None:
+    async def async_update(self, action_id: str, **kwargs: Any) -> AbodeAction | None:
         """Update an action with the provided fields.
 
         Args:

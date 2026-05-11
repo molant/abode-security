@@ -17,7 +17,7 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
 from homeassistant.helpers import selector
-from requests.exceptions import (  # type: ignore[import-untyped]
+from requests.exceptions import (
     ConnectTimeout,
     HTTPError,
 )

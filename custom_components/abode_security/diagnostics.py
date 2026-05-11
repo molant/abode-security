@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
@@ -98,4 +98,4 @@ async def async_get_config_entry_diagnostics(
         },
         "unique_id": entry.unique_id,
     }
-    return async_redact_data(payload, TO_REDACT)
+    return cast(dict[str, Any], async_redact_data(payload, TO_REDACT))
