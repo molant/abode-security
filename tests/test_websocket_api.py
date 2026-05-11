@@ -624,18 +624,42 @@ class TestWebSocketAdminGating:
     @pytest.mark.parametrize(
         ("command_type", "extra_payload"),
         [
+            # Topology-exposing read-only commands.
             ("abode_security/actions/list", {}),
             ("abode_security/actions/get", {"action_id": "any"}),
             ("abode_security/entities/sensors", {}),
             ("abode_security/entities/alarms", {}),
+            # Mutating commands. Payloads are schema-valid so the request
+            # reaches the @require_admin check rather than failing
+            # earlier in @websocket_command's schema validator.
+            (
+                "abode_security/actions/create",
+                {
+                    "name": "x",
+                    "modes": ["home"],
+                    "sensor_entity_ids": ["binary_sensor.door"],
+                    "alarm_entity_ids": ["switch.panic_alarm"],
+                },
+            ),
+            ("abode_security/actions/update", {"action_id": "any"}),
+            ("abode_security/actions/delete", {"action_id": "any"}),
+            ("abode_security/actions/toggle", {"action_id": "any"}),
+            ("abode_security/actions/test", {"action_id": "any"}),
             ("abode_security/modes/set", {"mode_id": "home"}),
+            ("abode_security/config/set", {}),
         ],
         ids=[
             "actions/list",
             "actions/get",
             "entities/sensors",
             "entities/alarms",
+            "actions/create",
+            "actions/update",
+            "actions/delete",
+            "actions/toggle",
+            "actions/test",
             "modes/set",
+            "config/set",
         ],
     )
     async def test_admin_gated_commands_reject_non_admin(
@@ -657,7 +681,8 @@ class TestWebSocketAdminGating:
     async def test_modes_list_allowed_for_non_admin(
         self, hass, hass_ws_client, hass_read_only_access_token
     ) -> None:
-        """`modes/list` exposes only mode names; non-admin users may call it."""
+        """`modes/list` returns mode metadata and current active state,
+        which HA's state APIs already expose; non-admin users may call it."""
         client = await hass_ws_client(hass, hass_read_only_access_token)
         await client.send_json({"id": 1, "type": "abode_security/modes/list"})
         response = await client.receive_json()
