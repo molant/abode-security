@@ -1,0 +1,70 @@
+# Dependabot configuration — see issue #59.
+#
+# Grouping is used to reduce PR noise. Group majors still produce one PR
+# per group when an update arrives. `pytest-homeassistant-custom-component`
+# is split into its own group because it pins exactly and bumps with every
+# Home Assistant Core release; treating it separately keeps the regular
+# dev-deps group quiet between HA bumps.
+version: 2
+
+updates:
+  # Python deps declared in pyproject.toml + uv.lock.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      dev-deps:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "pytest-homeassistant-custom-component"
+      ha-pin:
+        patterns:
+          - "pytest-homeassistant-custom-component"
+
+  # Frontend (Lit panel + build tooling + tests).
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      lit:
+        patterns:
+          - "lit"
+          - "lit-*"
+      build-tooling:
+        patterns:
+          - "@rollup/*"
+          - "rollup"
+          - "esbuild"
+          - "typescript"
+      lint-test:
+        patterns:
+          - "eslint*"
+          - "@eslint/*"
+          - "@typescript-eslint/*"
+          - "typescript-eslint"
+          - "@web/*"
+          - "sinon"
+          - "@open-wc/*"
+          - "prettier"
+
+  # Root /package.json — E2E test runner (Playwright + axios).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+
+  # GitHub Actions workflows.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
