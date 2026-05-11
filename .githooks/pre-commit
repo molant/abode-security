@@ -13,23 +13,27 @@ fi
 # Set PYTHONPATH to include vendored libraries and integration
 export PYTHONPATH="$(cd "$(dirname "$0")/../custom_components" && pwd):$PYTHONPATH"
 
-# Lint with ruff
+# Lint with ruff. All tools run via `uv run` so the hook, scripts/check.sh,
+# and CI share a single dependency source (pyproject.toml [project.optional-
+# dependencies].dev resolved via uv.lock). Previously the hook used
+# `python3 -m`, which resolved against the user's system site-packages and
+# could drift from .venv whenever pyproject.toml changed.
 echo "Linting with ruff..."
-python3 -m ruff check custom_components/abode_security tests
-python3 -m ruff format --check custom_components/abode_security tests
+uv run ruff check custom_components/abode_security tests
+uv run ruff format --check custom_components/abode_security tests
 
 # Type check with mypy
 echo "Type checking with mypy..."
-python3 -m mypy custom_components/abode_security --ignore-missing-imports
+uv run mypy custom_components/abode_security --ignore-missing-imports
 
 # Strict type check with pyright (catches cached_property / variable-override
 # issues mypy is permissive about; see scripts/check.sh for full rationale).
 echo "Type checking with pyright..."
-python3 -m pyright custom_components/abode_security
+uv run pyright custom_components/abode_security
 
 # Run tests with pytest
 echo "Running tests with pytest..."
-python3 -m pytest tests/ -v --tb=short
+uv run pytest tests/ -v --tb=short
 
 # Frontend gates — only run when frontend files are staged
 if git diff --name-only --cached | grep -q '^frontend/'; then

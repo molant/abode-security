@@ -145,7 +145,7 @@ service: abode_security.disable_test_mode
 
 **Integration not appearing after installation:**
 - Check that `manifest.json` has the correct `domain: abode_security`
-- Ensure ruff linting passes: `python3 -m ruff check custom_components/abode_security/`
+- Ensure ruff linting passes: `uv run ruff check custom_components/abode_security/`
 - Restart Home Assistant completely
 
 **Devices not appearing:**
@@ -211,18 +211,18 @@ Run tests with different configurations:
 
 ```bash
 # Fast unit tests (pre-commit default)
-pytest
+uv run pytest
 
 # All tests (unit + integration with mock server)
 ./scripts/run_all_tests.sh
 
 # Integration tests only (requires mock server)
 docker-compose up -d
-pytest -m integration
+uv run pytest -m integration
 docker-compose down
 ```
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for:
+See [development.md](development.md) for:
 - Architecture overview
 - Contributing guidelines
 - Development setup
@@ -262,7 +262,7 @@ Contributions are welcome! Please:
 5. Ensure all checks pass (ruff, type hints, tests)
 6. Submit a pull request
 
-See [DEVELOPMENT.md](DEVELOPMENT.md#contributing) for more detailed contribution guidelines.
+See [development.md](development.md#contributing) for more detailed contribution guidelines.
 
 ## Acknowledgments
 
@@ -306,4 +306,4 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed version history and breaking chang
 
 **Questions?** Check the [FAQ section](TROUBLESHOOTING.md#faq) or open an [issue](https://github.com/molant/abode-security/issues).
 
-**Want to contribute?** See [DEVELOPMENT.md](DEVELOPMENT.md) for contribution guidelines.
+**Want to contribute?** See [development.md](development.md) for contribution guidelines.

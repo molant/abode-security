@@ -4,7 +4,7 @@ Thank you for your interest in contributing! This document provides guidelines f
 
 ## Getting Started
 
-1. Read [DEVELOPMENT.md](DEVELOPMENT.md) for setup instructions
+1. Read [development.md](development.md) for setup instructions
 2. Fork the repository
 3. Create a feature branch
 4. Make your changes
@@ -18,7 +18,7 @@ cd abode-security
 ./scripts/dev.sh
 ```
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed instructions.
+See [development.md](development.md) for detailed instructions.
 
 ## Code Style
 
@@ -28,13 +28,22 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed instructions.
 
 ### Running Linters
 
+Dev tooling is managed by `uv` (see `development.md` for full setup). Run
+checks through `uv run` so they hit the pinned versions in `uv.lock`:
+
 ```bash
 # Python linting and formatting
-ruff check .
-ruff format .
+uv run ruff check .
+uv run ruff format .
 
-# Type checking
-mypy custom_components/abode_security/
+# Type checking (both run in CI)
+uv run mypy custom_components/abode_security/
+uv run pyright custom_components/abode_security/
+```
+
+Or run the full local check suite (ruff + mypy + pyright + pytest):
+```bash
+./scripts/check.sh
 ```
 
 ## Testing
@@ -48,11 +57,11 @@ All contributions must include tests:
 
 ```bash
 # Unit tests
-pytest
+uv run pytest
 
 # Integration tests (requires mock server)
 docker-compose up -d mock-abode
-pytest -m integration
+uv run pytest -m integration
 
 # E2E tests (requires full environment)
 ./scripts/test-e2e.sh
@@ -117,9 +126,10 @@ Closes #123
 
 ## Pre-commit Hook
 
-The project uses a pre-commit hook that runs automatically:
+The project uses a pre-commit hook (`.githooks/pre-commit`) that runs all
+checks through `uv run` against the project's `.venv`:
 - Ruff linting and formatting
-- MyPy type checking
+- MyPy and Pyright type checking
 - Pytest unit tests
 
 **Never use `--no-verify`** - all checks must pass before committing.

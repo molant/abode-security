@@ -1,26 +1,28 @@
 #!/bin/bash
-# Development environment setup script
+# Development environment setup script.
+#
+# `pyproject.toml` `[project.optional-dependencies].dev` is the single source
+# of truth for dev/CI deps; `uv sync` resolves it against `uv.lock` and
+# manages `.venv` itself, so there's no separate `python -m venv` step.
 set -e
 
 echo "Setting up development environment..."
 
-# Check if we're in a virtual environment
-if [[ -z "$VIRTUAL_ENV" ]]; then
-    echo "❌ Not in a virtual environment!"
-    echo "Please run: python3 -m venv .venv && source .venv/bin/activate"
+if ! command -v uv > /dev/null 2>&1; then
+    echo "❌ uv not found on PATH."
+    echo "Install it from https://docs.astral.sh/uv/getting-started/installation/"
+    echo "(macOS: 'brew install uv'; Linux: 'curl -LsSf https://astral.sh/uv/install.sh | sh')"
     exit 1
 fi
 
-echo "✅ Virtual environment detected: $VIRTUAL_ENV"
-
-# Install development dependencies
-echo "📦 Installing development dependencies..."
-pip install -r requirements-dev.txt
+echo "📦 Installing development dependencies via uv sync..."
+uv sync --extra dev
 
 echo "✅ Development environment setup complete!"
 echo ""
 echo "You can now:"
-echo "  - Run tests: pytest"
-echo "  - Run linting: ruff check ."
-echo "  - Run type checking: mypy custom_components/abode_security"
-echo "  - Start dev environment: ./scripts/dev.sh"
+echo "  - Run tests:           uv run pytest"
+echo "  - Run linting:         uv run ruff check ."
+echo "  - Run type checking:   uv run mypy custom_components/abode_security"
+echo "  - Run full local CI:   ./scripts/check.sh"
+echo "  - Start dev env:       ./scripts/dev.sh"

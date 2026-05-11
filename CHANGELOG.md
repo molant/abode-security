@@ -211,7 +211,7 @@ None in 1.0.0. We're committed to backward compatibility.
 
 ## Contributing
 
-Found a bug or want to contribute? See [DEVELOPMENT.md](DEVELOPMENT.md) for:
+Found a bug or want to contribute? See [development.md](development.md) for:
 - Issue reporting guidelines
 - Pull request process
 - Code standards

@@ -19,7 +19,11 @@ This guide covers local development, testing, and contribution workflows for the
 ### Prerequisites
 - **Docker** and Docker Compose (or Colima on macOS)
 - **Node.js 20+** (see `frontend/.nvmrc`)
-- **Python 3.13+**
+- **Python 3.14.2+** (pinned by `pytest-homeassistant-custom-component`'s
+  bundled `homeassistant` release; `uv` will install a matching interpreter
+  automatically if your system Python is older)
+- **uv** (https://docs.astral.sh/uv/getting-started/installation/) — manages
+  Python, the project venv, and all dev dependencies via `uv.lock`
 - **Git** for version control
 
 ### Setup
@@ -30,12 +34,14 @@ This guide covers local development, testing, and contribution workflows for the
    cd abode-security
    ```
 
-2. **Set up Python virtual environment**
+2. **Install dev dependencies**
    ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
    ./scripts/setup-dev.sh
+   # or, equivalently:
+   uv sync --extra dev
    ```
+   `uv` creates and manages `.venv/` for you — no separate `python -m venv`
+   step. Run all dev tools through `uv run …` (or activate `.venv` manually).
 
 3. **Start Docker** (if using Colima on macOS)
    ```bash
@@ -89,14 +95,14 @@ Or use HA's built-in logs:
 #### Run Tests
 ```bash
 # Fast unit tests (mocked HTTP)
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # Integration tests (requires mock server)
 docker-compose up -d mock-abode
-pytest -m integration -v
+uv run pytest -m integration -v
 
 # Run specific test file
-pytest tests/test_config_flow.py -v
+uv run pytest tests/test_config_flow.py -v
 
 # Run all tests with the script
 ./scripts/run_all_tests.sh
@@ -105,13 +111,14 @@ pytest tests/test_config_flow.py -v
 #### Linting and Type Checking
 ```bash
 # Check code style
-ruff check .
+uv run ruff check .
 
 # Format code
-ruff format .
+uv run ruff format .
 
-# Type check
-mypy custom_components/abode_security/
+# Type check (both run in CI; mypy + pyright catch different classes of issue)
+uv run mypy custom_components/abode_security/
+uv run pyright custom_components/abode_security/
 ```
 
 **Pre-commit Hook**: All checks run automatically before commit. Never use `--no-verify`.
@@ -204,7 +211,7 @@ npm run test:e2e:report
 - **Use**: TDD, quick feedback during development
 
 ```bash
-pytest tests/test_config_flow.py -v
+uv run pytest tests/test_config_flow.py -v
 ```
 
 #### Integration Tests (`tests/test_*.py` with `@pytest.mark.integration`)
@@ -214,7 +221,7 @@ pytest tests/test_config_flow.py -v
 
 ```bash
 docker-compose up -d mock-abode
-pytest -m integration -v
+uv run pytest -m integration -v
 ```
 
 #### E2E Tests (`tests/e2e/`)
@@ -231,13 +238,13 @@ pytest -m integration -v
 Run specific test types:
 ```bash
 # Unit tests only (fast, default)
-pytest
+uv run pytest
 
 # Integration tests only
-pytest -m integration
+uv run pytest -m integration
 
 # All tests
-pytest -m ""
+uv run pytest -m ""
 ```
 
 ## Project Structure
@@ -377,9 +384,9 @@ Closes #123
 ```
 
 ### Pre-commit Hooks
-Located at `.githooks/pre-commit`. Automatically runs:
+Located at `.githooks/pre-commit`. Automatically runs (via `uv run`):
 - `ruff check` and `ruff format` (linting)
-- `mypy` (type checking)
+- `mypy` and `pyright` (type checking)
 - `pytest` (tests)
 
 **All checks must pass**. Never use `--no-verify`.
@@ -390,7 +397,8 @@ Located at `.githooks/pre-commit`. Automatically runs:
 
 #### tests.yaml (Active)
 Runs on every push/PR to main or develop:
-- **Python**: linting (ruff), type checking (mypy), unit tests (pytest)
+- **Python**: dependencies via `uv sync --extra dev`, then linting (ruff),
+  type checking (mypy + pyright), unit tests (pytest) — all through `uv run`
 - **Frontend**: build verification, bundle output check
 
 #### e2e-tests.yaml (Manual)
@@ -410,9 +418,12 @@ Validates HACS manifest, strings, icons.
 
 **All Python checks**:
 ```bash
-ruff check . && ruff format .
-mypy custom_components/abode_security/
-pytest tests/
+./scripts/check.sh
+# or, individually:
+uv run ruff check . && uv run ruff format --check .
+uv run mypy custom_components/abode_security/
+uv run pyright custom_components/abode_security/
+uv run pytest tests/
 ```
 
 **Frontend build**:
@@ -425,9 +436,7 @@ npm run build
 **Full local CI**:
 ```bash
 ./scripts/dev.sh
-ruff check . && ruff format .
-mypy custom_components/abode_security/
-pytest tests/
+./scripts/check.sh
 cd frontend && npm run build && cd ..
 npm run test:e2e
 ```
@@ -495,12 +504,13 @@ curl -X POST http://localhost:8000/api/test/reset
 **Common issues**:
 - Mock server not running: `docker-compose up -d mock-abode`
 - Stale test state: Reset mock server between tests
-- Python version mismatch: `python --version` (should be 3.13+)
+- Python version mismatch: `python --version` (should be 3.14.2+; `uv` can
+  install a matching interpreter automatically — see `uv python install`)
 
 **Solution**:
 ```bash
 docker-compose restart mock-abode
-pytest tests/ --tb=short
+uv run pytest tests/ --tb=short
 ```
 
 ### E2E tests flaky
@@ -585,7 +595,7 @@ Quick start:
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-feature`
 3. Make changes
-4. Run tests: `pytest tests/ && npm run test:e2e`
+4. Run tests: `uv run pytest tests/ && npm run test:e2e`
 5. Commit: `git commit -m "feat: Add my feature"`
 6. Push: `git push origin feature/my-feature`
 7. Create Pull Request
