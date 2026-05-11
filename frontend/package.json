@@ -25,14 +25,11 @@
   "dependencies": {
     "lit": "^3.2.0"
   },
-  "overrides": {
-    "serialize-javascript": "^7.0.5"
-  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@open-wc/testing": "^4.0.0",
     "@rollup/plugin-node-resolve": "^15.2.3",
-    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-terser": "^1.0.0",
     "@rollup/plugin-typescript": "^11.1.6",
     "@types/mocha": "^10.0.10",
     "@types/sinon": "^21.0.0",
