@@ -40,6 +40,57 @@ jobs:
       - name: Run tests with pytest
         run: uv run pytest tests/ -v --tb=short
 
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start mock Abode server
+        # The conftest mock_server fixture detects an already-running server
+        # at MOCK_SERVER_URL and skips its own docker-compose call, so we
+        # manage container lifecycle here for clearer failure attribution.
+        run: docker compose up -d --build mock-abode
+
+      - name: Wait for mock server health
+        run: |
+          for i in {1..60}; do
+            if curl -sf http://localhost:8000/health > /dev/null; then
+              echo "Mock server ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Mock server failed to become ready within 60s"
+          docker compose logs mock-abode
+          exit 1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run integration tests
+        # Override pyproject's `addopts = "... -m 'not integration'"` explicitly.
+        # Without `-o addopts=...`, this job would rely on pytest's rightmost-`-m`-wins
+        # CLI override semantics — fragile across pytest versions, and silent if it
+        # ever regresses (zero tests would "pass", reintroducing the #77 bug).
+        run: |
+          uv run pytest tests/ \
+            -o addopts="--cov=custom_components/abode_security --cov-report=term-missing" \
+            -m integration -v --tb=short
+
+      - name: Show mock server logs on failure
+        if: failure()
+        run: docker compose logs mock-abode
+
+      - name: Stop mock server
+        if: always()
+        run: docker compose down
+
   frontend-build:
     name: Build Frontend
     runs-on: ubuntu-latest
