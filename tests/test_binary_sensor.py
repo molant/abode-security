@@ -28,12 +28,20 @@ from .common import setup_platform
 
 
 async def test_entity_registry(
-    hass: HomeAssistant, entity_registry: er.EntityRegistry
+    hass: HomeAssistant,
+    entity_registry: er.EntityRegistry,
+    aiohttp_mock,  # noqa: ARG001
 ) -> None:
-    """Tests that the devices are registered in the entity registry."""
+    """Tests that the devices are registered in the entity registry.
+
+    Uses `aiohttp_mock` so the real `Client` can run through login/devices
+    fetch against canned fixtures (`tests/fixtures/devices.json`) — the
+    `front_door` sensor and its unique_id come from that fixture.
+    """
     await setup_platform(hass, BINARY_SENSOR_DOMAIN)
 
     entry = entity_registry.async_get("binary_sensor.front_door")
+    assert entry is not None
     assert entry.unique_id == "2834013428b6035fba7d4054aa7b25a3"
 
 

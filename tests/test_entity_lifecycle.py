@@ -84,8 +84,8 @@ async def test_alarm_control_panel_error_handling(
 
     await setup_platform(hass, ALARM_DOMAIN)
 
-    # Verify the entity exists
-    state = hass.states.get("alarm_control_panel.abode_alarm")
+    # Mock alarm in conftest has name="Test Alarm", which slugifies to "test_alarm".
+    state = hass.states.get("alarm_control_panel.test_alarm")
     assert state is not None
 
     # Verify error handling didn't prevent entity creation
@@ -110,16 +110,28 @@ async def test_test_mode_switch_polling_disabled_initially(
 async def test_service_handler_factory_error_handling(
     hass: HomeAssistant, mock_abode
 ) -> None:
-    """Test that service handlers created with factory handle errors gracefully."""
+    """Test that service handlers created with factory handle errors gracefully.
+
+    The factory-built handler (services.py:_create_service_handler) catches
+    `AbodeException` specifically — that's the contract callers should rely
+    on. Generic exceptions are left to propagate.
+    """
+    from custom_components.abode_security.abode.exceptions import (
+        Exception as AbodeException,
+    )
     from custom_components.abode_security.const import DOMAIN
     from custom_components.abode_security.services import SERVICE_ACKNOWLEDGE_ALARM
 
-    # Make acknowledge_timeline_event raise an error
-    mock_abode.acknowledge_timeline_event.side_effect = Exception("API Error")
+    # AbodeException unpacks its `error` arg via `super().__init__(*error)`
+    # and exposes `.errcode`/`.message` from `self.args` (exceptions.py:7-18).
+    # Construct it as a (status, message) tuple to match how production raises
+    # it (e.g. exceptions.py:32, 34).
+    mock_abode.acknowledge_timeline_event.side_effect = AbodeException(
+        (500, "API Error")
+    )
 
     await setup_platform(hass, SWITCH_DOMAIN)
 
-    # Call the service (should not raise even though underlying method fails)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_ACKNOWLEDGE_ALARM,
