@@ -99,6 +99,9 @@ def pytest_collection_modifyitems(config, items):
         "test_test_mode_switch_turn_on",
         "test_test_mode_switch_turn_off",
         "test_trigger_alarm_service",
+        # Services null-safety regression tests (issue #70)
+        "test_trigger_alarm_no_alarm_device_logs_and_returns",
+        "test_trigger_alarm_with_alarm_device_calls_through",
         "test_acknowledge_alarm_service",
         "test_dismiss_alarm_service",
         "test_abode_switch_error_handling",
