@@ -607,39 +607,71 @@ class TestWebSocketActionsAPI:
 
 
 @pytest.mark.usefixtures("mock_abode", "setup_websocket_api")
-class TestWebSocketActionsAuthorization:
-    """Tests for WebSocket actions API authorization."""
+class TestWebSocketAdminGating:
+    """Verify admin-gating on WebSocket commands matches the policy in
+    websocket_api.py's `async_register_websocket_commands` docstring.
 
-    async def test_ws_actions_list_no_admin_required(
-        self, hass, hass_ws_client
+    Non-admin users (HA "read-only" group) must be rejected with
+    `unauthorized` for:
+      - All mutating commands.
+      - Topology-exposing read-only commands: actions/{list,get},
+        entities/{sensors,alarms}.
+
+    Non-admin users must be allowed for the two non-sensitive read-only
+    commands: modes/list, config/get.
+    """
+
+    @pytest.mark.parametrize(
+        ("command_type", "extra_payload"),
+        [
+            ("abode_security/actions/list", {}),
+            ("abode_security/actions/get", {"action_id": "any"}),
+            ("abode_security/entities/sensors", {}),
+            ("abode_security/entities/alarms", {}),
+            ("abode_security/modes/set", {"mode_id": "home"}),
+        ],
+        ids=[
+            "actions/list",
+            "actions/get",
+            "entities/sensors",
+            "entities/alarms",
+            "modes/set",
+        ],
+    )
+    async def test_admin_gated_commands_reject_non_admin(
+        self,
+        hass,
+        hass_ws_client,
+        hass_read_only_access_token,
+        command_type,
+        extra_payload,
     ) -> None:
-        """Test that list action does not require admin."""
-        # hass_ws_client creates an admin by default, but list should work for non-admin too
-        # For now, just verify it works - we'll add non-admin test when fixture is available
-        client = await hass_ws_client(hass)
-        await client.send_json({"id": 1, "type": "abode_security/actions/list"})
+        """Non-admin users get `unauthorized` from admin-gated commands."""
+        client = await hass_ws_client(hass, hass_read_only_access_token)
+        await client.send_json({"id": 1, "type": command_type, **extra_payload})
         response = await client.receive_json()
+
+        assert not response["success"]
+        assert response["error"]["code"] == "unauthorized"
+
+    async def test_modes_list_allowed_for_non_admin(
+        self, hass, hass_ws_client, hass_read_only_access_token
+    ) -> None:
+        """`modes/list` exposes only mode names; non-admin users may call it."""
+        client = await hass_ws_client(hass, hass_read_only_access_token)
+        await client.send_json({"id": 1, "type": "abode_security/modes/list"})
+        response = await client.receive_json()
+
         assert response["success"]
 
-    async def test_ws_actions_get_no_admin_required(self, hass, hass_ws_client) -> None:
-        """Test that get action does not require admin."""
-        manager = _get_manager(hass)
-        action = await manager.async_create(
-            name="Test",
-            modes=["home"],
-            sensor_entity_ids=["binary_sensor.door"],
-            alarm_entity_ids=["switch.panic_alarm"],
-        )
-
-        client = await hass_ws_client(hass)
-        await client.send_json(
-            {
-                "id": 1,
-                "type": "abode_security/actions/get",
-                "action_id": action.id,
-            }
-        )
+    async def test_config_get_allowed_for_non_admin(
+        self, hass, hass_ws_client, hass_read_only_access_token
+    ) -> None:
+        """`config/get` exposes only non-sensitive settings; non-admin OK."""
+        client = await hass_ws_client(hass, hass_read_only_access_token)
+        await client.send_json({"id": 1, "type": "abode_security/config/get"})
         response = await client.receive_json()
+
         assert response["success"]
 
 
