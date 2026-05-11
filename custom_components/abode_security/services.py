@@ -162,8 +162,15 @@ async def _trigger_alarm_handler(call: ServiceCall) -> None:
         LOGGER.error("Abode integration not configured")
         return
 
+    alarm = abode_system.abode.get_alarm()
+    if alarm is None:
+        # Reachable during transient pre-load state (panel still initializing,
+        # devices not yet fetched) or on accounts without an alarm device.
+        # Without this guard, the await below crashed with AttributeError.
+        LOGGER.error("No alarm device available; cannot trigger manual alarm")
+        return
+
     try:
-        alarm = abode_system.abode.get_alarm()
         await alarm.trigger_manual_alarm(alarm_type)
         LOGGER.info("Triggered manual alarm of type: %s", alarm_type)
     except AbodeException as ex:
