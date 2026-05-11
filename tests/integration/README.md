@@ -29,15 +29,17 @@ uv run pytest -m "not integration" -v
 
 ## Test Structure
 
-- `test_auth.py` - Authentication flows
-- `test_panel.py` - Panel operations
-- `test_devices.py` - Device operations
-- `test_timeline.py` - Timeline events
+This directory is currently a placeholder. The actual integration tests
+live alongside their unit counterparts in `tests/test_*.py` (each test
+that needs the mock server carries `@pytest.mark.integration`). Run them
+with `uv run pytest -m integration`.
 
 ## Key Differences from Unit Tests
 
-- **Unit tests** (`tests/test_*.py`): Use `aioresponses`, fast, no network
-- **Integration tests** (`tests/integration/`): Use mock server, slower, realistic
+- **Unit tests** (`tests/test_*.py`, no `integration` marker): Use
+  `aioresponses` to mock HTTP, fast, no network.
+- **Integration tests** (`tests/test_*.py` with `@pytest.mark.integration`):
+  Use the mock server, slower, realistic.
 
 Both are valuable! Unit tests for TDD and quick feedback, integration tests for confidence.
 

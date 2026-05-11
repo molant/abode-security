@@ -68,7 +68,6 @@ async def integration_setup(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 class TestActionsIntegration:
     """Integration tests for the actions system."""
 
@@ -413,7 +412,6 @@ class TestActionsIntegration:
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 class TestActionTriggerIntegration:
     """Integration tests for action triggering."""
 

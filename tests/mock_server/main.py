@@ -19,18 +19,27 @@ sio = socketio.AsyncServer(
     async_mode="asgi", cors_allowed_origins="*", logger=True, engineio_logger=False
 )
 
-# Load fixtures from existing test fixtures
-# Fixtures are mounted at /app/fixtures in the container
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
+# Load fixtures from existing test fixtures.
+# In Docker, docker-compose mounts `./tests/fixtures` at
+# `/app/fixtures` (== `Path(__file__).parent / "fixtures"`).
+# Outside Docker (local dev / CI alternatives), the volume mount is absent
+# and the fixtures live next to this file's parent directory, at
+# `tests/fixtures`. Search both so the mock works in either layout without
+# needing a symlink.
+_FIXTURES_CANDIDATES = (
+    Path(__file__).parent / "fixtures",
+    Path(__file__).parent.parent / "fixtures",
+)
 
 
-def load_fixture(name: str) -> dict[str, Any]:
-    """Load a JSON fixture file."""
-    fixture_path = FIXTURES_DIR / f"{name}.json"
-    if not fixture_path.exists():
-        raise FileNotFoundError(f"Fixture not found: {name}.json")
-    with open(fixture_path) as f:
-        return json.load(f)
+def load_fixture(name: str) -> Any:
+    """Load a JSON fixture file. May return a dict or a list at top level."""
+    for base in _FIXTURES_CANDIDATES:
+        fixture_path = base / f"{name}.json"
+        if fixture_path.exists():
+            with open(fixture_path) as f:
+                return json.load(f)
+    raise FileNotFoundError(f"Fixture not found: {name}.json")
 
 
 # In-memory state (reset between test runs)
@@ -342,9 +351,14 @@ async def get_security_panel():
 async def get_automations():
     """
     Get all automations.
+
+    `automation.json` is already a JSON array of automations, so we return
+    it directly. Wrapping it in another list would produce ``[[...]]``,
+    which `Client._update_all` cannot iterate -- it expects each element
+    to be an automation dict.
     """
     try:
-        return [load_fixture("automation")]
+        return load_fixture("automation")
     except FileNotFoundError:
         return []
 

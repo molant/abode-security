@@ -16,7 +16,6 @@ from custom_components.abode_security.const import CONF_POLLING
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_camera_entity_registry(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],
@@ -60,7 +59,6 @@ async def test_camera_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_camera_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -98,7 +96,6 @@ async def test_camera_attributes(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_camera_capture_image(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -145,7 +142,6 @@ async def test_camera_capture_image(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_camera_on(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
@@ -192,7 +188,6 @@ async def test_camera_on(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_camera_off(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:

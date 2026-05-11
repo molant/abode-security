@@ -22,7 +22,6 @@ from custom_components.abode_security.const import CONF_POLLING, DOMAIN
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_sensor_entity_registry(
     hass: HomeAssistant,
     mock_server_client: dict[str, str],
@@ -62,7 +61,6 @@ async def test_sensor_entity_registry(
 
 
 @pytest.mark.integration
-@pytest.mark.enable_socket
 async def test_sensor_attributes(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
