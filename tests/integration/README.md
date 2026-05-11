@@ -6,7 +6,7 @@ Tests in this directory use the mock Abode API server for realistic integration 
 
 **Start mock server automatically (recommended)**:
 ```bash
-pytest tests/integration/ -v -m integration
+uv run pytest tests/integration/ -v -m integration
 ```
 
 The mock server will start automatically when running integration tests via the `mock_server` fixture in `conftest.py`.
@@ -14,17 +14,17 @@ The mock server will start automatically when running integration tests via the 
 **Or start mock server manually**:
 ```bash
 docker-compose up -d mock-abode
-pytest tests/integration/ -v
+uv run pytest tests/integration/ -v
 ```
 
 **Run all tests (unit + integration)**:
 ```bash
-pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 **Run only unit tests (fast, no mock server)**:
 ```bash
-pytest -m "not integration" -v
+uv run pytest -m "not integration" -v
 ```
 
 ## Test Structure

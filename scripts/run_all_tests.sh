@@ -61,7 +61,7 @@ echo ""
 export PYTHONPATH="$(pwd)/custom_components:$PYTHONPATH"
 
 # Run pytest with coverage, including integration tests
-if python3 -m pytest tests/ -v --cov=custom_components/abode_security --cov-report=term-missing -m ''; then
+if uv run pytest tests/ -v --cov=custom_components/abode_security --cov-report=term-missing -m ''; then
     echo ""
     echo -e "${GREEN}=========================================${NC}"
     echo -e "${GREEN}All tests passed!${NC}"

@@ -6,9 +6,10 @@
 **Runs on**: Every push/PR to main or develop
 
 **Jobs**:
-1. **tests** - Python code quality
+1. **tests** - Python code quality (all steps run through `uv run` against
+   the `[project.optional-dependencies].dev` set in `pyproject.toml`)
    - Ruff linting and formatting
-   - MyPy type checking
+   - MyPy and Pyright type checking
    - Pytest unit/integration tests
 
 2. **frontend-build** - Frontend build verification
@@ -47,11 +48,16 @@
 
 ## Running Locally
 
-**Python tests**:
+**Python tests** (runs the same gates as CI):
 ```bash
-ruff check . && ruff format .
-mypy custom_components/abode_security/
-pytest tests/
+./scripts/check.sh
+```
+Or individually:
+```bash
+uv run ruff check . && uv run ruff format --check .
+uv run mypy custom_components/abode_security/
+uv run pyright custom_components/abode_security/
+uv run pytest tests/
 ```
 
 **Frontend build**:

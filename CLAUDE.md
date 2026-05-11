@@ -15,15 +15,15 @@ Design and data flow: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 - Mock API docs: http://localhost:8000/docs
 - Mock creds: test@example.com / testpassword
 
-Quality gates (`ruff`, `mypy`, `pytest`) are enforced by `.githooks/pre-commit`. Don't bypass with `--no-verify`; fix the underlying issue. `check.sh` runs the same set locally.
+Quality gates (`ruff`, `mypy`, `pyright`, `pytest`) are enforced by `.githooks/pre-commit`. Don't bypass with `--no-verify`; fix the underlying issue. `check.sh` runs the same set locally. All tools run through `uv run` against `pyproject.toml [project.optional-dependencies].dev`.
 
 ## Testing tiers
 
-- Unit (`tests/test_*.py`) — default `pytest` run, HTTP mocked with `aioresponses`
-- Integration (`pytest -m integration`) — needs the mock server (`./scripts/dev.sh`)
+- Unit (`tests/test_*.py`) — default `uv run pytest` run, HTTP mocked with `aioresponses`
+- Integration (`uv run pytest -m integration`) — needs the mock server (`./scripts/dev.sh`)
 - E2E (`./scripts/test-e2e.sh`) — Playwright against the live Docker stack
 
-`pytest -m ""` runs everything.
+`uv run pytest -m ""` runs everything.
 
 ### Testing gotchas
 
