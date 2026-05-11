@@ -10,7 +10,7 @@
   },
   "iot_class": "cloud_push",
   "loggers": ["lomond", "custom_components.abode_security"],
-  "requirements": ["platformdirs", "keyring", "lomond", "aiohttp"],
+  "requirements": ["platformdirs", "lomond", "aiohttp"],
   "single_config_entry": true,
   "version": "1.0.0-dev-20251211-112901",
   "minimum_home_assistant_version": "2024.1.0",

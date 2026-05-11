@@ -1,1 +1,1 @@
-# Using local async refactor of jaraco.abode from custom_components/lib/abode/
+# Using local async refactor of jaraco.abode from custom_components/abode_security/abode/
