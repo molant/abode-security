@@ -19,6 +19,10 @@ export default {
     typescript({
       sourceMap: isDev,
       inlineSources: isDev,
+      outDir: '../custom_components/abode_security/www',
+      declaration: false,
+      declarationMap: false,
+      exclude: ['**/__tests__/**', '**/*.test.ts'],
     }),
     !isDev &&
       terser({
