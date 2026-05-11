@@ -25,7 +25,13 @@ async def async_setup_entry(
 ) -> None:
     """Set up Abode alarm control panel device."""
     data: AbodeSystem = entry.runtime_data
-    async_add_entities([AbodeAlarm(data, data.abode.get_alarm())])
+    alarm = data.abode.get_alarm()
+    if alarm is None:
+        # Reachable on transient pre-load state or accounts without an alarm
+        # device. Skip the panel entity rather than constructing it with None.
+        LOGGER.warning("No alarm device available; skipping alarm_control_panel entity")
+        return
+    async_add_entities([AbodeAlarm(data, alarm)])
 
 
 class AbodeAlarm(AbodeDevice, AlarmControlPanelEntity):

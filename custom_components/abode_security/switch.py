@@ -82,16 +82,25 @@ async def async_setup_entry(
         for automation in await data.abode.get_automations()
     )
 
-    # Add manual alarm switches
+    # Add manual alarm switches. `get_alarm()` returns `Alarm | None`; the
+    # None branch is reachable when the panel is still initializing or the
+    # account has no alarm device — skip the alarm-attached switches in that
+    # case rather than constructing them with None and crashing on access.
     alarm = data.abode.get_alarm()
-    entities.extend(
-        AbodeManualAlarmSwitch(data, alarm, alarm_type)
-        for alarm_type in MANUAL_ALARM_TYPES
-    )
-
-    # CMS settings switches (wrapper methods handle missing methods gracefully).
-    entities.extend(AbodeCMSSettingSwitch(data, alarm, *row) for row in _CMS_SWITCHES)
-    entities.append(AbodeTestModeSwitch(data, alarm))
+    if alarm is not None:
+        entities.extend(
+            AbodeManualAlarmSwitch(data, alarm, alarm_type)
+            for alarm_type in MANUAL_ALARM_TYPES
+        )
+        # CMS settings switches (wrapper methods handle missing methods gracefully).
+        entities.extend(
+            AbodeCMSSettingSwitch(data, alarm, *row) for row in _CMS_SWITCHES
+        )
+        entities.append(AbodeTestModeSwitch(data, alarm))
+    else:
+        LOGGER.warning(
+            "No alarm device available; skipping alarm-attached switches",
+        )
 
     async_add_entities(entities)
 
