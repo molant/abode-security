@@ -3,7 +3,10 @@
 import pytest
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.abode_security.action_manager import ActionManager
+from custom_components.abode_security.action_manager import (
+    MAX_NAME_LENGTH,
+    ActionManager,
+)
 from custom_components.abode_security.config_store import ConfigStore
 from custom_components.abode_security.const import DOMAIN
 from custom_components.abode_security.websocket_api import (
@@ -166,13 +169,18 @@ class TestWebSocketActionsAPI:
     async def test_ws_actions_create_validation_error(
         self, hass, hass_ws_client
     ) -> None:
-        """Test creating an action with invalid data returns validation error."""
+        """Test creating an action with invalid data returns validation error.
+
+        Uses a whitespace-only name — passes the schema length check (min=1)
+        but the manager's ``name.strip()`` validation rejects it, so this
+        still exercises the manager-level ValueError -> validation_error path.
+        """
         client = await hass_ws_client(hass)
         await client.send_json(
             {
                 "id": 1,
                 "type": "abode_security/actions/create",
-                "name": "",  # Invalid: empty name
+                "name": "   ",  # Invalid: whitespace-only name
                 "modes": ["home"],
                 "sensor_entity_ids": ["binary_sensor.door"],
                 "alarm_entity_ids": ["switch.panic_alarm"],
@@ -202,6 +210,115 @@ class TestWebSocketActionsAPI:
 
         # Schema validation should reject invalid modes
         assert not response["success"]
+
+    # --- Oversize payload guards (defense in depth, see issue #55) ---
+
+    async def test_ws_actions_create_name_too_long(self, hass, hass_ws_client) -> None:
+        """Schema rejects names longer than MAX_NAME_LENGTH."""
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/actions/create",
+                "name": "x" * (MAX_NAME_LENGTH + 1),
+                "modes": ["home"],
+                "sensor_entity_ids": ["binary_sensor.door"],
+                "alarm_entity_ids": ["switch.panic_alarm"],
+            }
+        )
+        response = await client.receive_json()
+
+        assert not response["success"]
+        assert response["error"]["code"] == "invalid_format"
+
+    async def test_ws_actions_create_too_many_modes(self, hass, hass_ws_client) -> None:
+        """Schema rejects mode lists larger than VALID_MODES.
+
+        VALID_MODES has 3 entries and the element validator already rejects
+        unknown modes, so the only way to exceed the length cap is to include
+        a duplicate — which is exactly what this case tests.
+        """
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/actions/create",
+                "name": "Test",
+                "modes": ["home", "away", "standby", "home"],
+                "sensor_entity_ids": ["binary_sensor.door"],
+                "alarm_entity_ids": ["switch.panic_alarm"],
+            }
+        )
+        response = await client.receive_json()
+
+        assert not response["success"]
+        assert response["error"]["code"] == "invalid_format"
+
+    async def test_ws_actions_create_too_many_sensors(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Schema rejects sensor_entity_ids lists longer than 64."""
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/actions/create",
+                "name": "Test",
+                "modes": ["home"],
+                "sensor_entity_ids": [f"binary_sensor.door_{i}" for i in range(65)],
+                "alarm_entity_ids": ["switch.panic_alarm"],
+            }
+        )
+        response = await client.receive_json()
+
+        assert not response["success"]
+        assert response["error"]["code"] == "invalid_format"
+
+    async def test_ws_actions_create_rejects_bool_delay(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Schema rejects ``delay_seconds=True``/``False`` (bool is an int).
+
+        ActionStore.from_dict rejects bools for delay_seconds and would drop
+        the record as corrupt on next load — the schema must reject them too
+        to keep all three layers consistent.
+        """
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/actions/create",
+                "name": "Test",
+                "modes": ["home"],
+                "sensor_entity_ids": ["binary_sensor.door"],
+                "alarm_entity_ids": ["switch.panic_alarm"],
+                "delay_seconds": True,
+            }
+        )
+        response = await client.receive_json()
+
+        assert not response["success"]
+        assert response["error"]["code"] == "invalid_format"
+
+    async def test_ws_actions_create_too_many_alarms(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Schema rejects alarm_entity_ids lists longer than 16."""
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/actions/create",
+                "name": "Test",
+                "modes": ["home"],
+                "sensor_entity_ids": ["binary_sensor.door"],
+                "alarm_entity_ids": [f"switch.alarm_{i}" for i in range(17)],
+            }
+        )
+        response = await client.receive_json()
+
+        assert not response["success"]
+        assert response["error"]["code"] == "invalid_format"
 
     # --- Update Action ---
 
@@ -249,7 +366,12 @@ class TestWebSocketActionsAPI:
     async def test_ws_actions_update_validation_error(
         self, hass, hass_ws_client
     ) -> None:
-        """Test updating an action with invalid data returns error."""
+        """Test updating an action with invalid data returns error.
+
+        Uses a whitespace-only name so the manager's ``name.strip()`` check
+        is what rejects it (the schema's length check accepts non-empty
+        strings).
+        """
         manager = _get_manager(hass)
         action = await manager.async_create(
             name="Original",
@@ -264,13 +386,37 @@ class TestWebSocketActionsAPI:
                 "id": 1,
                 "type": "abode_security/actions/update",
                 "action_id": action.id,
-                "name": "",  # Invalid: empty name
+                "name": "   ",  # Invalid: whitespace-only name
             }
         )
         response = await client.receive_json()
 
         assert not response["success"]
         assert response["error"]["code"] == "validation_error"
+
+    async def test_ws_actions_update_name_too_long(self, hass, hass_ws_client) -> None:
+        """Update schema applies the same oversize guards as create."""
+        manager = _get_manager(hass)
+        action = await manager.async_create(
+            name="Original",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/actions/update",
+                "action_id": action.id,
+                "name": "x" * (MAX_NAME_LENGTH + 1),
+            }
+        )
+        response = await client.receive_json()
+
+        assert not response["success"]
+        assert response["error"]["code"] == "invalid_format"
 
     # --- Delete Action ---
 

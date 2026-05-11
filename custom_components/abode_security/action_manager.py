@@ -26,6 +26,7 @@ VALID_MODES = {"standby", "home", "away"}
 
 REPAIR_ISSUE_CORRUPT_ACTIONS = "corrupt_action_records"
 MAX_DELAY_SECONDS = 60
+MAX_NAME_LENGTH = 100
 
 
 @dataclass
@@ -346,8 +347,8 @@ class ActionManager:
         # Validate name
         if not name or not name.strip():
             raise ValueError("Action name cannot be empty")
-        if len(name) > 100:
-            raise ValueError("Action name cannot exceed 100 characters")
+        if len(name) > MAX_NAME_LENGTH:
+            raise ValueError(f"Action name cannot exceed {MAX_NAME_LENGTH} characters")
 
         # Validate modes
         if not modes:
