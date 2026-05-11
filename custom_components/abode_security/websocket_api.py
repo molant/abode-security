@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
-from homeassistant.components.websocket_api import require_admin
+from homeassistant.components.websocket_api.decorators import (
+    async_response,
+    require_admin,
+    websocket_command,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
 from homeassistant.helpers import config_validation as cv
@@ -45,7 +49,7 @@ def _non_bool_int(value: object) -> int:
 
 
 if TYPE_CHECKING:
-    from homeassistant.components.websocket_api import ActiveConnection
+    from homeassistant.components.websocket_api.connection import ActiveConnection
 
     from .action_manager import ActionManager
     from .config_store import ConfigStore
@@ -81,12 +85,12 @@ def _get_action_manager(hass: HomeAssistant) -> ActionManager | None:
 # --- Action CRUD Endpoints ---
 
 
-@websocket_api.websocket_command(
+@websocket_command(
     {
         vol.Required("type"): "abode_security/actions/list",
     }
 )
-@websocket_api.async_response
+@async_response
 async def websocket_actions_list(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -105,13 +109,13 @@ async def websocket_actions_list(
     )
 
 
-@websocket_api.websocket_command(
+@websocket_command(
     {
         vol.Required("type"): "abode_security/actions/get",
         vol.Required("action_id"): str,
     }
 )
-@websocket_api.async_response
+@async_response
 async def websocket_actions_get(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -133,7 +137,7 @@ async def websocket_actions_get(
     connection.send_result(msg["id"], action.to_dict())
 
 
-@websocket_api.websocket_command(
+@websocket_command(
     {
         vol.Required("type"): "abode_security/actions/create",
         vol.Required("name"): vol.All(str, vol.Length(min=1, max=MAX_NAME_LENGTH)),
@@ -155,7 +159,7 @@ async def websocket_actions_get(
     }
 )
 @require_admin
-@websocket_api.async_response
+@async_response
 async def websocket_actions_create(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -181,7 +185,7 @@ async def websocket_actions_create(
         connection.send_error(msg["id"], "validation_error", str(err))
 
 
-@websocket_api.websocket_command(
+@websocket_command(
     {
         vol.Required("type"): "abode_security/actions/update",
         vol.Required("action_id"): str,
@@ -205,7 +209,7 @@ async def websocket_actions_create(
     }
 )
 @require_admin
-@websocket_api.async_response
+@async_response
 async def websocket_actions_update(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -246,14 +250,14 @@ async def websocket_actions_update(
         connection.send_error(msg["id"], "validation_error", str(err))
 
 
-@websocket_api.websocket_command(
+@websocket_command(
     {
         vol.Required("type"): "abode_security/actions/delete",
         vol.Required("action_id"): str,
     }
 )
 @require_admin
-@websocket_api.async_response
+@async_response
 async def websocket_actions_delete(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -276,14 +280,14 @@ async def websocket_actions_delete(
     connection.send_result(msg["id"], {"success": True})
 
 
-@websocket_api.websocket_command(
+@websocket_command(
     {
         vol.Required("type"): "abode_security/actions/toggle",
         vol.Required("action_id"): str,
     }
 )
 @require_admin
-@websocket_api.async_response
+@async_response
 async def websocket_actions_toggle(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -311,14 +315,14 @@ async def websocket_actions_toggle(
     connection.send_result(msg["id"], action.to_dict())
 
 
-@websocket_api.websocket_command(
+@websocket_command(
     {
         vol.Required("type"): "abode_security/actions/test",
         vol.Required("action_id"): str,
     }
 )
 @require_admin
-@websocket_api.async_response
+@async_response
 async def websocket_actions_test(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -398,12 +402,12 @@ assert set(MODE_TO_SERVICE) == VALID_MODES, (
 # the same lookup. See helpers.py for the rationale.
 
 
-@websocket_api.websocket_command(
+@websocket_command(
     {
         vol.Required("type"): "abode_security/modes/list",
     }
 )
-@websocket_api.async_response
+@async_response
 async def websocket_modes_list(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -442,13 +446,13 @@ async def websocket_modes_list(
     connection.send_result(msg["id"], {"modes": modes})
 
 
-@websocket_api.websocket_command(
+@websocket_command(
     {
         vol.Required("type"): "abode_security/modes/set",
         vol.Required("mode_id"): vol.In(VALID_MODES),
     }
 )
-@websocket_api.async_response
+@async_response
 async def websocket_modes_set(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -494,12 +498,12 @@ async def websocket_modes_set(
     connection.send_result(msg["id"], {"success": True, "mode_id": mode_id})
 
 
-@websocket_api.websocket_command(
+@websocket_command(
     {
         vol.Required("type"): "abode_security/entities/sensors",
     }
 )
-@websocket_api.async_response
+@async_response
 async def websocket_entities_sensors(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -533,12 +537,12 @@ ALARM_TYPES = {
 }
 
 
-@websocket_api.websocket_command(
+@websocket_command(
     {
         vol.Required("type"): "abode_security/entities/alarms",
     }
 )
-@websocket_api.async_response
+@async_response
 async def websocket_entities_alarms(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -585,12 +589,12 @@ def _get_config_store(hass: HomeAssistant) -> ConfigStore | None:
     return cast("ConfigStore | None", hass.data.get(DOMAIN, {}).get("config_store"))
 
 
-@websocket_api.websocket_command(
+@websocket_command(
     {
         vol.Required("type"): "abode_security/config/get",
     }
 )
-@websocket_api.async_response
+@async_response
 async def websocket_config_get(
     hass: HomeAssistant,
     connection: ActiveConnection,
@@ -605,7 +609,7 @@ async def websocket_config_get(
     connection.send_result(msg["id"], config_store.get_config())
 
 
-@websocket_api.websocket_command(
+@websocket_command(
     {
         vol.Required("type"): "abode_security/config/set",
         vol.Optional("debounce_seconds"): vol.All(
@@ -614,7 +618,7 @@ async def websocket_config_get(
     }
 )
 @require_admin
-@websocket_api.async_response
+@async_response
 async def websocket_config_set(
     hass: HomeAssistant,
     connection: ActiveConnection,
