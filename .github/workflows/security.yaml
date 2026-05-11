@@ -1,13 +1,13 @@
 # Security scanning — see issue #60.
 #
 # Three jobs: CodeQL (SAST for python + js/ts), pip-audit (CVE alerts on
-# Python deps resolved from uv.lock), and npm-audit (CVE alerts on the
+# Python deps resolved from uv.lock), and npm audit (CVE alerts on the
 # frontend panel and the root E2E runner).
 #
-# Severity tuning: defaults applied for the first run. Once the baseline
-# is triaged, consider `--severity=high` on pip-audit / `--audit-level=high`
-# on npm audit to fail PRs only on HIGH+ findings while letting MEDIUM
-# items surface in scheduled-run logs.
+# Severity thresholds:
+#  - pip-audit: defaults (fails on any finding) plus an explicit ignore
+#    list for CVEs in HA-pinned transitive deps tracked by #79.
+#  - npm audit: --audit-level=high on both jobs.
 name: Security
 
 on:
@@ -71,7 +71,17 @@ jobs:
         run: uv export --no-hashes --no-emit-project --all-extras --format requirements-txt -o /tmp/requirements-locked.txt
 
       - name: Run pip-audit
-        run: uvx pip-audit --requirement /tmp/requirements-locked.txt --strict
+        # `--ignore-vuln` entries are HA-pinned transitive CVEs. Removed
+        # individually when `pytest-homeassistant-custom-component` bumps
+        # to a release whose lockstep resolves the dep. Triage tracked
+        # in #79.
+        run: |
+          uvx pip-audit --requirement /tmp/requirements-locked.txt --strict \
+            --ignore-vuln CVE-2024-47874 \
+            --ignore-vuln CVE-2025-54121 \
+            --ignore-vuln CVE-2026-4539 \
+            --ignore-vuln CVE-2026-32597 \
+            --ignore-vuln CVE-2025-71176
 
   npm-audit-frontend:
     name: npm audit (frontend)
