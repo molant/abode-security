@@ -79,9 +79,7 @@ jobs:
           uvx pip-audit --requirement /tmp/requirements-locked.txt --strict \
             --ignore-vuln CVE-2024-47874 \
             --ignore-vuln CVE-2025-54121 \
-            --ignore-vuln CVE-2026-4539 \
-            --ignore-vuln CVE-2026-32597 \
-            --ignore-vuln CVE-2025-71176
+            --ignore-vuln CVE-2026-4539
 
   npm-audit-frontend:
     name: npm audit (frontend)
