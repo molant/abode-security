@@ -8,7 +8,6 @@ True
 from __future__ import annotations
 
 import pathlib
-from collections.abc import Mapping
 
 import platformdirs
 
@@ -31,7 +30,7 @@ class PlatformDirs(platformdirs.PlatformDirs):
     def user_data_path(self):
         return vars(self).get('user_data_path') or super().user_data_path
 
-    def override(self, **kwargs: Mapping[str, pathlib.Path]):
+    def override(self, **kwargs: pathlib.Path) -> None:
         """
         Override the default _path variable.
 

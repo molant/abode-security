@@ -1,0 +1,11 @@
+{
+  "include": ["custom_components/abode_security"],
+  "exclude": [
+    "custom_components/abode_security/abode",
+    "tests",
+    "**/__pycache__",
+    "**/node_modules"
+  ],
+  "pythonVersion": "3.11",
+  "reportUnusedParameter": "none"
+}
