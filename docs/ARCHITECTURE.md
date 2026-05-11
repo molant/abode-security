@@ -269,4 +269,4 @@ abode-security/
 ## Related Docs
 
 - [`ASYNC_AWAIT_PATTERNS.md`](./ASYNC_AWAIT_PATTERNS.md) — async design decisions and call-site inventory
-- [`CODE_REVIEW_2025_11_25.md`](./CODE_REVIEW_2025_11_25.md) — prior async-focused review
+- [`archive/CODE_REVIEW_2025_11_25.md`](./archive/CODE_REVIEW_2025_11_25.md) — prior async-focused review (historical snapshot)
