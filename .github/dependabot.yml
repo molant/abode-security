@@ -15,6 +15,14 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 10
+    ignore:
+      # PyTurboJPEG is not imported by this project; it ships in [dev] only
+      # so HA's camera/stream integrations can load during tests. We pin to
+      # HA's exact version (currently 1.8.3) to avoid dev/prod drift, so
+      # Dependabot must not propose its own bumps to 2.x. Revisit when HA
+      # bumps past 1.x.
+      - dependency-name: "pyturbojpeg"
+        versions: ["2.x"]
     groups:
       dev-deps:
         patterns:
