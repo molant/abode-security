@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
+
+from .const import DOMAIN
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -20,6 +23,9 @@ _LOGGER = logging.getLogger(__name__)
 STORAGE_KEY = "abode_security_actions"
 STORAGE_VERSION = 1
 VALID_MODES = {"standby", "home", "away"}
+
+REPAIR_ISSUE_CORRUPT_ACTIONS = "corrupt_action_records"
+MAX_DELAY_SECONDS = 60
 
 
 @dataclass
@@ -60,25 +66,105 @@ class AbodeAction:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> AbodeAction:
-        """Deserialize action from dictionary.
+    def from_dict(cls, data: Any) -> AbodeAction:
+        """Deserialize and validate an action from a raw dict.
 
-        Parses ISO format string back to datetime.
+        Raises ``ValueError`` with a field-specific message if the record is
+        structurally invalid (missing key, wrong type, out-of-range value, or
+        unparseable ``last_triggered``). Callers in load paths should treat a
+        ``ValueError`` as "skip this record, keep loading the rest"; see
+        ``ActionStore.async_load``.
         """
-        last_triggered = data.get("last_triggered")
-        if last_triggered is not None and isinstance(last_triggered, str):
-            last_triggered = datetime.fromisoformat(last_triggered)
+        if not isinstance(data, dict):
+            raise ValueError("record must be a dict")
+
+        action_id = data.get("id")
+        if not isinstance(action_id, str) or not action_id:
+            raise ValueError("id must be a non-empty string")
+
+        name = data.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("name must be a non-empty string")
+
+        modes = data.get("modes")
+        if (
+            not isinstance(modes, list)
+            or not modes
+            or not all(isinstance(m, str) for m in modes)
+        ):
+            raise ValueError("modes must be a non-empty list of strings")
+        invalid_modes = [m for m in modes if m not in VALID_MODES]
+        if invalid_modes:
+            raise ValueError(
+                f"modes contains invalid value(s) {invalid_modes!r}; "
+                f"valid modes are {sorted(VALID_MODES)!r}"
+            )
+
+        sensors = data.get("sensor_entity_ids")
+        if (
+            not isinstance(sensors, list)
+            or not sensors
+            or not all(isinstance(s, str) for s in sensors)
+        ):
+            raise ValueError("sensor_entity_ids must be a non-empty list of strings")
+
+        alarms = data.get("alarm_entity_ids")
+        if (
+            not isinstance(alarms, list)
+            or not alarms
+            or not all(isinstance(a, str) for a in alarms)
+        ):
+            raise ValueError("alarm_entity_ids must be a non-empty list of strings")
+
+        enabled = data.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be a boolean")
+
+        delay_seconds = data.get("delay_seconds", 0)
+        # ``bool`` is a subclass of ``int``; exclude it explicitly so a stored
+        # ``True``/``False`` does not pass the range check.
+        if (
+            not isinstance(delay_seconds, int)
+            or isinstance(delay_seconds, bool)
+            or delay_seconds < 0
+            or delay_seconds > MAX_DELAY_SECONDS
+        ):
+            raise ValueError(
+                f"delay_seconds must be an int in [0, {MAX_DELAY_SECONDS}]"
+            )
+
+        trigger_count = data.get("trigger_count", 0)
+        if (
+            not isinstance(trigger_count, int)
+            or isinstance(trigger_count, bool)
+            or trigger_count < 0
+        ):
+            raise ValueError("trigger_count must be a non-negative int")
+
+        raw_last_triggered = data.get("last_triggered")
+        last_triggered: datetime | None
+        if raw_last_triggered is None:
+            last_triggered = None
+        elif isinstance(raw_last_triggered, str):
+            try:
+                last_triggered = datetime.fromisoformat(raw_last_triggered)
+            except ValueError as exc:
+                raise ValueError(
+                    f"last_triggered is not a valid ISO 8601 string: {exc}"
+                ) from exc
+        else:
+            raise ValueError("last_triggered must be null or an ISO 8601 string")
 
         return cls(
-            id=data["id"],
-            name=data["name"],
-            modes=data["modes"],
-            sensor_entity_ids=data["sensor_entity_ids"],
-            alarm_entity_ids=data["alarm_entity_ids"],
-            enabled=data.get("enabled", True),
-            delay_seconds=data.get("delay_seconds", 0),
+            id=action_id,
+            name=name,
+            modes=modes,
+            sensor_entity_ids=sensors,
+            alarm_entity_ids=alarms,
+            enabled=enabled,
+            delay_seconds=delay_seconds,
             last_triggered=last_triggered,
-            trigger_count=data.get("trigger_count", 0),
+            trigger_count=trigger_count,
         )
 
 
@@ -96,20 +182,96 @@ class ActionStore:
         self._actions: dict[str, AbodeAction] = {}
 
     async def async_load(self) -> None:
-        """Load actions from storage.
+        """Load actions from storage, skipping individually corrupt records.
 
-        Handles missing file by initializing empty dict.
+        A single bad record (missing key, wrong type, duplicate id, hand-edit,
+        partial write) must not lose the rest of the user's actions or crash
+        integration setup. Each record is validated independently via
+        :meth:`AbodeAction.from_dict`. Bad records are logged at WARNING and
+        skipped. If anything was dropped, a Home Assistant repair issue is
+        raised so the user can see and resolve it; a subsequent clean load
+        clears the issue automatically.
         """
-        data = await self._store.async_load()
-        if data is None:
-            self._actions = {}
-            return
+        # Always start from a clean slate — any prior in-memory state is
+        # superseded by what's on disk now.
+        self._actions = {}
 
-        actions_data = data.get("actions", {})
-        self._actions = {
-            action_id: AbodeAction.from_dict(action_dict)
-            for action_id, action_dict in actions_data.items()
-        }
+        whole_file_corrupt = False
+        dropped = 0
+        loaded: dict[str, AbodeAction] = {}
+
+        data = await self._store.async_load()
+        if data is not None and not isinstance(data, dict):
+            _LOGGER.warning(
+                "Action storage root is not a dict (%s); ignoring all records",
+                type(data).__name__,
+            )
+            whole_file_corrupt = True
+        elif data is not None:
+            actions_data = data.get("actions", {})
+            if not isinstance(actions_data, dict):
+                _LOGGER.warning(
+                    "Action storage 'actions' is not a dict (%s); ignoring all records",
+                    type(actions_data).__name__,
+                )
+                whole_file_corrupt = True
+            else:
+                for key, raw in actions_data.items():
+                    try:
+                        action = AbodeAction.from_dict(raw)
+                    except (ValueError, TypeError) as exc:
+                        record_id = raw.get("id") if isinstance(raw, dict) else None
+                        # First arg is the record's own id when present, else
+                        # the storage map key — both refer to the same record.
+                        _LOGGER.warning(
+                            "Dropping corrupt action record %s: %s",
+                            record_id or key,
+                            exc,
+                        )
+                        dropped += 1
+                        continue
+
+                    if action.id in loaded:
+                        _LOGGER.warning(
+                            "Dropping duplicate action id %s (record key %s); "
+                            "keeping first",
+                            action.id,
+                            key,
+                        )
+                        dropped += 1
+                        continue
+
+                    loaded[action.id] = action
+
+        self._actions = loaded
+        if whole_file_corrupt:
+            self._raise_corrupt_issue(count=None)
+        elif dropped:
+            self._raise_corrupt_issue(count=dropped)
+        else:
+            # Only clear the prior repair issue once we know the current load
+            # is clean — avoids momentarily exposing a "cleared" state if a
+            # future caller awaits inside this method between the two writes.
+            ir.async_delete_issue(self._hass, DOMAIN, REPAIR_ISSUE_CORRUPT_ACTIONS)
+
+    def _raise_corrupt_issue(self, count: int | None) -> None:
+        """Create the repair issue.
+
+        ``count`` is the number of per-record drops, or ``None`` if the whole
+        file was unreadable (root not a dict, ``actions`` not a dict) and a
+        count can't be derived — surfaced to the user as ``"unknown"``.
+        """
+        ir.async_create_issue(
+            self._hass,
+            DOMAIN,
+            REPAIR_ISSUE_CORRUPT_ACTIONS,
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key=REPAIR_ISSUE_CORRUPT_ACTIONS,
+            translation_placeholders={
+                "count": str(count) if count is not None else "unknown"
+            },
+        )
 
     async def async_save(self) -> None:
         """Save all actions to storage."""
@@ -203,8 +365,8 @@ class ActionManager:
             raise ValueError("At least one alarm entity ID must be specified")
 
         # Validate delay
-        if delay_seconds < 0 or delay_seconds > 60:
-            raise ValueError("delay_seconds must be between 0 and 60")
+        if delay_seconds < 0 or delay_seconds > MAX_DELAY_SECONDS:
+            raise ValueError(f"delay_seconds must be between 0 and {MAX_DELAY_SECONDS}")
 
     def _warn_missing_entities(
         self,

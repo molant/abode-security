@@ -335,6 +335,19 @@ def pytest_collection_modifyitems(config, items):
         # Diagnostics PII redaction (issue #50)
         "test_unique_id_is_redacted",
         "test_email_does_not_appear_anywhere_in_payload",
+        # ActionStore load resilience (issue #54)
+        "test_load_skips_record_missing_required_key",
+        "test_load_skips_record_with_wrong_type",
+        "test_load_empty_file_no_regression",
+        "test_load_non_dict_root",
+        "test_load_non_dict_actions",
+        "test_load_duplicate_ids",
+        "test_load_clears_repair_issue_on_clean_reload",
+        "test_load_invalid_delay_seconds",
+        "test_load_invalid_mode_value",
+        "test_load_invalid_last_triggered",
+        "test_load_last_triggered_wrong_type",
+        "test_load_missing_optional_keys_uses_defaults",
     }
     # Skip tests with hass fixture except enabled tests
     for item in items:
