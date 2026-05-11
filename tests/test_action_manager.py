@@ -1,14 +1,20 @@
 """Tests for the action manager module."""
 
+import logging
 from datetime import UTC, datetime
 
 import pytest
+from homeassistant.helpers import issue_registry as ir
 
 from custom_components.abode_security.action_manager import (
+    REPAIR_ISSUE_CORRUPT_ACTIONS,
+    STORAGE_KEY,
+    STORAGE_VERSION,
     AbodeAction,
     ActionManager,
     ActionStore,
 )
+from custom_components.abode_security.const import DOMAIN
 
 
 class TestAbodeAction:
@@ -703,3 +709,234 @@ class TestActionManager:
 
         # Should not raise, just silently return
         await manager.async_record_trigger("non-existent")
+
+
+def _good_record(action_id: str = "good-1", name: str = "Good") -> dict:
+    """Build a well-formed action record for store-load tests."""
+    return {
+        "id": action_id,
+        "name": name,
+        "modes": ["home"],
+        "sensor_entity_ids": ["binary_sensor.door"],
+        "alarm_entity_ids": ["switch.panic_alarm"],
+        "enabled": True,
+        "delay_seconds": 0,
+        "last_triggered": None,
+        "trigger_count": 0,
+    }
+
+
+def _seed_storage(hass_storage, actions: dict) -> None:
+    """Seed hass_storage with a well-formed ``{"actions": {...}}`` payload.
+
+    Use :func:`_seed_raw` for non-dict root or non-dict ``actions`` cases.
+    """
+    hass_storage[STORAGE_KEY] = {
+        "version": STORAGE_VERSION,
+        "data": {"actions": actions},
+    }
+
+
+def _seed_raw(hass_storage, raw_data) -> None:
+    """Seed hass_storage with an arbitrary payload (e.g. non-dict root)."""
+    hass_storage[STORAGE_KEY] = {"version": STORAGE_VERSION, "data": raw_data}
+
+
+def _get_repair_issue(hass) -> ir.IssueEntry | None:
+    """Return the repair issue entry for corrupt action records (or None)."""
+    registry = ir.async_get(hass)
+    return registry.async_get_issue(DOMAIN, REPAIR_ISSUE_CORRUPT_ACTIONS)
+
+
+@pytest.mark.usefixtures("mock_abode")
+class TestActionStoreLoadResilience:
+    """Regression tests for #54 — load must survive corrupt records."""
+
+    async def test_load_skips_record_missing_required_key(
+        self, hass, hass_storage, caplog
+    ) -> None:
+        """A record missing ``name`` is dropped; siblings still load."""
+        bad = _good_record(action_id="bad-1")
+        del bad["name"]
+        _seed_storage(
+            hass_storage,
+            {
+                "good-1": _good_record(action_id="good-1", name="Good"),
+                "bad-1": bad,
+            },
+        )
+
+        store = ActionStore(hass)
+        with caplog.at_level(logging.WARNING):
+            await store.async_load()
+
+        ids = {a.id for a in store.get_all()}
+        assert ids == {"good-1"}
+        assert "bad-1" in caplog.text
+        assert _get_repair_issue(hass) is not None
+
+    async def test_load_skips_record_with_wrong_type(self, hass, hass_storage) -> None:
+        """A record whose ``modes`` is a string instead of a list is dropped."""
+        bad = _good_record(action_id="bad-2")
+        bad["modes"] = "away"
+        _seed_storage(
+            hass_storage,
+            {
+                "good-2": _good_record(action_id="good-2", name="Good"),
+                "bad-2": bad,
+            },
+        )
+
+        store = ActionStore(hass)
+        await store.async_load()
+
+        assert {a.id for a in store.get_all()} == {"good-2"}
+        assert _get_repair_issue(hass) is not None
+
+    async def test_load_empty_file_no_regression(self, hass, hass_storage) -> None:
+        """Missing storage key loads empty without raising a repair issue."""
+        # Do not seed anything — store returns None.
+        assert STORAGE_KEY not in hass_storage
+
+        store = ActionStore(hass)
+        await store.async_load()
+
+        assert store.get_all() == []
+        assert _get_repair_issue(hass) is None
+
+    async def test_load_non_dict_root(self, hass, hass_storage) -> None:
+        """Non-dict root payload yields empty store and raises repair issue."""
+        _seed_raw(hass_storage, ["not", "a", "dict"])
+
+        store = ActionStore(hass)
+        await store.async_load()
+
+        assert store.get_all() == []
+        assert _get_repair_issue(hass) is not None
+
+    async def test_load_non_dict_actions(self, hass, hass_storage) -> None:
+        """``actions`` not being a dict yields empty store and repair issue."""
+        _seed_raw(hass_storage, {"actions": ["nope"]})
+
+        store = ActionStore(hass)
+        await store.async_load()
+
+        assert store.get_all() == []
+        assert _get_repair_issue(hass) is not None
+
+    async def test_load_duplicate_ids(self, hass, hass_storage, caplog) -> None:
+        """Two records with the same ``id`` field: first wins, second dropped."""
+        first = _good_record(action_id="dup", name="First")
+        second = _good_record(action_id="dup", name="Second")
+        # Use different map keys so the dict itself can hold both records.
+        # Python dict literals preserve insertion order, so "key-a" / "First"
+        # is the one the loader will see first.
+        _seed_storage(hass_storage, {"key-a": first, "key-b": second})
+
+        store = ActionStore(hass)
+        with caplog.at_level(logging.WARNING):
+            await store.async_load()
+
+        all_actions = store.get_all()
+        assert len(all_actions) == 1
+        assert all_actions[0].name == "First"
+        assert "duplicate" in caplog.text.lower()
+        assert _get_repair_issue(hass) is not None
+
+    async def test_load_clears_repair_issue_on_clean_reload(
+        self, hass, hass_storage
+    ) -> None:
+        """A subsequent clean load removes a prior repair issue."""
+        bad = _good_record(action_id="bad-3")
+        bad["modes"] = "away"
+        _seed_storage(hass_storage, {"bad-3": bad})
+
+        store = ActionStore(hass)
+        await store.async_load()
+        assert _get_repair_issue(hass) is not None
+
+        # Now reseed with only good data and reload.
+        _seed_storage(
+            hass_storage, {"good-3": _good_record(action_id="good-3", name="Good")}
+        )
+        store2 = ActionStore(hass)
+        await store2.async_load()
+
+        assert {a.id for a in store2.get_all()} == {"good-3"}
+        assert _get_repair_issue(hass) is None
+
+    async def test_load_invalid_delay_seconds(self, hass, hass_storage) -> None:
+        """``delay_seconds`` out of [0, 60] is dropped."""
+        bad = _good_record(action_id="bad-delay")
+        bad["delay_seconds"] = 999
+        _seed_storage(hass_storage, {"bad-delay": bad})
+
+        store = ActionStore(hass)
+        await store.async_load()
+
+        assert store.get_all() == []
+        assert _get_repair_issue(hass) is not None
+
+    async def test_load_invalid_mode_value(self, hass, hass_storage) -> None:
+        """A ``modes`` entry not in VALID_MODES is dropped."""
+        bad = _good_record(action_id="bad-mode")
+        bad["modes"] = ["bogus"]
+        _seed_storage(hass_storage, {"bad-mode": bad})
+
+        store = ActionStore(hass)
+        await store.async_load()
+
+        assert store.get_all() == []
+        assert _get_repair_issue(hass) is not None
+
+    async def test_load_invalid_last_triggered(self, hass, hass_storage) -> None:
+        """Unparseable ``last_triggered`` string is dropped."""
+        bad = _good_record(action_id="bad-time")
+        bad["last_triggered"] = "not-a-date"
+        _seed_storage(hass_storage, {"bad-time": bad})
+
+        store = ActionStore(hass)
+        await store.async_load()
+
+        assert store.get_all() == []
+        assert _get_repair_issue(hass) is not None
+
+    async def test_load_last_triggered_wrong_type(self, hass, hass_storage) -> None:
+        """``last_triggered`` of an unexpected type (int) is dropped.
+
+        Pins the branch that rejects non-null, non-string values — distinct
+        from the unparseable-string branch above.
+        """
+        bad = _good_record(action_id="bad-time-type")
+        bad["last_triggered"] = 12345  # not None, not str
+        _seed_storage(hass_storage, {"bad-time-type": bad})
+
+        store = ActionStore(hass)
+        await store.async_load()
+
+        assert store.get_all() == []
+        assert _get_repair_issue(hass) is not None
+
+    async def test_load_missing_optional_keys_uses_defaults(
+        self, hass, hass_storage
+    ) -> None:
+        """Records that omit ``enabled``/``delay_seconds``/``trigger_count`` load.
+
+        These optional fields default in ``from_dict``; this is a deliberate
+        backward-compat affordance for records written by older versions.
+        """
+        record = _good_record(action_id="legacy", name="Legacy")
+        for optional in ("enabled", "delay_seconds", "trigger_count", "last_triggered"):
+            del record[optional]
+        _seed_storage(hass_storage, {"legacy": record})
+
+        store = ActionStore(hass)
+        await store.async_load()
+
+        loaded = store.get("legacy")
+        assert loaded is not None
+        assert loaded.enabled is True
+        assert loaded.delay_seconds == 0
+        assert loaded.trigger_count == 0
+        assert loaded.last_triggered is None
+        assert _get_repair_issue(hass) is None
