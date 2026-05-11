@@ -19,7 +19,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .abode.devices.sensor import Sensor
-from .const import DOMAIN
+from .const import DOMAIN, LOGGER
 from .entity import AbodeDevice
 from .models import AbodeSystem
 
@@ -29,6 +29,27 @@ ABODE_TEMPERATURE_UNIT_HA_UNIT = {
     "°F": UnitOfTemperature.FAHRENHEIT,
     "°C": UnitOfTemperature.CELSIUS,
 }
+
+
+def _abode_temp_unit(device: Sensor) -> str:
+    """Resolve the HA unit for a temperature sensor.
+
+    Abode's `temp_unit` is typed `Literal["°F", "°C"] | None`. The None case
+    shouldn't be reachable for an active temperature sensor, but fall back to
+    Celsius rather than crashing — a wrong unit is recoverable, a NoneType
+    indexing error during entity refresh is not.
+    """
+    unit = device.temp_unit
+    # `UnitOfTemperature` is a StrEnum, so the str() conversion is a no-op at
+    # runtime; it's there to satisfy mypy, which reports HA's stub enum values
+    # as `Any` rather than the StrEnum subclass.
+    if unit is None:
+        LOGGER.warning(
+            "Temperature sensor %s reported temp_unit=None; defaulting to Celsius",
+            device.id,
+        )
+        return str(UnitOfTemperature.CELSIUS)
+    return str(ABODE_TEMPERATURE_UNIT_HA_UNIT[unit])
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -43,9 +64,7 @@ SENSOR_TYPES: tuple[AbodeSensorDescription, ...] = (
     AbodeSensorDescription(
         key="temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
-        native_unit_of_measurement_fn=lambda device: ABODE_TEMPERATURE_UNIT_HA_UNIT[
-            device.temp_unit
-        ],
+        native_unit_of_measurement_fn=_abode_temp_unit,
         value_fn=lambda device: cast(float, device.temp),
     ),
     AbodeSensorDescription(
@@ -135,7 +154,6 @@ async def async_setup_entry(
 class AbodeSensor(AbodeDevice, SensorEntity):
     """A sensor implementation for Abode devices."""
 
-    entity_description: AbodeSensorDescription
     _device: Sensor
 
     def __init__(
@@ -145,19 +163,21 @@ class AbodeSensor(AbodeDevice, SensorEntity):
         description: AbodeSensorDescription,
     ) -> None:
         """Initialize a sensor for an Abode device."""
-        super().__init__(data, device)
+        # Set the description before super().__init__ so that `_sync_attrs`
+        # (invoked from the base) can read it to compute native_value / unit.
         self.entity_description = description
+        super().__init__(data, device)
         self._attr_unique_id = f"{device.uuid}-{description.key}"
 
-    @property
-    def native_value(self) -> float:
-        """Return the state of the sensor."""
-        return self.entity_description.value_fn(self._device)
-
-    @property
-    def native_unit_of_measurement(self) -> str:
-        """Return the native unit of measurement."""
-        return self.entity_description.native_unit_of_measurement_fn(self._device)
+    def _sync_attrs(self) -> None:
+        """Mirror the description-derived sensor reading into `_attr_*`."""
+        super()._sync_attrs()
+        description = self.entity_description
+        if isinstance(description, AbodeSensorDescription):
+            self._attr_native_value = description.value_fn(self._device)
+            self._attr_native_unit_of_measurement = (
+                description.native_unit_of_measurement_fn(self._device)
+            )
 
 
 class AbodeConnectionStatusSensor(SensorEntity):

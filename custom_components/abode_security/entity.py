@@ -16,6 +16,12 @@ from .abode.devices.base import Device as AbodeDev
 from .const import ATTRIBUTION, DOMAIN
 from .models import AbodeSystem
 
+# Subclasses extend `_sync_attrs` to mirror platform-specific state into
+# `_attr_*` fields (e.g. `_attr_is_on`, `_attr_brightness`). The base class
+# resolves `extra_state_attributes` and `device_info` through `_attr_*` rather
+# than `@property` overrides so that pyright's `reportIncompatibleVariableOverride`
+# stays quiet against HA-2025's cached_property-backed entity base classes (#70).
+
 
 class AbodeEntity(Entity):
     """Representation of an Abode entity."""
@@ -74,6 +80,14 @@ class AbodeDevice(AbodeEntity):
         super().__init__(data)
         self._device = device
         self._attr_unique_id = device.uuid
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, self._device.id)},
+            manufacturer="Abode",
+            model=self._device.type,
+            name=self._device.name,
+            sw_version="1.0.0",
+        )
+        self._sync_attrs()
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to device events."""
@@ -94,30 +108,25 @@ class AbodeDevice(AbodeEntity):
     async def async_update(self) -> None:
         """Update device state."""
         await self._device.refresh()
+        self._sync_attrs()
 
-    @property
-    def extra_state_attributes(self) -> dict[str, str]:
-        """Return the state attributes."""
-        return {
+    def _sync_attrs(self) -> None:
+        """Refresh `_attr_*` fields from current device state.
+
+        Subclasses extend this to mirror platform-specific attributes
+        (e.g. `_attr_is_on` on switches). Called from `__init__`,
+        `async_update`, and `_update_callback`.
+        """
+        self._attr_extra_state_attributes = {
             "device_id": self._device.id,
             "battery_low": self._device.battery_low,
             "no_response": self._device.no_response,
             "device_type": self._device.type,
         }
 
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device registry information for this entity."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, self._device.id)},
-            manufacturer="Abode",
-            model=self._device.type,
-            name=self._device.name,
-            sw_version="1.0.0",
-        )
-
     def _update_callback(self, _device: AbodeDev) -> None:
         """Update the device state."""
+        self._sync_attrs()
         self.schedule_update_ha_state()
 
 
@@ -134,11 +143,7 @@ class AbodeAlarmAttachedEntity(AbodeEntity):
         """Initialize an alarm-attached entity."""
         super().__init__(data)
         self._alarm = alarm
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device registry info for the alarm device."""
-        return DeviceInfo(
+        self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._alarm.id)},
             manufacturer="Abode",
             model=self._alarm.type,

@@ -48,14 +48,19 @@ class AbodeBinarySensor(AbodeDevice, BinarySensorEntity):
     _attr_name = None
     _device: BinarySensor
 
-    @property
-    def is_on(self) -> bool:
-        """Return True if the binary sensor is on."""
-        return cast(bool, self._device.is_on)
+    def __init__(self, data: AbodeSystem, device: BinarySensor) -> None:
+        """Initialize a binary sensor for an Abode device."""
+        # `is_window` / `generic_type` are device-shape signals that don't
+        # change post-discovery, so device_class is fixed at construction.
+        if device.get_value("is_window") == "1":
+            self._attr_device_class = BinarySensorDeviceClass.WINDOW
+        else:
+            self._attr_device_class = try_parse_enum(
+                BinarySensorDeviceClass, device.generic_type
+            )
+        super().__init__(data, device)
 
-    @property
-    def device_class(self) -> BinarySensorDeviceClass | None:
-        """Return the class of the binary sensor."""
-        if self._device.get_value("is_window") == "1":
-            return BinarySensorDeviceClass.WINDOW
-        return try_parse_enum(BinarySensorDeviceClass, self._device.generic_type)
+    def _sync_attrs(self) -> None:
+        """Mirror current device state into `_attr_is_on` (plus base attrs)."""
+        super()._sync_attrs()
+        self._attr_is_on = cast(bool, self._device.is_on)

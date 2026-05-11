@@ -36,6 +36,11 @@ class AbodeLock(AbodeDevice, LockEntity):
     _device: Lock
     _attr_name = None
 
+    def _sync_attrs(self) -> None:
+        """Mirror current lock state into `_attr_is_locked`."""
+        super()._sync_attrs()
+        self._attr_is_locked = bool(self._device.is_locked)
+
     async def async_lock(self, **_kwargs: Any) -> None:
         """Lock the device."""
         await self._device.lock()
@@ -43,8 +48,3 @@ class AbodeLock(AbodeDevice, LockEntity):
     async def async_unlock(self, **_kwargs: Any) -> None:
         """Unlock the device."""
         await self._device.unlock()
-
-    @property
-    def is_locked(self) -> bool:
-        """Return true if device is on."""
-        return bool(self._device.is_locked)

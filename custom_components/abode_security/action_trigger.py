@@ -11,7 +11,13 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import EVENT_STATE_CHANGED
-from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
+from homeassistant.core import (
+    CALLBACK_TYPE,
+    Event,
+    EventStateChangedData,
+    HomeAssistant,
+    callback,
+)
 from homeassistant.helpers.event import async_call_later
 
 from .const import DOMAIN
@@ -83,7 +89,7 @@ class ActionTriggerCoordinator:
         return STATE_TO_MODE.get(panel_state.state)
 
     @callback
-    def _handle_state_change(self, event: Event) -> None:
+    def _handle_state_change(self, event: Event[EventStateChangedData]) -> None:
         """Handle state change events.
 
         Filters for binary_sensor entities transitioning to 'on' state.
