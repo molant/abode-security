@@ -45,32 +45,24 @@ class AbodeAlarm(AbodeDevice, AlarmControlPanelEntity):
     )
     _device: Alarm
 
-    @property
-    def alarm_state(self) -> AlarmControlPanelState | None:
-        """Return the state of the device."""
-        if self._device.is_standby:
-            return AlarmControlPanelState.DISARMED
-        if self._device.is_away:
-            return AlarmControlPanelState.ARMED_AWAY
-        if self._device.is_home:
-            return AlarmControlPanelState.ARMED_HOME
-        return None
-
     @handle_abode_errors("disarm alarm")
-    async def async_alarm_disarm(self, _code: str | None = None) -> None:
+    async def async_alarm_disarm(self, code: str | None = None) -> None:
         """Send disarm command."""
+        del code  # unused; signature mirrors AlarmControlPanelEntity
         await self._device.set_standby()
         LOGGER.info("Alarm disarmed")
 
     @handle_abode_errors("arm alarm in home mode")
-    async def async_alarm_arm_home(self, _code: str | None = None) -> None:
+    async def async_alarm_arm_home(self, code: str | None = None) -> None:
         """Send arm home command."""
+        del code  # unused; signature mirrors AlarmControlPanelEntity
         await self._device.set_home()
         LOGGER.info("Alarm armed in home mode")
 
     @handle_abode_errors("arm alarm in away mode")
-    async def async_alarm_arm_away(self, _code: str | None = None) -> None:
+    async def async_alarm_arm_away(self, code: str | None = None) -> None:
         """Send arm away command."""
+        del code  # unused; signature mirrors AlarmControlPanelEntity
         await self._device.set_away()
         LOGGER.info("Alarm armed in away mode")
 
@@ -92,11 +84,20 @@ class AbodeAlarm(AbodeDevice, AlarmControlPanelEntity):
         await self._abode_system.abode.dismiss_timeline_event(timeline_id)
         LOGGER.info("Dismissed timeline event: %s", timeline_id)
 
-    @property
-    def extra_state_attributes(self) -> dict[str, str]:
-        """Return the state attributes."""
-        return {
+    def _sync_attrs(self) -> None:
+        """Mirror alarm state and panel-specific attributes into `_attr_*`."""
+        # Override base extra_state_attributes entirely: alarm panel exposes
+        # battery_backup / cellular_backup instead of the device defaults.
+        self._attr_extra_state_attributes = {
             "device_id": self._device.id,
             "battery_backup": self._device.battery,
             "cellular_backup": self._device.is_cellular,
         }
+        if self._device.is_standby:
+            self._attr_alarm_state = AlarmControlPanelState.DISARMED
+        elif self._device.is_away:
+            self._attr_alarm_state = AlarmControlPanelState.ARMED_AWAY
+        elif self._device.is_home:
+            self._attr_alarm_state = AlarmControlPanelState.ARMED_HOME
+        else:
+            self._attr_alarm_state = None

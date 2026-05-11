@@ -270,7 +270,9 @@ class AbodeOptionsFlowHandler(OptionsFlow):
                 vol.Optional(
                     CONF_POLLING_INTERVAL, default=polling_interval
                 ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=15, max=120, mode="box"),
+                    selector.NumberSelectorConfig(
+                        min=15, max=120, mode=selector.NumberSelectorMode.BOX
+                    ),
                 ),
                 vol.Optional(
                     CONF_ENABLE_EVENTS, default=enable_events
@@ -278,7 +280,9 @@ class AbodeOptionsFlowHandler(OptionsFlow):
                 vol.Optional(
                     CONF_RETRY_COUNT, default=retry_count
                 ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=1, max=5, mode="box"),
+                    selector.NumberSelectorConfig(
+                        min=1, max=5, mode=selector.NumberSelectorMode.BOX
+                    ),
                 ),
                 vol.Optional(
                     CONF_DEBUG_LOGGING, default=debug_logging

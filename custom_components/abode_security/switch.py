@@ -123,10 +123,10 @@ class AbodeSwitch(AbodeDevice, SwitchEntity):
         await self._device.switch_off()
         LOGGER.info("Switch device turned off")
 
-    @property
-    def is_on(self) -> bool:
-        """Return true if device is on."""
-        return cast(bool, self._device.is_on)
+    def _sync_attrs(self) -> None:
+        """Mirror current switch state into `_attr_is_on`."""
+        super()._sync_attrs()
+        self._attr_is_on = cast(bool, self._device.is_on)
 
 
 class AbodeAutomationSwitch(AbodeAutomation, SwitchEntity):
@@ -151,11 +151,17 @@ class AbodeAutomationSwitch(AbodeAutomation, SwitchEntity):
             async_dispatcher_connect(self.hass, signal, _trigger_wrapper)
         )
 
+    def __init__(self, data: AbodeSystem, automation: Any) -> None:
+        """Initialize an automation switch with its current enabled state."""
+        super().__init__(data, automation)
+        self._attr_is_on = bool(automation.enabled)
+
     @handle_abode_errors("enable automation")
     async def async_turn_on(self, **_kwargs: Any) -> None:
         """Enable the automation."""
         await self._automation.enable(True)
         LOGGER.info("Automation enabled")
+        self._attr_is_on = True
         self.async_write_ha_state()
 
     @handle_abode_errors("disable automation")
@@ -163,6 +169,7 @@ class AbodeAutomationSwitch(AbodeAutomation, SwitchEntity):
         """Disable the automation."""
         await self._automation.enable(False)
         LOGGER.info("Automation disabled")
+        self._attr_is_on = False
         self.async_write_ha_state()
 
     @handle_abode_errors("trigger automation")
@@ -171,10 +178,10 @@ class AbodeAutomationSwitch(AbodeAutomation, SwitchEntity):
         await self._automation.trigger()
         LOGGER.info("Automation triggered")
 
-    @property
-    def is_on(self) -> bool:
-        """Return True if the automation is enabled."""
-        return bool(self._automation.enabled)
+    async def async_update(self) -> None:
+        """Refresh the automation and mirror its `enabled` flag into `_attr_is_on`."""
+        await super().async_update()
+        self._attr_is_on = bool(self._automation.enabled)
 
 
 class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
@@ -182,7 +189,6 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
 
     _alarm_type: str
     _timeline_id: str | None = None
-    _is_on: bool = False
 
     # Icon mapping for alarm types
     ALARM_ICONS = {
@@ -210,6 +216,7 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
         """Initialize the manual alarm switch."""
         super().__init__(data, alarm)
         self._alarm_type = alarm_type
+        self._attr_is_on = False
         # Manual alarm state comes from timeline events, not polling.
         # Override even when integration polling is enabled.
         self._attr_should_poll = False
@@ -265,7 +272,7 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
 
         # Update state when alarm is triggered
         self._timeline_id = event.get("id")
-        self._is_on = True
+        self._attr_is_on = True
         LOGGER.debug(
             "Alarm %s triggered via event (event_id: %s, code: %s)",
             self._alarm_type,
@@ -295,7 +302,7 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
         # When any alarm is dismissed, turn off all alarms
         # (since triggering one alarm dismisses all in Abode)
         self._timeline_id = None
-        self._is_on = False
+        self._attr_is_on = False
         LOGGER.info(
             "Alarm %s ended via event (event_code: %s, all alarms dismissed)",
             self._alarm_type,
@@ -306,7 +313,7 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
     @handle_abode_errors("trigger manual alarm")
     async def async_turn_on(self, **_kwargs: Any) -> None:
         """Trigger the manual alarm."""
-        if self._is_on:
+        if self._attr_is_on:
             LOGGER.debug(
                 "Alarm %s already triggered, ignoring duplicate trigger",
                 self._alarm_type,
@@ -325,7 +332,7 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
             self._alarm_type,
             self._timeline_id,
         )
-        self._is_on = True
+        self._attr_is_on = True
         self.async_write_ha_state()
 
     @handle_abode_errors("dismiss timeline event")
@@ -336,13 +343,8 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
             LOGGER.info("Dismissed timeline event: %s", self._timeline_id)
             self._timeline_id = None
 
-        self._is_on = False
+        self._attr_is_on = False
         self.async_write_ha_state()
-
-    @property
-    def is_on(self) -> bool:
-        """Return True if the alarm is active."""
-        return self._is_on
 
 
 class AbodeCMSSettingSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
@@ -373,8 +375,9 @@ class AbodeCMSSettingSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
         self._getter_name = getter_name
         self._setter_name = setter_name
         self._support_flag = support_flag
-        self._is_on = False
+        self._attr_is_on = False
         self._last_state_change: datetime | None = None
+
         self._error_count = 0
         # unique_id must stay stable across the issue #7 refactor — explicit
         # suffix overrides the default getter-derived form.
@@ -404,11 +407,11 @@ class AbodeCMSSettingSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
         """Refresh setting status from Abode."""
         try:
             getter = getattr(self._data, self._getter_name)
-            self._is_on = await getter()
+            self._attr_is_on = await getter()
             LOGGER.info(
                 "Initial %s status fetched: %s (CMS cache=%s)",
                 self._attr_name,
-                self._is_on,
+                self._attr_is_on,
                 getattr(self._data, "cms_settings_cache", None),
             )
             self.async_write_ha_state()
@@ -449,25 +452,25 @@ class AbodeCMSSettingSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
             return
 
         try:
-            previous_state = self._is_on
+            previous_state = self._attr_is_on
             getter = getattr(self._data, self._getter_name)
-            self._is_on = await getter()
+            self._attr_is_on = await getter()
 
             LOGGER.debug(
                 "%s status: was %s, now %s",
                 self._attr_name,
                 previous_state,
-                self._is_on,
+                self._attr_is_on,
             )
 
-            if previous_state != self._is_on:
+            if previous_state != self._attr_is_on:
                 LOGGER.info(
                     "%s status changed: %s -> %s",
                     self._attr_name,
                     previous_state,
-                    self._is_on,
+                    self._attr_is_on,
                 )
-            self._post_update(previous_state, self._is_on)
+            self._post_update(previous_state, self._attr_is_on)
             # Mark available on successful poll and reset error count
             self._error_count = 0
             if not self._attr_available:
@@ -522,7 +525,7 @@ class AbodeCMSSettingSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
         setter = getattr(self._data, self._setter_name)
         await setter(True)
         LOGGER.info("%s enabled", self._attr_name)
-        self._is_on = True
+        self._attr_is_on = True
         self._last_state_change = datetime.now(UTC)
         self.schedule_update_ha_state()
 
@@ -532,17 +535,12 @@ class AbodeCMSSettingSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
         setter = getattr(self._data, self._setter_name)
         await setter(False)
         LOGGER.info("%s disabled", self._attr_name)
-        self._is_on = False
+        self._attr_is_on = False
         self._last_state_change = datetime.now(UTC)
         self.schedule_update_ha_state()
 
-    def _post_update(self, previous: bool, current: bool) -> None:
+    def _post_update(self, previous: bool | None, current: bool | None) -> None:
         """Hook called inside async_update on a successful poll, before the error counter resets."""
-
-    @property
-    def is_on(self) -> bool:
-        """Return True if the CMS setting is enabled."""
-        return self._is_on
 
 
 # (display name, icon, getter, setter) for each CMS-setting switch.
@@ -602,18 +600,18 @@ class AbodeTestModeSwitch(AbodeCMSSettingSwitch):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enable test mode and remember the user enabled it."""
         await super().async_turn_on(**kwargs)
-        # Mirror parent's success signal: _is_on flips True only if the API
-        # call didn't raise (handle_abode_errors swallows AbodeError).
-        if self._is_on:
+        # Mirror parent's success signal: _attr_is_on flips True only if the
+        # API call didn't raise (handle_abode_errors swallows AbodeError).
+        if self._attr_is_on:
             self._user_enabled = True
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Disable test mode and clear the user-enabled flag."""
         await super().async_turn_off(**kwargs)
-        if not self._is_on:
+        if not self._attr_is_on:
             self._user_enabled = False
 
-    def _post_update(self, previous: bool, current: bool) -> None:
+    def _post_update(self, previous: bool | None, current: bool | None) -> None:
         """Stop polling after the API auto-disables a user-enabled test mode."""
         if self._user_enabled and previous and not current:
             LOGGER.info("Test mode auto-disabled (30-min timeout), stopping polling")

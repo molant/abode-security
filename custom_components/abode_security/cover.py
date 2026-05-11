@@ -36,10 +36,10 @@ class AbodeCover(AbodeDevice, CoverEntity):
     _device: Cover
     _attr_name = None
 
-    @property
-    def is_closed(self) -> bool:
-        """Return true if cover is closed, else False."""
-        return not self._device.is_open
+    def _sync_attrs(self) -> None:
+        """Mirror current cover state into `_attr_is_closed`."""
+        super()._sync_attrs()
+        self._attr_is_closed = not self._device.is_open
 
     async def async_close_cover(self, **_kwargs: Any) -> None:
         """Issue close command to cover."""

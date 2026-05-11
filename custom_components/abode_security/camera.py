@@ -10,7 +10,7 @@ from typing import Any, cast
 import aiohttp
 from homeassistant.components.camera import Camera
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import Event, HomeAssistant
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import Throttle
@@ -21,6 +21,13 @@ from .abode.helpers import timeline
 from .const import LOGGER
 from .entity import AbodeDevice
 from .models import AbodeSystem
+
+# Timeline event constants are loaded dynamically from a CSV at import time
+# (see abode/helpers/timeline.py:_load_events), so pyright can't see
+# CAPTURE_IMAGE statically. The constant resolves to a `dict[str, str]` like
+# `{'event_code': '5001', 'event_type': 'Capture Image'}` at runtime — passed
+# through to `add_timeline_callback` which accepts arbitrary event payloads.
+_CAPTURE_IMAGE_EVENT: Any = getattr(timeline, "CAPTURE_IMAGE")  # noqa: B009
 
 PARALLEL_UPDATES = 1
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=90)
@@ -35,7 +42,7 @@ async def async_setup_entry(
     data: AbodeSystem = entry.runtime_data
 
     async_add_entities(
-        AbodeCamera(data, device, timeline.CAPTURE_IMAGE)
+        AbodeCamera(data, device, _CAPTURE_IMAGE_EVENT)
         for device in await data.abode.get_devices(generic_type="camera")
     )
 
@@ -46,7 +53,7 @@ class AbodeCamera(AbodeDevice, Camera):
     _device: AbodeCam
     _attr_name = None
 
-    def __init__(self, data: AbodeSystem, device: Device, event: Event) -> None:
+    def __init__(self, data: AbodeSystem, device: Device, event: Any) -> None:
         """Initialize the Abode device."""
         AbodeDevice.__init__(self, data, device)
         Camera.__init__(self)
@@ -129,9 +136,10 @@ class AbodeCamera(AbodeDevice, Camera):
             self._image_content = None
 
     def camera_image(
-        self, _width: int | None = None, _height: int | None = None
+        self, width: int | None = None, height: int | None = None
     ) -> bytes | None:
         """Get a camera image."""
+        del width, height  # unused; signature mirrors Camera base class
         self.refresh_image()
 
         if self._image_content:
@@ -163,7 +171,7 @@ class AbodeCamera(AbodeDevice, Camera):
         except Exception as ex:
             LOGGER.debug("Failed to update image from capture: %s", ex)
 
-    @property
-    def is_on(self) -> bool:
-        """Return true if on."""
-        return cast(bool, self._device.is_on)
+    def _sync_attrs(self) -> None:
+        """Mirror current camera state into `_attr_is_on` (off = privacy mode)."""
+        super()._sync_attrs()
+        self._attr_is_on = cast(bool, self._device.is_on)
