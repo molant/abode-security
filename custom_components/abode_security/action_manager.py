@@ -393,6 +393,7 @@ class ActionManager:
         sensor_entity_ids: list[str],
         alarm_entity_ids: list[str],
         delay_seconds: int = 0,
+        enabled: bool = True,
     ) -> AbodeAction:
         """Create a new action with validation.
 
@@ -402,6 +403,10 @@ class ActionManager:
             sensor_entity_ids: List of sensor entity IDs to monitor
             alarm_entity_ids: List of alarm entity IDs to trigger
             delay_seconds: Delay before triggering (0-60)
+            enabled: Whether the action starts enabled (default True).
+                Symmetric with ``async_update`` and the ``AbodeAction``
+                dataclass; restored here in #103 after a prior refactor
+                dropped it from the signature.
 
         Returns:
             The created AbodeAction
@@ -421,6 +426,7 @@ class ActionManager:
             sensor_entity_ids=sensor_entity_ids,
             alarm_entity_ids=alarm_entity_ids,
             delay_seconds=delay_seconds,
+            enabled=enabled,
         )
         await self._store.async_add(action)
         return action

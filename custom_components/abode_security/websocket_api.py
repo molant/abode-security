@@ -189,6 +189,7 @@ async def websocket_actions_get(
         vol.Optional("delay_seconds", default=0): vol.All(
             _non_bool_int, vol.Range(min=0, max=MAX_DELAY_SECONDS)
         ),
+        vol.Optional("enabled", default=True): bool,
     }
 )
 @require_admin
@@ -211,6 +212,7 @@ async def websocket_actions_create(
             sensor_entity_ids=msg["sensor_entity_ids"],
             alarm_entity_ids=msg["alarm_entity_ids"],
             delay_seconds=msg.get("delay_seconds", 0),
+            enabled=msg.get("enabled", True),
         )
         _LOGGER.info("Action %s created by user %s", action.id, connection.user.id)
         connection.send_result(msg["id"], action.to_dict())

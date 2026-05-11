@@ -166,6 +166,33 @@ class TestWebSocketActionsAPI:
         assert response["success"]
         assert response["result"]["delay_seconds"] == 30
 
+    async def test_ws_actions_create_with_enabled_false(
+        self, hass, hass_ws_client
+    ) -> None:
+        """`actions/create` honours an explicit `enabled: False` payload.
+
+        Mirrors the `async_update` contract; without this, the only way
+        to create a disabled action was to create-then-toggle, which races
+        the `ActionTriggerCoordinator` on entity transitions during the
+        gap (#103).
+        """
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/actions/create",
+                "name": "Disabled at create",
+                "modes": ["home"],
+                "sensor_entity_ids": ["binary_sensor.door"],
+                "alarm_entity_ids": ["switch.panic_alarm"],
+                "enabled": False,
+            }
+        )
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert response["result"]["enabled"] is False
+
     async def test_ws_actions_create_validation_error(
         self, hass, hass_ws_client
     ) -> None:
