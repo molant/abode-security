@@ -12,9 +12,37 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
 from homeassistant.helpers import config_validation as cv
 
-from .action_manager import VALID_MODES
+from .action_manager import (
+    MAX_DELAY_SECONDS,
+    MAX_NAME_LENGTH,
+    VALID_MODES,
+)
 from .const import DOMAIN
 from .helpers import find_abode_alarm_panel
+
+# Defense-in-depth upper bounds for websocket action payloads. The frontend is
+# trusted but not assumed correct — these caps stop a buggy or hostile client
+# from submitting payloads that pass schema and then blow up JSON serialization
+# or HA storage. Sized for a generous residential install (a typical Abode
+# deployment has well under 20 binary sensors and a handful of alarm switches);
+# raise them if a real user genuinely hits the ceiling.
+_MAX_SENSOR_ENTITY_IDS = 64
+_MAX_ALARM_ENTITY_IDS = 16
+
+
+def _non_bool_int(value: object) -> int:
+    """Voluptuous validator: accept ints, reject bools.
+
+    ``bool`` is a subclass of ``int``, so a plain ``int`` schema would accept
+    ``True``/``False`` and silently coerce them to 1/0 on persistence. That
+    diverges from ``ActionStore.from_dict``, which explicitly rejects bools
+    for ``delay_seconds`` and would later drop the record as corrupt. Reject
+    here so the three layers (schema / manager validate / load) agree.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise vol.Invalid("expected int (not bool)")
+    return value
+
 
 if TYPE_CHECKING:
     from homeassistant.components.websocket_api import ActiveConnection
@@ -108,21 +136,21 @@ async def websocket_actions_get(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "abode_security/actions/create",
-        vol.Required("name"): str,
+        vol.Required("name"): vol.All(str, vol.Length(min=1, max=MAX_NAME_LENGTH)),
         vol.Required("modes"): vol.All(
             [vol.In(VALID_MODES)],
-            vol.Length(min=1),
+            vol.Length(min=1, max=len(VALID_MODES)),
         ),
         vol.Required("sensor_entity_ids"): vol.All(
             [cv.entity_id],
-            vol.Length(min=1),
+            vol.Length(min=1, max=_MAX_SENSOR_ENTITY_IDS),
         ),
         vol.Required("alarm_entity_ids"): vol.All(
             [cv.entity_id],
-            vol.Length(min=1),
+            vol.Length(min=1, max=_MAX_ALARM_ENTITY_IDS),
         ),
         vol.Optional("delay_seconds", default=0): vol.All(
-            int, vol.Range(min=0, max=60)
+            _non_bool_int, vol.Range(min=0, max=MAX_DELAY_SECONDS)
         ),
     }
 )
@@ -157,20 +185,22 @@ async def websocket_actions_create(
     {
         vol.Required("type"): "abode_security/actions/update",
         vol.Required("action_id"): str,
-        vol.Optional("name"): str,
+        vol.Optional("name"): vol.All(str, vol.Length(min=1, max=MAX_NAME_LENGTH)),
         vol.Optional("modes"): vol.All(
             [vol.In(VALID_MODES)],
-            vol.Length(min=1),
+            vol.Length(min=1, max=len(VALID_MODES)),
         ),
         vol.Optional("sensor_entity_ids"): vol.All(
             [cv.entity_id],
-            vol.Length(min=1),
+            vol.Length(min=1, max=_MAX_SENSOR_ENTITY_IDS),
         ),
         vol.Optional("alarm_entity_ids"): vol.All(
             [cv.entity_id],
-            vol.Length(min=1),
+            vol.Length(min=1, max=_MAX_ALARM_ENTITY_IDS),
         ),
-        vol.Optional("delay_seconds"): vol.All(int, vol.Range(min=0, max=60)),
+        vol.Optional("delay_seconds"): vol.All(
+            _non_bool_int, vol.Range(min=0, max=MAX_DELAY_SECONDS)
+        ),
         vol.Optional("enabled"): bool,
     }
 )
