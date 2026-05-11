@@ -230,7 +230,29 @@ class ActionTriggerCoordinator:
             _LOGGER.debug("Action '%s' was disabled during delay", action.name)
             return
 
-        await self._execute_action(action, triggered_by, current_mode)
+        # Re-check alarm mode: the user may have disarmed (or otherwise
+        # changed mode) during the delay window, in which case the action
+        # no longer applies and firing now would surprise the user.
+        current_mode_now = self._get_current_mode()
+        if current_mode_now is None:
+            _LOGGER.debug(
+                "Alarm panel unavailable during delay; skipping action '%s'",
+                action.name,
+            )
+            return
+        if current_mode_now not in current_action.modes:
+            _LOGGER.info(
+                "Alarm mode changed (%s -> %s) during delay; skipping action '%s'",
+                current_mode,
+                current_mode_now,
+                action.name,
+            )
+            return
+
+        # Pass the freshly fetched current_action so any edits made during the
+        # delay window (e.g. updated alarm_entity_ids) take effect — the
+        # captured `action` reference may now be stale.
+        await self._execute_action(current_action, triggered_by, current_mode_now)
 
     async def _execute_action(
         self, action: AbodeAction, triggered_by: str, current_mode: str
