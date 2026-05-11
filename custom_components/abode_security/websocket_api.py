@@ -169,7 +169,11 @@ async def websocket_actions_get(
 @websocket_command(
     {
         vol.Required("type"): "abode_security/actions/create",
-        vol.Required("name"): vol.All(str, vol.Length(min=1, max=MAX_NAME_LENGTH)),
+        # Voluptuous validates shape and the upper-length cap; the
+        # "name must not be empty" business rule lives in
+        # ActionManager._validate_action so the WS error code stays
+        # `validation_error` rather than `invalid_format` (#102).
+        vol.Required("name"): vol.All(str, vol.Length(max=MAX_NAME_LENGTH)),
         vol.Required("modes"): vol.All(
             [vol.In(VALID_MODES)],
             vol.Length(min=1, max=len(VALID_MODES)),
@@ -218,7 +222,10 @@ async def websocket_actions_create(
     {
         vol.Required("type"): "abode_security/actions/update",
         vol.Required("action_id"): str,
-        vol.Optional("name"): vol.All(str, vol.Length(min=1, max=MAX_NAME_LENGTH)),
+        # Same shape-vs-business-rule split as the create schema: emptiness
+        # is checked at the manager level so the error code is
+        # `validation_error` (#102).
+        vol.Optional("name"): vol.All(str, vol.Length(max=MAX_NAME_LENGTH)),
         vol.Optional("modes"): vol.All(
             [vol.In(VALID_MODES)],
             vol.Length(min=1, max=len(VALID_MODES)),
