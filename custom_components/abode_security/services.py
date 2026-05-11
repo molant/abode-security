@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import voluptuous as vol
 from homeassistant.const import ATTR_ENTITY_ID
@@ -91,7 +91,7 @@ def _get_abode_system(hass: HomeAssistant) -> AbodeSystem | None:
     """Get the AbodeSystem from the first available config entry."""
     for entry in hass.config_entries.async_entries(DOMAIN):
         if entry.runtime_data:
-            return entry.runtime_data
+            return cast("AbodeSystem", entry.runtime_data)
     return None
 
 

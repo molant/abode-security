@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from homeassistant.core import CALLBACK_TYPE
 
@@ -207,7 +207,7 @@ class AbodeSystem:
                 "get_test_mode() returned: %s (type: %s)", result, type(result)
             )
             self.test_mode_supported = getattr(self.abode, "test_mode_supported", True)
-            return result
+            return cast(bool, result)
         except AttributeError:
             LOGGER.debug("get_test_mode method not available in abode client")
             return False

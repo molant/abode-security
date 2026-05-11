@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from math import ceil
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
@@ -107,11 +107,11 @@ class AbodeLight(AbodeDevice, LightEntity):
         """Return the color mode of the light."""
         if self._device.is_dimmable and self._device.is_color_capable:
             if self.hs_color is not None:
-                return ColorMode.HS
-            return ColorMode.COLOR_TEMP
+                return cast(str, ColorMode.HS)
+            return cast(str, ColorMode.COLOR_TEMP)
         if self._device.is_dimmable:
-            return ColorMode.BRIGHTNESS
-        return ColorMode.ONOFF
+            return cast(str, ColorMode.BRIGHTNESS)
+        return cast(str, ColorMode.ONOFF)
 
     @property
     def supported_color_modes(self) -> set[str] | None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
@@ -18,6 +18,9 @@ from .helpers import find_abode_alarm_panel
 
 if TYPE_CHECKING:
     from homeassistant.components.websocket_api import ActiveConnection
+
+    from .action_manager import ActionManager
+    from .config_store import ConfigStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,9 +45,9 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_config_set)
 
 
-def _get_action_manager(hass: HomeAssistant):
+def _get_action_manager(hass: HomeAssistant) -> ActionManager | None:
     """Get the ActionManager from hass.data."""
-    return hass.data.get(DOMAIN, {}).get("action_manager")
+    return cast("ActionManager | None", hass.data.get(DOMAIN, {}).get("action_manager"))
 
 
 # --- Action CRUD Endpoints ---
@@ -547,9 +550,9 @@ async def websocket_entities_alarms(
 # --- Config Endpoints ---
 
 
-def _get_config_store(hass: HomeAssistant):
+def _get_config_store(hass: HomeAssistant) -> ConfigStore | None:
     """Get the ConfigStore from hass.data."""
-    return hass.data.get(DOMAIN, {}).get("config_store")
+    return cast("ConfigStore | None", hass.data.get(DOMAIN, {}).get("config_store"))
 
 
 @websocket_api.websocket_command(

@@ -6,6 +6,7 @@ import asyncio
 import logging
 from functools import partial
 from pathlib import Path
+from typing import cast
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
@@ -298,7 +299,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop("config", None)
         hass.data[DOMAIN].pop("config_store", None)
 
-    return unload_ok
+    return cast(bool, unload_ok)
 
 
 async def async_setup_hass_events(hass: HomeAssistant, entry: ConfigEntry) -> None:
