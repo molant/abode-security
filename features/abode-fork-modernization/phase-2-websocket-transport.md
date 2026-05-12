@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 phase: 2
 feature: abode-fork-modernization
 title: Async WebSocket transport scaffold
@@ -40,16 +40,16 @@ The leading underscore in `_websocket.py` matches the fork's existing convention
 
 ### Baseline test verification (before starting implementation)
 
-- [ ] Run `./scripts/check.sh` — clean.
-- [ ] Run `uv run pytest -m integration` — green.
-- [ ] Run `uv run pytest tests/test_pkg_import_audit.py` — green (Phase 1 baseline).
+- [x] Run `./scripts/check.sh` — clean.
+- [x] Run `uv run pytest -m integration` — green.
+- [x] Run `uv run pytest tests/test_pkg_import_audit.py` — green (Phase 1 baseline).
 
 ### Sub-Phase 2A: Define the wrapper interface (TDD, RED)
 
 Write the tests first against the not-yet-existent module. They will fail with `ImportError`; that's the RED step.
 
-- [ ] Create `tests/test_abode_websocket.py`.
-- [ ] Write tests covering the public surface listed under [Technical Details — Public API](#public-api):
+- [x] Create `tests/test_abode_websocket.py`.
+- [x] Write tests covering the public surface listed under [Technical Details — Public API](#public-api):
   - **Construction**: instantiating `AbodeWebSocket(url, cookie, origin)` does not open a connection.
   - **`connect()` round-trip**: with `aiohttp.ClientSession.ws_connect` mocked to return an `AsyncMock` ws, `await ws.connect()` issues `ws_connect(url, headers={"Cookie": cookie}, origin=origin, ...)` exactly once. **Note**: `aiohttp.ClientSession.ws_connect` exposes a dedicated `origin=` keyword alongside `headers=`. Use that kwarg — do **not** also put `Origin` into `headers`. `Cookie` has no dedicated WebSocket keyword, so it goes in `headers`.
   - **`connect()` omits values when None**: when constructed without a cookie, no `Cookie` key appears in `headers` (pass `headers=None` if it would otherwise be empty). When constructed without an origin, `origin=None` is passed (aiohttp's default; produces no `Origin` header).
@@ -61,34 +61,34 @@ Write the tests first against the not-yet-existent module. They will fail with `
   - **`close()` closes both the ws and the session**: assert both mocks' `close` were awaited.
   - **`closed` property**: starts `False`, becomes `True` after `close()`, and is `True` if `connect()` raised.
   - **Connect failures wrap as `AbodeWebSocketError`**: `aiohttp.ClientError` subclasses (e.g. `WSServerHandshakeError`, `ClientConnectorError`) raised from `ws_connect` come out as `AbodeWebSocketError` with the original as `__cause__`.
-- [ ] Run `uv run pytest tests/test_abode_websocket.py` — expect 11 failing tests, all with `ImportError: cannot import name 'AbodeWebSocket' from '...'._websocket`.
+- [x] Run `uv run pytest tests/test_abode_websocket.py` — expect 11 failing tests, all with `ImportError: cannot import name 'AbodeWebSocket' from '...'._websocket`.
 
 ### Sub-Phase 2B: Implement the wrapper (TDD, GREEN)
 
-- [ ] Create `custom_components/abode_security/abode/_websocket.py` matching the contract in [Technical Details](#public-api).
-- [ ] Run `uv run pytest tests/test_abode_websocket.py -v` — all 11 tests pass.
-- [ ] Run `./scripts/check.sh` — typecheck, lint, full unit suite still clean.
-- [ ] Run `uv run pytest -m integration` — still green (no production callers were changed in this phase).
+- [x] Create `custom_components/abode_security/abode/_websocket.py` matching the contract in [Technical Details](#public-api).
+- [x] Run `uv run pytest tests/test_abode_websocket.py -v` — all 11 tests pass.
+- [x] Run `./scripts/check.sh` — typecheck, lint, full unit suite still clean.
+- [x] Run `uv run pytest -m integration` — still green (no production callers were changed in this phase).
 
 ### Sub-Phase 2C: Confirm no production wiring leaked in
 
 This sub-phase exists to catch the easy mistake of "while I'm here, let me just import it from `socketio.py`." It is in scope of Phase 3, not Phase 2.
 
-- [ ] Run `grep -rn "_websocket\|AbodeWebSocket" custom_components/ --include="*.py" | grep -v test_`. Only hits should be inside `_websocket.py` itself.
-- [ ] `manifest.json` requirements still contain `"lomond"`. (Phase 3 removes it.)
+- [x] Run `grep -rn "_websocket\|AbodeWebSocket" custom_components/ --include="*.py" | grep -v test_`. Only hits should be inside `_websocket.py` itself.
+- [x] `manifest.json` requirements still contain `"lomond"`. (Phase 3 removes it.)
 
 ### Documentation (end of phase)
 
-- [ ] No `docs/` edits this phase. The wrapper is private (`_` prefix); architecture docs reference SocketIO behavior, which has not changed yet.
-- [ ] `UPSTREAM.md` — no change. Phase 3 updates the "Intentional rewrites" section once the rewrite is actually wired up.
+- [x] No `docs/` edits this phase. The wrapper is private (`_` prefix); architecture docs reference SocketIO behavior, which has not changed yet.
+- [x] `UPSTREAM.md` — no change. Phase 3 updates the "Intentional rewrites" section once the rewrite is actually wired up.
 
 ### Build verification (required before marking phase complete)
 
-- [ ] `./scripts/check.sh` — clean.
-- [ ] `uv run pytest` — full unit suite green; count must equal Phase 1 baseline + 11 new tests for the wrapper.
-- [ ] `uv run pytest -m integration` — all 104 integration items green (unchanged from Phase 1 baseline).
-- [ ] Scan output for warnings; investigate any new ones.
-- [ ] Mark this file's frontmatter `status: done` only after every box above is checked.
+- [x] `./scripts/check.sh` — clean.
+- [x] `uv run pytest` — full unit suite green; count must equal Phase 1 baseline + 11 new tests for the wrapper.
+- [x] `uv run pytest -m integration` — all 104 integration items green (unchanged from Phase 1 baseline).
+- [x] Scan output for warnings; investigate any new ones.
+- [x] Mark this file's frontmatter `status: done` only after every box above is checked.
 
 ### Manual verification with MCP tools (if available)
 
