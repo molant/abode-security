@@ -51,13 +51,11 @@ async def test_monitoring_active_entity_registry(
     """Test that monitoring_active is registered with correct unique_id."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -90,13 +88,11 @@ async def test_monitoring_active_attributes(
     """Test the monitoring_active switch attributes are correct."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -130,13 +126,11 @@ async def test_monitoring_active_initial_status_on(
     """Test that monitoring_active switch pulls initial status when enabled."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         # Mock server default has monitoringActive: True
@@ -170,13 +164,11 @@ async def test_monitoring_active_initial_status_off(
     """Test that monitoring_active switch pulls initial status when disabled."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         # Use hybrid approach - mock get method to return False
@@ -215,13 +207,11 @@ async def test_monitoring_active_turn_on(
     """Test the monitoring_active switch can be turned on."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -265,13 +255,11 @@ async def test_monitoring_active_turn_off(
     """Test the monitoring_active switch can be turned off."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -315,13 +303,11 @@ async def test_monitoring_active_error_handling(
     """Test that monitoring_active handles errors gracefully."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -375,13 +361,11 @@ async def test_send_media_entity_registry(
     """Test that send_media is registered with correct unique_id."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -414,13 +398,11 @@ async def test_send_media_attributes(
     """Test the send_media switch attributes are correct."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -454,13 +436,11 @@ async def test_send_media_initial_status_on(
     """Test that send_media switch pulls initial status when enabled."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         # Mock server default has sendMedia: True
@@ -494,13 +474,11 @@ async def test_send_media_initial_status_off(
     """Test that send_media switch pulls initial status when disabled."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         # Use hybrid approach - mock get method to return False
@@ -539,13 +517,11 @@ async def test_send_media_turn_on(
     """Test the send_media switch can be turned on."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -589,13 +565,11 @@ async def test_send_media_turn_off(
     """Test the send_media switch can be turned off."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -639,13 +613,11 @@ async def test_send_media_error_handling(
     """Test that send_media handles errors gracefully."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -700,13 +672,11 @@ async def test_dispatch_without_verification_entity_registry(
     """Test that dispatch_without_verification is registered with correct unique_id."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -739,13 +709,11 @@ async def test_dispatch_without_verification_attributes(
     """Test the dispatch_without_verification switch attributes are correct."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -779,13 +747,11 @@ async def test_dispatch_without_verification_initial_status_on(
     """Test that dispatch_without_verification switch pulls initial status when enabled."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         # Use hybrid approach - mock get method to return True
@@ -824,13 +790,11 @@ async def test_dispatch_without_verification_initial_status_off(
     """Test that dispatch_without_verification switch pulls initial status when disabled."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         # Use hybrid approach - mock get method to return False
@@ -869,13 +833,11 @@ async def test_dispatch_without_verification_turn_on(
     """Test the dispatch_without_verification switch can be turned on."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -919,13 +881,11 @@ async def test_dispatch_without_verification_turn_off(
     """Test the dispatch_without_verification switch can be turned off."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -969,13 +929,11 @@ async def test_dispatch_without_verification_error_handling(
     """Test that dispatch_without_verification handles errors gracefully."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1030,13 +988,11 @@ async def test_dispatch_police_entity_registry(
     """Test that dispatch_police is registered with correct unique_id."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1069,13 +1025,11 @@ async def test_dispatch_police_attributes(
     """Test the dispatch_police switch attributes are correct."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1109,13 +1063,11 @@ async def test_dispatch_police_initial_status_on(
     """Test that dispatch_police switch pulls initial status when enabled."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         # Mock server default has dispatchPolice: True
@@ -1149,13 +1101,11 @@ async def test_dispatch_police_initial_status_off(
     """Test that dispatch_police switch pulls initial status when disabled."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         # Use hybrid approach - mock get method to return False
@@ -1194,13 +1144,11 @@ async def test_dispatch_police_turn_on(
     """Test the dispatch_police switch can be turned on."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1244,13 +1192,11 @@ async def test_dispatch_police_turn_off(
     """Test the dispatch_police switch can be turned off."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1294,13 +1240,11 @@ async def test_dispatch_police_error_handling(
     """Test that dispatch_police handles errors gracefully."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1355,13 +1299,11 @@ async def test_dispatch_fire_entity_registry(
     """Test that dispatch_fire is registered with correct unique_id."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1394,13 +1336,11 @@ async def test_dispatch_fire_attributes(
     """Test the dispatch_fire switch attributes are correct."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1434,13 +1374,11 @@ async def test_dispatch_fire_initial_status_on(
     """Test that dispatch_fire switch pulls initial status when enabled."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         # Mock server default has dispatchFire: True
@@ -1474,13 +1412,11 @@ async def test_dispatch_fire_initial_status_off(
     """Test that dispatch_fire switch pulls initial status when disabled."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         # Use hybrid approach - mock get method to return False
@@ -1519,13 +1455,11 @@ async def test_dispatch_fire_turn_on(
     """Test the dispatch_fire switch can be turned on."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1569,13 +1503,11 @@ async def test_dispatch_fire_turn_off(
     """Test the dispatch_fire switch can be turned off."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1619,13 +1551,11 @@ async def test_dispatch_fire_error_handling(
     """Test that dispatch_fire handles errors gracefully."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1680,13 +1610,11 @@ async def test_dispatch_medical_entity_registry(
     """Test that dispatch_medical is registered with correct unique_id."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1719,13 +1647,11 @@ async def test_dispatch_medical_attributes(
     """Test the dispatch_medical switch attributes are correct."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1759,13 +1685,11 @@ async def test_dispatch_medical_initial_status_on(
     """Test that dispatch_medical switch pulls initial status when enabled."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         # Mock server default has dispatchMedical: True
@@ -1799,13 +1723,11 @@ async def test_dispatch_medical_initial_status_off(
     """Test that dispatch_medical switch pulls initial status when disabled."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         # Use hybrid approach - mock get method to return False
@@ -1844,13 +1766,11 @@ async def test_dispatch_medical_turn_on(
     """Test the dispatch_medical switch can be turned on."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1894,13 +1814,11 @@ async def test_dispatch_medical_turn_off(
     """Test the dispatch_medical switch can be turned off."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -1944,13 +1862,11 @@ async def test_dispatch_medical_error_handling(
     """Test that dispatch_medical handles errors gracefully."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(

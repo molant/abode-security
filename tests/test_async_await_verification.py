@@ -384,11 +384,13 @@ class TestAsyncAwaitSemantics:
 
         # Mock Home Assistant's async_create_task
         task_created = False
+        scheduled_task: asyncio.Task[None] | None = None
 
         def mock_async_create_task(coro):
-            nonlocal task_created
+            nonlocal task_created, scheduled_task
             task_created = True
-            return asyncio.create_task(coro)
+            scheduled_task = asyncio.create_task(coro)
+            return scheduled_task
 
         # Simulate the pattern used in camera.py
         async def async_operation():
@@ -400,6 +402,11 @@ class TestAsyncAwaitSemantics:
 
         sync_wrapper()
         assert task_created, "async_create_task should have been called"
+        # Await the scheduled task so pytest-HA-cc's `verify_cleanup` doesn't
+        # flag it as a lingering task (the test's purpose is to verify the
+        # scheduling pattern, not the task body's behaviour).
+        assert scheduled_task is not None
+        await scheduled_task
 
 
 class TestIntegrationStructure:

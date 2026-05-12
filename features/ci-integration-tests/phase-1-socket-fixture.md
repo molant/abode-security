@@ -58,14 +58,19 @@ In `tests/conftest.py`:
 - An autouse fixture (`_integration_socket_cleanup`) clears
   `HASocketBlockedError.instances` after each integration test so the
   cleanup assertion at `plugins.py:468` isn't tripped by stale entries.
-- A local `expected_lingering_tasks` fixture returns `True` for
-  integration-marked tests. pytest-HA-cc's `verify_cleanup`
-  (`plugins.py:411-423`) checks this to downgrade lingering-task
-  *failures* to warnings. Needed because the vendored Abode SocketIO
-  client speaks Engine.IO v3 to a python-socketio v4 mock — the WebSocket
-  handshake is rejected with 403 and the scheduled refresh future never
-  resolves before the test body returns. (Tracked separately, see "Known
-  follow-ups" below.)
+- An autouse fixture (`_integration_neutralize_socketio`) monkeypatches
+  `EventController.start` to a no-op and forces
+  `EventController.connected` to always return `True` for integration
+  tests. Without this, the vendored Abode SocketIO client's `EIO=3`
+  handshake gets 403 from the mock's `python-socketio` v4 server; the
+  resulting disconnect callback flips
+  `AbodeEntity._attr_available = events.connected` to `False`, HA's
+  service dispatch then silently no-ops ("`Referenced entities ... are
+  missing or not currently available`"), and tests that patch a device
+  method to verify it was called fail with `Called 0 times.`. The
+  integration's HTTP polling path is fully exercised regardless of the
+  push channel, so neutralising the thread is safe for what the
+  integration suite actually verifies. Tracked as follow-up #105.
 
 The earlier `@pytest.mark.enable_socket` markers across 10 test files were
 no-ops in this stack (HA-cc's `pytest_runtest_setup` re-disables sockets
@@ -119,7 +124,9 @@ at the bottom of the file:
 - `pytest_runtest_setup(item)` hookimpl with `tryfirst=True`.
 - `_integration_socket_cleanup` autouse fixture for `HASocketBlockedError`
   list hygiene.
-- `expected_lingering_tasks` fixture override.
+- `_integration_neutralize_socketio` autouse fixture that monkeypatches
+  `EventController.start` to a no-op and `EventController.connected` to
+  always `True` (see "The actual mechanism" above for rationale).
 
 ### 3. Edit `tests/mock_server/main.py`
 
@@ -168,9 +175,10 @@ the `@pytest.mark.integration` decorator immediately above.
 uv run pytest tests/ -m integration --tb=line --no-cov -q
 ```
 
-Expected: 95-100 passed out of 108, with the 2 known bugs (#102, #103) and
-3-8 intermittent flakes. The flake rate is bounded by the upstream Engine.IO
-mismatch and is handled by `pytest-rerunfailures` in Phase 3's CI workflow.
+Expected: 102 passed out of 104, with the 2 known bugs (#102, #103)
+remaining as the only failures (handed off to Phase 2). With the
+SocketIO-neutralisation fixture in place there are zero intermittent
+flakes — the suite is fully deterministic.
 
 ```bash
 uv run pytest tests/ -m "not integration" --no-cov -q
@@ -191,22 +199,14 @@ pre-existing fixes, and the marker-removal count.
 
 ## Known follow-ups (not Phase 1's job)
 
-The mocked-network path still has rough edges that this phase intentionally
-does **not** try to fix because they live outside the spec's "make CI gate
-work" scope:
-
 - **Engine.IO v3 ↔ v4 mismatch.** The vendored Abode SocketIO client speaks
   EIO=3; the mock's `python-socketio==5.11.0` server rejects it with 403.
-  Tests still pass via HTTP polling, but the never-resolving handshake
-  retries leave a lingering `wait_for(refresh)` task per test that uses
-  the integration. Tracked in a follow-up issue; until then,
-  `expected_lingering_tasks=True` keeps the failures as warnings.
-- **Test-ordering flakes.** A small set of entity tests (`test_light.py`,
-  `test_switch.py`, `test_cms_settings_switches.py`) sometimes assert on
-  an `unavailable` state when run mid-suite. The pattern matches async
-  setup not completing before the assertion. Mitigated by
-  `pytest-rerunfailures --reruns=2` in the CI workflow; root cause
-  investigation lives in a follow-up.
+  The `_integration_neutralize_socketio` autouse fixture papers over this
+  for the integration suite by short-circuiting `EventController.start`
+  and forcing `connected` to True, but the underlying protocol drift is
+  still real (and the mock can't emit push events at all). Tracked as
+  #105; fixing it would let us drop the neutralisation fixture and
+  exercise the SocketIO path against the mock too.
 
 ## Risk
 
