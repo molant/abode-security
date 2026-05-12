@@ -258,10 +258,9 @@ class EventController:
     def set_event_loop(self, loop):
         """Legacy hook — kept for API compatibility; no longer required.
 
-        Previously used to inject the HA event loop for run_coroutine_threadsafe
-        bridging from the SocketIO thread. Now that all SocketIO callbacks run
-        directly on the HA event loop, asyncio.create_task() picks up the
-        running loop implicitly and this field is unused in production code.
+        Previously used to bridge SocketIO thread callbacks to the HA event loop.
+        Now that SocketIO runs as an async task, asyncio.create_task() picks up
+        the running loop implicitly and this field is unused in production code.
         """
         self._event_loop = loop
 

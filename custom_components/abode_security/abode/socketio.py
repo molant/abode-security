@@ -240,8 +240,6 @@ class SocketIO:
 
             interval = next(intervals)
             log.info("Waiting %f seconds before reconnecting...", interval)
-            # threading.Event.wait(timeout) returned True when set (stop) and
-            # False on timeout (continue). asyncio signals timeout via exception.
             try:
                 await asyncio.wait_for(self._exit_event.wait(), timeout=interval)
                 # .set() was called — caller wants to stop.

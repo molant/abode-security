@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 feature: abode-fork-modernization
 title: Vendored abode/ fork modernization + lomond replacement
 phases: 4
@@ -10,13 +10,10 @@ issues: [62, 61]
 
 ## Status
 
-**Pending** — spec committed on `docs/abode-fork-modernization-spec`,
-implementation not started. Bundled with [#61](https://github.com/molant/abode-security/issues/61)
-because the lomond replacement reshapes the same files the fork-policy
-decision in [#62](https://github.com/molant/abode-security/issues/62)
-governs. Adjacent context lives in [#105](https://github.com/molant/abode-security/issues/105)
-(why EIO=3 is permanent) and [#77](https://github.com/molant/abode-security/issues/77)
-(why CI now actually exercises the SocketIO path).
+**Done** — all 4 phases implemented and merged. Closes [#62](https://github.com/molant/abode-security/issues/62)
+and [#61](https://github.com/molant/abode-security/issues/61). Adjacent context lives in
+[#105](https://github.com/molant/abode-security/issues/105) (why EIO=3 is permanent) and
+[#77](https://github.com/molant/abode-security/issues/77) (why CI now actually exercises the SocketIO path).
 
 ## Goal
 
@@ -101,10 +98,10 @@ just fixed.
 
 | Phase | File | Description | Status |
 |-------|------|-------------|--------|
-| 1 | [Phase 1: Fork hygiene & audit](./phase-1-fork-hygiene.md) | Add `UPSTREAM.md`. Delete `abode/artifacts/test-mode-requests`. Instrument `Device.new`'s `pkg.import_all()` (sentinel-gated) to log the registered class list during integration tests. No behavior change. | pending |
-| 2 | [Phase 2: Async WebSocket transport scaffold](./phase-2-websocket-transport.md) | Add `abode/_websocket.py` — async wrapper over `aiohttp.ClientWebSocketResponse` — with 11 unit tests. No production callers wired up yet. | pending |
-| 3 | [Phase 3: SocketIO async refactor](./phase-3-async-refactor.md) | Rewrite `socketio.py` `SocketIO` class as async on the HA loop. Drop `event_controller.py`'s `run_coroutine_threadsafe` bridge. Remove `lomond` from `manifest.json` requirements and loggers. | pending |
-| 4 | [Phase 4: Observability + audit deletes + final cleanup](./phase-4-observability.md) | Add `last_packet_age_seconds` and `consecutive_connect_failures` to `diagnostics.py`. Ingest Phase 1's audit log; delete any provably-unregistered device modules. Refresh `docs/ARCHITECTURE.md`. | pending |
+| 1 | [Phase 1: Fork hygiene & audit](./phase-1-fork-hygiene.md) | Add `UPSTREAM.md`. Delete `abode/artifacts/test-mode-requests`. Instrument `Device.new`'s `pkg.import_all()` (sentinel-gated) to log the registered class list during integration tests. No behavior change. | done |
+| 2 | [Phase 2: Async WebSocket transport scaffold](./phase-2-websocket-transport.md) | Add `abode/_websocket.py` — async wrapper over `aiohttp.ClientWebSocketResponse` — with 11 unit tests. No production callers wired up yet. | done |
+| 3 | [Phase 3: SocketIO async refactor](./phase-3-async-refactor.md) | Rewrite `socketio.py` `SocketIO` class as async on the HA loop. Drop `event_controller.py`'s `run_coroutine_threadsafe` bridge. Remove `lomond` from `manifest.json` requirements and loggers. | done |
+| 4 | [Phase 4: Observability + audit deletes + final cleanup](./phase-4-observability.md) | Add `last_packet_age_seconds` and `consecutive_connect_failures` to `diagnostics.py`. Ingest Phase 1's audit log; delete any provably-unregistered device modules. Refresh `docs/ARCHITECTURE.md`. | done |
 
 ## Acceptance criteria
 
