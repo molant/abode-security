@@ -52,13 +52,11 @@ async def test_switch_entity_registry(
     """Tests that the devices are registered in the entity registry."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(

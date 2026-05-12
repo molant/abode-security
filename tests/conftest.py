@@ -398,16 +398,52 @@ def _integration_socket_cleanup(
     HASocketBlockedError.instances.clear()
 
 
-@pytest.fixture
-def expected_lingering_tasks(request: pytest.FixtureRequest) -> bool:
-    """Permit lingering tasks for `@pytest.mark.integration` tests.
+@pytest.fixture(autouse=True)
+def _integration_neutralize_socketio(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[None, None, None]:
+    """Keep the SocketIO thread out of the integration test loop.
 
-    The Abode SocketIO connect callback schedules a refresh via
-    `asyncio.run_coroutine_threadsafe`; with the mock server's WebSocket
-    handshake rejected (Engine.IO version mismatch), that future never
-    resolves before the test finishes its assertion phase. Letting
-    pytest-HA-cc's `verify_cleanup` (`plugins.py:411-423`) downgrade the
-    lingering-task fail to a warning is the framework's blessed escape
-    hatch (see the docstring on the upstream fixture default).
+    The vendored Abode SocketIO client speaks Engine.IO v3 to a
+    python-socketio v4 mock server (`EIO=3` -> 403 from python-socketio),
+    so the handshake never succeeds. Two downstream consequences bite
+    every integration test that boots a full config entry:
+
+    1. The disconnect callback flips
+       `AbodeEntity._attr_available = events.connected` to `False`, so
+       HA's service-call dispatch silently no-ops with a
+       "Referenced entities ... are missing or not currently available"
+       warning. Tests that patch a device method and assert it was called
+       fail with `Called 0 times.`.
+    2. The reconnect loop schedules `_async_refresh` tasks that race
+       teardown and leak into the next test, causing rotating flakes.
+
+    For the integration suite (whose goal is "is the integration wired
+    correctly end-to-end against an Abode-shaped HTTP server?") the
+    SocketIO push channel is incidental -- the mock doesn't even emit
+    real events to listen to. Neutralise the thread entirely:
+
+    - `EventController.start` becomes a no-op so the SocketIO thread never
+      spins up.
+    - `EventController.connected` always returns `True` so entities stay
+      available.
+
+    Tracked as follow-up #105 / #106; revisit when the upstream Engine.IO
+    mismatch is fixed.
     """
-    return request.node.get_closest_marker("integration") is not None
+    if request.node.get_closest_marker("integration") is None:
+        yield
+        return
+
+    from custom_components.abode_security.abode.event_controller import (
+        EventController,
+    )
+
+    monkeypatch.setattr(EventController, "start", lambda _self: None)
+    monkeypatch.setattr(
+        EventController,
+        "connected",
+        property(lambda _self: True),
+    )
+    yield

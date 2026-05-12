@@ -40,13 +40,11 @@ async def test_alarm_entity_registry(
     """Tests that the alarm is registered in the entity registry."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -80,13 +78,11 @@ async def test_alarm_attributes(
     """Test the alarm control panel attributes are correct."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -124,13 +120,11 @@ async def test_alarm_arm_away(
     """Test the alarm control panel can be armed to away mode."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -177,13 +171,11 @@ async def test_alarm_arm_home(
     """Test the alarm control panel can be armed to home mode."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(
@@ -230,13 +222,11 @@ async def test_alarm_disarm(
     """Test the alarm control panel can be disarmed."""
     import importlib
 
-    from custom_components.abode_security.abode import event_controller
     from custom_components.abode_security.abode.helpers import urls
 
     original_url = os.environ.get("ABODE_BASE_URL")
     os.environ["ABODE_BASE_URL"] = mock_server_client["base_url"]
     importlib.reload(urls)
-    importlib.reload(event_controller)
 
     try:
         config_entry = MockConfigEntry(

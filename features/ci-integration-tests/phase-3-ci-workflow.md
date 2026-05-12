@@ -18,23 +18,23 @@ Phase 1 and Phase 2).
 
 ## Deviations from the original plan
 
-The original Phase 3 spec expected 108 collected integration items and
-no `--reruns` flag. Reality after Phases 1–2:
+The original Phase 3 spec expected 108 collected integration items.
+Reality after Phases 1–2:
 
 - **104 collected, not 108.** Phase 1 deleted `tests/integration/test_auth.py`
   (4 dead tests using removed Client API), so the new total is 104. The
   number is informational; the workflow doesn't hard-code it.
-- **`--reruns=2 --reruns-delay=1` added** via the new `pytest-rerunfailures`
-  dev-dep. A small set of entity tests intermittently fails because the
-  vendored Abode SocketIO client speaks Engine.IO v3 to a python-socketio
-  v4 mock (handshake 403), leaving the scheduled refresh in flight while
-  the test's assertions race it. The deterministic bugs were fixed in
-  Phase 2; what remains is async-timing flakiness. Without retries, the
-  job is too noisy to be a useful gate. With two retries any single test
-  that still fails is a real regression. Root cause is tracked as a
-  follow-up.
-- Spec author's original 51-line workflow change (commit `21d595de97db`)
-  applied verbatim — only the pytest invocation gained the rerun flags.
+- **No `--reruns` flag in the final shape.** An earlier draft of this
+  phase added `pytest-rerunfailures` and `--reruns=2`/`--reruns-delay=1`
+  to paper over async-timing flakes; the first CI run pushed the budget
+  to `--reruns=3 --reruns-delay=2` because two CI-deterministic alarm
+  tests still failed. The proper fix landed in Phase 1's
+  `_integration_neutralize_socketio` autouse fixture (neutralises the
+  vendored Abode SocketIO client whose `EIO=3` handshake gets 403 from
+  the mock's python-socketio v4 server). With the fixture in place the
+  suite is fully deterministic; both the dev-dep and the CLI flags were
+  dropped in commit-cleanup, so the workflow ends up applying PR #101's
+  diff almost verbatim.
 
 ## Source of truth: PR #101 commit
 
@@ -50,7 +50,8 @@ The design decisions baked into it are still correct:
   within the workflow; failure attribution is by job name, not by file
   path.
 - **Required check** (no `continue-on-error`). Phase 2 fixed the only two
-  deterministic failures; flake risk is bounded by `--reruns`.
+  deterministic failures; Phase 1's SocketIO-neutralisation fixture
+  eliminates the residual async-timing flakes.
 - **Workflow owns the mock-server container lifecycle**.
   `tests/conftest.py`'s session-scope `mock_server` fixture detects an
   already-running server at `MOCK_SERVER_URL` and skips its own
@@ -107,7 +108,7 @@ committed version:
         run: |
           uv run pytest tests/ \
             -o addopts="--cov=custom_components/abode_security --cov-report=term-missing" \
-            -m integration -v --tb=short --reruns=2 --reruns-delay=1
+            -m integration -v --tb=short
 
       - name: Show mock server logs on failure
         if: failure()
@@ -118,22 +119,7 @@ committed version:
         run: docker compose down
 ```
 
-## Step 3.2 — Add `pytest-rerunfailures` to dev deps
-
-**File**: `pyproject.toml`
-
-In the `[project.optional-dependencies].dev` array, alongside the other
-`pytest-*` plugins:
-
-```toml
-"pytest-rerunfailures==15.1",
-```
-
-Pin to a specific minor; the plugin's CLI surface is stable but the
-opinionated rerun semantics (e.g. interaction with parametrize) can
-change across majors.
-
-## Step 3.3 — Verify the YAML parses
+## Step 3.2 — Verify the YAML parses
 
 ```bash
 uv run python -c "import yaml; yaml.safe_load(open('.github/workflows/tests.yaml'))" && echo VALID
@@ -145,7 +131,7 @@ If `actionlint` is available locally:
 actionlint .github/workflows/tests.yaml
 ```
 
-## Step 3.4 — Confirm the docker-compose service name
+## Step 3.3 — Confirm the docker-compose service name
 
 The job references `mock-abode` in the `docker compose up -d --build mock-abode`
 and `logs` commands. Confirm the service name hasn't drifted:
@@ -157,7 +143,7 @@ grep -E "^  [a-z][a-z-]*:" docker-compose.yml
 Must include `mock-abode`. The final `docker compose down` stops the
 project, not an individual service.
 
-## Step 3.5 — Confirm pytest can be invoked with the override
+## Step 3.4 — Confirm pytest can be invoked with the override
 
 ```bash
 uv run pytest tests/ \
@@ -170,23 +156,22 @@ items, for 437 total collected items. If it prints anything other than 104
 selected items, Phase 1 or Phase 2 changed the marker set or parametrisation
 by accident.
 
-## Step 3.6 — Smoke-test the rerun flag locally
+## Step 3.5 — Smoke-test the suite locally
 
 ```bash
 uv run pytest tests/ \
   -o addopts="--cov=custom_components/abode_security --cov-report=term-missing" \
-  -m integration --reruns=2 --reruns-delay=1 -v --tb=short 2>&1 | tail -3
+  -m integration -v --tb=short 2>&1 | tail -3
 ```
 
-Expect `104 passed, … rerun in …s`. The `rerun` count varies between
-runs (0–6 typical) but the `passed` count is consistently 104. If you
-see any `failed` lines in the summary, that's a real regression — Phase
-2 didn't close all the gaps, or a new commit on `main` broke something.
+Expect `104 passed`. If you see any `failed` lines, that's a real
+regression — Phase 2 didn't close all the gaps, or a new commit on
+`main` broke something.
 
-## Step 3.7 — Commit
+## Step 3.6 — Commit
 
 ```bash
-git add .github/workflows/tests.yaml pyproject.toml uv.lock \
+git add .github/workflows/tests.yaml \
         features/ci-integration-tests/phase-3-ci-workflow.md
 ~/.claude/scripts/commit.sh -m "ci: gate integration tests on every PR"
 ```
@@ -195,8 +180,6 @@ Commit body should explain:
 
 - What the job does (104 integration items, dockerized mock server).
 - Why `-o addopts=...` is mandatory (rightmost-`-m`-wins fragility).
-- Why `--reruns=2` is mandatory (async-timing flakes; deterministic
-  bugs already fixed in Phase 2).
 - Reference closed PR #101 as prior art.
 
 ## Open follow-ups (NOT this PR)
@@ -205,8 +188,9 @@ Commit body should explain:
 - Splitting Python + integration into separate workflows for parallelism
   — not needed at current test volume.
 - Engine.IO v3↔v4 mismatch between the vendored Abode SocketIO client
-  and python-socketio 5.x. Eliminating this is what would let us drop
-  `--reruns=2`. Tracked as a follow-up (see Phase 4 for the issue link).
+  and python-socketio 5.x. Eliminating this would let us drop Phase 1's
+  `_integration_neutralize_socketio` fixture and exercise the SocketIO
+  push path against the mock too. Tracked as #105.
 
 ## What success looks like
 
