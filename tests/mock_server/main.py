@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -7,6 +8,45 @@ import socketio
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from socketio.asyncio_manager import AsyncManager as _AsyncManager
+
+
+# python-socketio 4.6.1's AsyncManager.emit passes raw coroutines to
+# asyncio.wait. Support for that was deprecated in 3.8 and REMOVED in 3.11
+# (asyncio/tasks.py raises TypeError("Passing coroutines is forbidden, use
+# tasks explicitly.")), so every emit -- including emit_state_change for
+# REST-driven device/panel updates -- returns 500 on every supported runtime
+# (Docker mock and local both run python:3.14-slim / Py3.14). Apply the
+# coroutine-to-task shim unconditionally; it's a no-op on the rare Python
+# <3.11 runtime and required everywhere else. Upstream fix is in
+# python-socketio 5.x, but we're stuck on 4.x for Engine.IO v3 compatibility
+# (#105).
+async def _emit_wrapping_coroutines_in_tasks(self, event, data, namespace, **kwargs):
+    if namespace not in self.rooms or kwargs.get("room") not in self.rooms[namespace]:
+        return
+    skip_sid = kwargs.get("skip_sid")
+    if not isinstance(skip_sid, list):
+        skip_sid = [skip_sid]
+    callback = kwargs.get("callback")
+    tasks = []
+    for sid in self.get_participants(namespace, kwargs.get("room")):
+        if sid in skip_sid:
+            continue
+        ack_id = (
+            self._generate_ack_id(sid, namespace, callback)
+            if callback is not None
+            else None
+        )
+        tasks.append(
+            asyncio.ensure_future(
+                self.server._emit_internal(sid, event, data, namespace, ack_id)
+            )
+        )
+    if tasks:
+        await asyncio.wait(tasks)
+
+
+_AsyncManager.emit = _emit_wrapping_coroutines_in_tasks
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -412,6 +452,68 @@ async def get_state():
     }
 
 
+@app.post("/api/test/disconnect_all")
+async def disconnect_all():
+    """Force-disconnect every connected Socket.IO client.
+
+    Used by integration tests to exercise the vendored client's reconnect
+    path: it closes the underlying websocket, which the client treats as a
+    transient disconnect and re-establishes after backoff. Unlike
+    `/api/v1/logout` (which only clears REST session state without touching
+    the websocket), this hook actually delivers a CLOSE frame.
+    """
+    # sio.manager.rooms maps namespace → room → {sid: bool}. python-socketio
+    # uses None as the default broadcast room key (NOT an empty string), so
+    # every connected sid in the default namespace lives under rooms["/"][None].
+    # Iterate over a snapshot since sio.disconnect mutates rooms.
+    sids = list(sio.manager.rooms.get("/", {}).get(None, {}).keys())
+    for sid in sids:
+        await sio.disconnect(sid)
+    log.info(f"Disconnected {len(sids)} Socket.IO client(s)")
+    return {"status": "disconnected", "count": len(sids)}
+
+
+@app.post("/api/test/emit")
+async def emit_event(request: Request):
+    """Broadcast an arbitrary Socket.IO frame to all connected clients.
+
+    Tests use this to exercise EventController's push-event handlers
+    (com.goabode.device.update, com.goabode.gateway.mode,
+    com.goabode.gateway.timeline, com.goabode.automation) without driving them
+    indirectly through REST mutations -- the REST endpoints emit
+    `com.goabode.states`, which the integration does not listen for.
+
+    Request body must include `event` (str). `data` is optional; when present
+    it's forwarded verbatim as the SocketIO frame payload. The endpoint does
+    not mutate any REST-side state -- callers that need a coherent
+    REST/push pair (e.g. device.update tests) should PUT the REST update first
+    and then POST here.
+    """
+    try:
+        body = await request.json()
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid JSON body: {exc.msg}"
+        ) from exc
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=400, detail="Request body must be a JSON object"
+        )
+    event = body.get("event")
+    if not isinstance(event, str) or not event:
+        raise HTTPException(
+            status_code=400, detail="'event' must be a non-empty string"
+        )
+
+    data = body.get("data")
+    if data is None:
+        await sio.emit(event)
+    else:
+        await sio.emit(event, data)
+    log.info(f"Test-emitted Socket.IO event: {event}")
+    return {"status": "emitted", "event": event}
+
+
 # ===== Server Setup =====
 
 
@@ -435,6 +537,7 @@ async def root():
             "panel": "/api/v1/panel",
             "devices": "/api/v1/devices",
             "test": "/api/test/reset",
+            "test_emit": "/api/test/emit",
         },
         "websocket": "Socket.IO available at /socket.io/",
     }

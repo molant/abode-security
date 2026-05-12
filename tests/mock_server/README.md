@@ -56,6 +56,25 @@ FastAPI auto-generates docs at:
 ### Test Utilities
 - `POST /api/test/reset` - Reset all state to defaults
 - `GET /api/test/state` - View current server state (debugging)
+- `POST /api/test/emit` - Broadcast an arbitrary Socket.IO frame to all clients
+- `POST /api/test/disconnect_all` - Force-disconnect every Socket.IO client (used by reconnect tests)
+
+#### `POST /api/test/emit`
+
+Used by integration tests to exercise the SocketIO push path
+(`EventController._on_device_update`, `_on_mode_change`,
+`_on_timeline_update`, `_on_automation_update`). The hook only calls
+`sio.emit` — it does **not** mutate REST-side state, so tests that need a
+coherent REST/push pair (e.g. `com.goabode.device.update` tests) must PUT the
+REST change first and then emit the push.
+
+Body:
+```json
+{ "event": "com.goabode.device.update", "data": "RF:01430030" }
+```
+
+`data` is forwarded verbatim as the frame payload; omit it to emit a frame
+without a body.
 
 ## State Management
 
