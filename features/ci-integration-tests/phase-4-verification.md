@@ -1,5 +1,5 @@
 ---
-status: planned
+status: done
 phase: 4
 feature: ci-integration-tests
 title: Full verification, PR, and Copilot review
@@ -7,7 +7,9 @@ title: Full verification, PR, and Copilot review
 
 # Phase 4: Full Verification, PR, and Copilot Review
 
-**Status**: planned
+**Status**: done — PR #108 opened with all verification gates green locally.
+Follow-ups #105 (Engine.IO mismatch), #106 (integration-test flakes), and
+#107 (`tests/integration/` placeholder) filed before push.
 
 ## Goal
 

@@ -1,5 +1,5 @@
 ---
-status: planned
+status: done
 feature: ci-integration-tests
 title: CI integration test gating
 phases: 4
@@ -9,7 +9,10 @@ phases: 4
 
 ## Status
 
-**Planned** — spec written 2026-05-11, awaiting `/spec-implement`.
+**Done** — implemented across PR #108 (closes #77, #102, #103) on
+2026-05-11. Follow-ups tracked as #105 (Engine.IO v3/v4 mismatch),
+#106 (intermittent integration-test flakes), #107 (`tests/integration/`
+placeholder cleanup).
 
 ## Goal
 
