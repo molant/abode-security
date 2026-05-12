@@ -12,7 +12,7 @@ Covers the fixes for issue #2:
 
 import asyncio
 import logging
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from custom_components.abode_security.abode import socketio as sio_module
 from custom_components.abode_security.abode.exceptions import SocketIOException
@@ -225,10 +225,6 @@ class TestEventControllerStartedSeeding:
         with patch.object(ec_module.sio, "SocketIO") as mock_socketio_cls:
             mock_socketio_cls.return_value = Mock()
             ec = ec_module.EventController(client=client, url="ws://example/")
-        # A running event loop substitute - just enough to satisfy the guard.
-        loop = Mock()
-        loop.is_running = Mock(return_value=True)
-        ec._event_loop = loop
         return ec
 
     async def test_seeds_only_on_first_started(self, monkeypatch):
@@ -241,16 +237,12 @@ class TestEventControllerStartedSeeding:
 
         monkeypatch.setattr(ec_module, "_cookie_string", lambda _jar: "seed=value")
         ec._client._session = fake_session
+        # Stub out _async_get_session so it doesn't hit the real client.
+        ec._async_get_session = AsyncMock()
 
-        # Don't actually schedule anything on the event loop.
-        with patch(
-            "custom_components.abode_security.abode.event_controller.asyncio.run_coroutine_threadsafe"
-        ) as mock_schedule:
-            mock_schedule.return_value = Mock()
-
-            ec._on_socket_started()
-            ec._on_socket_started()
-            ec._on_socket_started()
+        await ec._on_socket_started()
+        await ec._on_socket_started()
+        await ec._on_socket_started()
 
         set_cookie_calls = ec._socketio.set_cookie.call_args_list
         # Only the first started call should have seeded the cookie.
@@ -281,3 +273,45 @@ class TestEventControllerStartedSeeding:
         ec._client._set_connection_status.assert_called_once()
         args = ec._client._set_connection_status.call_args
         assert args[0][0] == "connected"
+
+
+class TestExecuteCallbackAsync:
+    """_execute_callback fire-and-forget: task completes and is logged."""
+
+    async def test_async_callback_runs_as_task(self):
+        from custom_components.abode_security.abode.event_controller import (
+            _execute_callback,
+        )
+
+        completed: list[str] = []
+
+        async def my_callback(value):
+            completed.append(value)
+
+        _execute_callback(my_callback, "hello")
+        # Two iterations: first runs the task, second lets the done-callback fire.
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        assert completed == ["hello"]
+
+    async def test_async_callback_failure_consumed_by_done_callback(self, caplog):
+        """Task failures do not surface as unhandled-task warnings; they're logged."""
+        from custom_components.abode_security.abode.event_controller import (
+            _execute_callback,
+        )
+
+        async def failing_callback():
+            raise ValueError("intentional failure")
+
+        with caplog.at_level(
+            logging.ERROR,
+            logger="custom_components.abode_security.abode.event_controller",
+        ):
+            _execute_callback(failing_callback)
+            # Two iterations: first runs the task, second lets the done-callback fire.
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+
+        assert "Callback execution failed" in caplog.text
+        assert "intentional failure" in caplog.text
