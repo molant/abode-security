@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 phase: 3
 feature: abode-fork-modernization
 title: SocketIO async refactor and lomond removal
@@ -79,24 +79,24 @@ tests/
 
 ### Baseline test verification (before starting implementation)
 
-- [ ] Run `./scripts/check.sh` — clean.
-- [ ] Run `uv run pytest -m integration` — all 104 items green.
-- [ ] Run `uv run pytest tests/test_socketio_reconnect.py` — 8 tests green (these are the contract).
-- [ ] Run `uv run pytest tests/test_abode_websocket.py` — 11 tests green (Phase 2 baseline).
-- [ ] Confirm Phase 1 audit log is still being produced: `grep "abode_security.audit.registered_device_classes" <recent integration-test log>`. Phase 4 uses this; it must keep working through Phase 3.
+- [x] Run `./scripts/check.sh` — clean.
+- [x] Run `uv run pytest -m integration` — all 104 items green.
+- [x] Run `uv run pytest tests/test_socketio_reconnect.py` — 8 tests green (these are the contract).
+- [x] Run `uv run pytest tests/test_abode_websocket.py` — 11 tests green (Phase 2 baseline).
+- [x] Confirm Phase 1 audit log is still being produced: `grep "abode_security.audit.registered_device_classes" <recent integration-test log>`. Phase 4 uses this; it must keep working through Phase 3.
 
 ### Sub-Phase 3A: Rewrite `SocketIO` as async (TDD, RED → GREEN)
 
 Start with the existing tests in `tests/test_socketio_reconnect.py`. Convert them mechanically so they exercise the async API. Run them — they will fail because the implementation is still sync. That's the RED step.
 
-- [ ] For each of the 8 test methods in `tests/test_socketio_reconnect.py`:
+- [x] For each of the 8 test methods in `tests/test_socketio_reconnect.py`:
   - Add `@pytest.mark.asyncio` decorator.
   - Change `def test_...` → `async def test_...`.
   - Add `await` in front of every call to `socketio.stop()` and `socketio._step()`. `socketio.start()` stays a regular scheduling method.
   - Replace any `threading.Event` assertions with task-state assertions (`task.done()`, `task.cancelled()`).
   - The assertions on `_cookie`, `_connect_failures`, `_persistent_disconnect_fired`, `_callbacks`, and the `BackoffIntervals` distribution **do not change** — those state checks are still valid.
-- [ ] Run `uv run pytest tests/test_socketio_reconnect.py -v` — expect failures because the tests now await async APIs that the implementation has not provided yet. Do not lock the RED step to one exact exception shape; the failure details depend on which methods were converted first.
-- [ ] Rewrite `socketio.py`'s `SocketIO` class:
+- [x] Run `uv run pytest tests/test_socketio_reconnect.py -v` — expect failures because the tests now await async APIs that the implementation has not provided yet. Do not lock the RED step to one exact exception shape; the failure details depend on which methods were converted first.
+- [x] Rewrite `socketio.py`'s `SocketIO` class:
   - `start()` becomes a regular method (not async) that calls `asyncio.create_task(self._run())` and stores the task handle. Returning a non-coroutine matches lomond's old behavior; callers don't need to `await` it.
     - Rationale for not-async-start: avoids forcing every existing `client.start()` call site to become async. The pattern matches HA's coordinator `async_setup` shape.
     - **Precondition**: `asyncio.create_task` requires a running event loop. Today, `EventController` already validates `self._event_loop.is_running()` before scheduling startup work. Either preserve that guard at the `SocketIO.start()` callsite, or call `asyncio.get_running_loop()` inside `start()` and let it raise `RuntimeError` early if mis-called. Do NOT swallow that error — a silent no-op on a missing loop is the bug that breaks the integration cold-start.
@@ -132,13 +132,13 @@ Start with the existing tests in `tests/test_socketio_reconnect.py`. Convert the
   - `_handle_event()` becomes `async def`. For each callback in `self._callbacks[event_name]`: if `inspect.iscoroutinefunction(callback)`, `await callback(*args)`; else call inline. Wrap each call in the existing `try/except Exception` block that logs and continues. See [Inline async dispatch in `_handle_event`](#inline-async-dispatch-in-_handle_event) for the exact snippet.
   - **`_add_header` and `set_origin`/`set_cookie` lifecycle**: today `_add_header` calls `self._websocket.add_header(name.encode(), value.encode())` on lomond's `WebSocket` object after instantiation but before `persist()`. aiohttp's wrapper takes `cookie`/`origin` at construction time (Phase 2 API), so `_add_header` is no longer needed. **Delete `_add_header`**, **delete** the two `self._add_header(...)` calls, but **keep** `set_origin`/`set_cookie` (they mutate `self._origin` / `self._cookie` and are called externally by `event_controller.py` between iterations — confirm this by grepping `set_cookie` and `set_origin` across `event_controller.py` and tests).
   - `BackoffIntervals`, `find_json_list`, the `EngineIO`/`SocketIO` codes maps, and `PERSISTENT_DISCONNECT_THRESHOLD` are unchanged.
-- [ ] Add focused shutdown coverage to `tests/test_socketio_reconnect.py` for the new async contract. Prove:
+- [x] Add focused shutdown coverage to `tests/test_socketio_reconnect.py` for the new async contract. Prove:
   - `await stop()` returns without cancelling a task that exits after `_exit_event.set()`.
   - A task that ignores the exit event reaches the 10s timeout path, gets cancelled, and emits the existing warning text for the async-task variant.
   Keep these tests small by patching `asyncio.wait_for` / the task under test; do not sleep for real time.
-- [ ] Remove the three `lomond` imports from the top of `socketio.py`. After removal, `grep "lomond" custom_components/abode_security/abode/socketio.py` should produce no hits.
-- [ ] Map `WebSocketError` → `AbodeWebSocketError` in the outer `_run()` try/except. There is no longer a `lomond.errors.WebSocketError`; the catch becomes `except AbodeWebSocketError`. Log message stays the same string template so log alerts don't break: `"Websocket Error: %s"`.
-- [ ] Run `uv run pytest tests/test_socketio_reconnect.py -v` — the converted reconnect contract remains green, along with the shutdown coverage added in this phase.
+- [x] Remove the three `lomond` imports from the top of `socketio.py`. After removal, `grep "lomond" custom_components/abode_security/abode/socketio.py` should produce no hits.
+- [x] Map `WebSocketError` → `AbodeWebSocketError` in the outer `_run()` try/except. There is no longer a `lomond.errors.WebSocketError`; the catch becomes `except AbodeWebSocketError`. Log message stays the same string template so log alerts don't break: `"Websocket Error: %s"`.
+- [x] Run `uv run pytest tests/test_socketio_reconnect.py -v` — the converted reconnect contract remains green, along with the shutdown coverage added in this phase.
 
 ### Sub-Phase 3B: Drop the EventController bridge
 
@@ -155,15 +155,15 @@ The four sites and the work they schedule:
 
 For the first three methods (`_on_socket_started`, `_on_socket_connected`, `_on_device_update`):
 
-- [ ] Convert each method's signature: `def _on_socket_started(self)` → `async def _on_socket_started(self)`.
-- [ ] Replace the `asyncio.run_coroutine_threadsafe(...)` + `add_done_callback(...)` pattern with a direct `await asyncio.wait_for(coro, timeout=self.LONG_OPERATION_TIMEOUT)`. **Keep the timeout** — `LONG_OPERATION_TIMEOUT = 30` is a real design constraint (HA setup phase) and is not a threading artifact.
-- [ ] Fold the done-callbacks (`_on_session_init_done`, `_on_refresh_done`, and the `_log_future_result` lambda) into `try/except TimeoutError / asyncio.CancelledError / Exception` blocks inside the converted methods. Preserve the existing log messages verbatim (e.g. `"Session initialization timed out"`, `"Abode refresh timed out"`) — they are referenced by potential user log alerts (see README → "Invariants").
-- [ ] After the conversion, **delete** `_on_session_init_done` and `_on_refresh_done`. They're unreachable.
-- [ ] Keep the `_socketio.on(...)` registration block unchanged in shape (9 registrations, no count change). `_handle_event()` (now `async`) detects coroutine callbacks via `inspect.iscoroutinefunction` and `await`s them — see [Inline async dispatch](#inline-async-dispatch-in-_handle_event). Sync handlers (`_on_socket_disconnected`, `_on_persistent_disconnect`, `_on_connection_recovered`, `_on_mode_change`, `_on_timeline_update`, `_on_automation_update`) stay sync.
+- [x] Convert each method's signature: `def _on_socket_started(self)` → `async def _on_socket_started(self)`.
+- [x] Replace the `asyncio.run_coroutine_threadsafe(...)` + `add_done_callback(...)` pattern with a direct `await asyncio.wait_for(coro, timeout=self.LONG_OPERATION_TIMEOUT)`. **Keep the timeout** — `LONG_OPERATION_TIMEOUT = 30` is a real design constraint (HA setup phase) and is not a threading artifact.
+- [x] Fold the done-callbacks (`_on_session_init_done`, `_on_refresh_done`, and the `_log_future_result` lambda) into `try/except TimeoutError / asyncio.CancelledError / Exception` blocks inside the converted methods. Preserve the existing log messages verbatim (e.g. `"Session initialization timed out"`, `"Abode refresh timed out"`) — they are referenced by potential user log alerts (see README → "Invariants").
+- [x] After the conversion, **delete** `_on_session_init_done` and `_on_refresh_done`. They're unreachable.
+- [x] Keep the `_socketio.on(...)` registration block unchanged in shape (9 registrations, no count change). `_handle_event()` (now `async`) detects coroutine callbacks via `inspect.iscoroutinefunction` and `await`s them — see [Inline async dispatch](#inline-async-dispatch-in-_handle_event). Sync handlers (`_on_socket_disconnected`, `_on_persistent_disconnect`, `_on_connection_recovered`, `_on_mode_change`, `_on_timeline_update`, `_on_automation_update`) stay sync.
 
 For `_execute_callback`:
 
-- [ ] **Do NOT delete `_execute_callback` blanket-style.** It is called from six places (verify via `grep -n "_execute_callback(" custom_components/abode_security/abode/event_controller.py`). What changes is its internals: today it uses `asyncio.run_coroutine_threadsafe` for the "bound HA-entity-method" branch. After Phase 3A the caller is already on the HA loop, so direct dispatch via `asyncio.create_task` is correct for the async path:
+- [x] **Do NOT delete `_execute_callback` blanket-style.** It is called from six places (verify via `grep -n "_execute_callback(" custom_components/abode_security/abode/event_controller.py`). What changes is its internals: today it uses `asyncio.run_coroutine_threadsafe` for the "bound HA-entity-method" branch. After Phase 3A the caller is already on the HA loop, so direct dispatch via `asyncio.create_task` is correct for the async path:
   ```python
   def _execute_callback(callback, *args, **kwargs):
       callback_args = args
@@ -188,70 +188,70 @@ For `_execute_callback`:
 
 For the in-flight tracking machinery:
 
-- [ ] Delete `_track_inflight`, `_discard_inflight`, `_inflight_futures`, `_inflight_lock`. They exist specifically to shut down `run_coroutine_threadsafe` futures during `stop()`. Once all `run_coroutine_threadsafe` call sites are gone, there are no orphan `concurrent.futures.Future` instances to track. (Pending `asyncio.Task`s from the new `_execute_callback` are tracked by the running loop; HA's teardown cancels them via the normal task cleanup.)
-- [ ] Convert `EventController.stop()` to `async def stop(self)`. New body: `await self._socketio.stop()`. The `_inflight_lock` and the for-loop cancelling futures go away. `_callback_lock` (RLock) and `_connection_lock` (Lock) stay — they protect callback registries, unrelated to the in-flight bridge.
-- [ ] In `custom_components/abode_security/__init__.py`, update the `abode_system.abode.events.stop()` call sites (inside `async_unload_entry` and friends — verify with grep) to `await abode_system.abode.events.stop()`. They're already inside `async` functions, so only `await` is added.
-- [ ] **`set_event_loop` / `_event_loop` handling**: Today `EventController.set_event_loop(loop)` is called from outer setup (`__init__.py`) and stores the loop on `self._event_loop` so callbacks can `run_coroutine_threadsafe(coro, self._event_loop)`. After the refactor, all callbacks run on the current loop (`asyncio.get_running_loop()` returns the right one inside `await`-contexts), so storing it is no longer required for correctness. Two acceptable options:
+- [x] Delete `_track_inflight`, `_discard_inflight`, `_inflight_futures`, `_inflight_lock`. They exist specifically to shut down `run_coroutine_threadsafe` futures during `stop()`. Once all `run_coroutine_threadsafe` call sites are gone, there are no orphan `concurrent.futures.Future` instances to track. (Pending `asyncio.Task`s from the new `_execute_callback` are tracked by the running loop; HA's teardown cancels them via the normal task cleanup.)
+- [x] Convert `EventController.stop()` to `async def stop(self)`. New body: `await self._socketio.stop()`. The `_inflight_lock` and the for-loop cancelling futures go away. `_callback_lock` (RLock) and `_connection_lock` (Lock) stay — they protect callback registries, unrelated to the in-flight bridge.
+- [x] In `custom_components/abode_security/__init__.py`, update the `abode_system.abode.events.stop()` call sites (inside `async_unload_entry` and friends — verify with grep) to `await abode_system.abode.events.stop()`. They're already inside `async` functions, so only `await` is added.
+- [x] **`set_event_loop` / `_event_loop` handling**: Today `EventController.set_event_loop(loop)` is called from outer setup (`__init__.py`) and stores the loop on `self._event_loop` so callbacks can `run_coroutine_threadsafe(coro, self._event_loop)`. After the refactor, all callbacks run on the current loop (`asyncio.get_running_loop()` returns the right one inside `await`-contexts), so storing it is no longer required for correctness. Two acceptable options:
   - **Option A (recommended)**: Keep `set_event_loop` and `_event_loop` as legacy hooks that tests still call. Stop dereferencing `_event_loop` in production code — the validation guards in `_on_socket_started` can stay but become advisory (downgrade `log.error` to `log.debug`).
   - **Option B**: Delete `set_event_loop`/`_event_loop` entirely and update the test fixture. Larger blast radius; do this only if you're also touching the test fixtures for other reasons.
   Choose A by default. Note your choice in the PR description.
 
 Verification:
 
-- [ ] `grep -n "run_coroutine_threadsafe" custom_components/abode_security/abode/event_controller.py` returns 0 hits.
-- [ ] `grep -n "_inflight" custom_components/abode_security/abode/event_controller.py` returns 0 hits.
-- [ ] `grep -n "_track_inflight\|_discard_inflight" custom_components/abode_security/` returns 0 hits.
-- [ ] Run `uv run pytest tests/test_socketio_reconnect.py` — the 3 `TestEventControllerStartedSeeding` tests in particular exercise this bridge. **Test patch update required**: the test currently patches `asyncio.run_coroutine_threadsafe`. After the refactor that patch becomes a no-op. Remove the patch and let the converted `async def _on_socket_started` `await` the real `_async_get_session` against a mocked `_client._session`; this is the required version of the test.
-- [ ] Add an `_execute_callback` async-branch test to `tests/test_socketio_reconnect.py` beside the existing `EventController` coverage. It must prove the created task gets a done-callback and task failures are consumed/logged through `_log_task_completion`, rather than surfacing as unhandled background-task warnings.
-- [ ] Run `uv run pytest` — full unit suite green.
+- [x] `grep -n "run_coroutine_threadsafe" custom_components/abode_security/abode/event_controller.py` returns 0 hits.
+- [x] `grep -n "_inflight" custom_components/abode_security/abode/event_controller.py` returns 0 hits.
+- [x] `grep -n "_track_inflight\|_discard_inflight" custom_components/abode_security/` returns 0 hits.
+- [x] Run `uv run pytest tests/test_socketio_reconnect.py` — the 3 `TestEventControllerStartedSeeding` tests in particular exercise this bridge. **Test patch update required**: the test currently patches `asyncio.run_coroutine_threadsafe`. After the refactor that patch becomes a no-op. Remove the patch and let the converted `async def _on_socket_started` `await` the real `_async_get_session` against a mocked `_client._session`; this is the required version of the test.
+- [x] Add an `_execute_callback` async-branch test to `tests/test_socketio_reconnect.py` beside the existing `EventController` coverage. It must prove the created task gets a done-callback and task failures are consumed/logged through `_log_task_completion`, rather than surfacing as unhandled background-task warnings.
+- [x] Run `uv run pytest` — full unit suite green.
 
 ### Sub-Phase 3C: Remove `lomond` from `manifest.json`
 
-- [ ] In `custom_components/abode_security/manifest.json`:
+- [x] In `custom_components/abode_security/manifest.json`:
   - `requirements`: drop `"lomond"`. Final value: `["platformdirs", "aiohttp"]`.
   - `loggers`: drop `"lomond"`. Final value: `["custom_components.abode_security"]`.
-- [ ] Verify no remaining `lomond` imports anywhere in the integration: `grep -rn "lomond" custom_components/abode_security/ tests/`. Expected: zero hits.
-- [ ] `pyproject.toml` does NOT list `lomond` (it lives in `manifest.json` for HA's installer). Confirm with `grep lomond pyproject.toml` — zero hits expected.
+- [x] Verify no remaining `lomond` imports anywhere in the integration: `grep -rn "lomond" custom_components/abode_security/ tests/`. Expected: zero hits.
+- [x] `pyproject.toml` does NOT list `lomond` (it lives in `manifest.json` for HA's installer). Confirm with `grep lomond pyproject.toml` — zero hits expected.
 
 ### Sub-Phase 3D: Update `UPSTREAM.md`
 
 Phase 1 created `UPSTREAM.md` with an "Intentional rewrites" section that mentions the future lomond removal as a Phase 3 deferral. Update that section to past tense now that it's done.
 
-- [ ] In `custom_components/abode_security/abode/UPSTREAM.md`'s "Intentional divergence" section, change the lomond bullet from "(Phase 3, future)" wording to a present-tense statement: "`lomond` replaced by `aiohttp.ClientWebSocketResponse` (PR <number>). SocketIO daemon thread folded into the HA event loop."
-- [ ] Bump the "Local commits modifying this directory" count to the new value: `git log --oneline -- custom_components/abode_security/abode/ | wc -l`.
+- [x] In `custom_components/abode_security/abode/UPSTREAM.md`'s "Intentional divergence" section, change the lomond bullet from "(Phase 3, future)" wording to a present-tense statement: "`lomond` replaced by `aiohttp.ClientWebSocketResponse` (PR <number>). SocketIO daemon thread folded into the HA event loop."
+- [x] Bump the "Local commits modifying this directory" count to the new value: `git log --oneline -- custom_components/abode_security/abode/ | wc -l`.
 
 ### Sub-Phase 3E: Integration verification
 
-- [ ] Run `uv run pytest -m integration` against `./scripts/dev.sh` — all 104 items green. Reconnect scenarios are the highest-risk surface; watch the test_action_manager and test_socketio_reconnect output carefully.
-- [ ] In `./scripts/dev.sh`, manually:
+- [x] Run `uv run pytest -m integration` against `./scripts/dev.sh` — all 104 items green. Reconnect scenarios are the highest-risk surface; watch the test_action_manager and test_socketio_reconnect output carefully.
+- [x] In `./scripts/dev.sh`, manually:
   - Confirm HA starts cleanly. `docker logs abode-security-ha-1 2>&1 | grep -E "SocketIO Connected|Websocket Connected"` should show the connect sequence.
   - Trigger a reconnect by `docker compose restart mock-abode`, then watch the logs for `"Attempting to connect to SocketIO server..."` → `"Waiting %f seconds before reconnecting..."` → `"Websocket Connected"`. The interval should respect the 5–30s jitter band.
   - Drive the persistent_disconnect path by keeping mock-abode down for ~5 minutes (20 attempts × jittered backoff). Confirm `"signaling persistent disconnect"` appears. Bring mock-abode back; confirm `connection_recovered` fires (look for the HA service or UI surface that listens for it).
-- [ ] Stop HA cleanly (`docker compose down`). Confirm no `SocketIO thread did not exit within 10s` warnings — the analog now reads "did not exit within 10s" on the async task. The warning must remain reachable in principle but should not fire during clean shutdown.
+- [x] Stop HA cleanly (`docker compose down`). Confirm no `SocketIO thread did not exit within 10s` warnings — the analog now reads "did not exit within 10s" on the async task. The warning must remain reachable in principle but should not fire during clean shutdown.
 
 ### Documentation (end of phase)
 
-- [ ] `docs/ARCHITECTURE.md` — Phase 4 owns the SocketIO-section rewrite. Do not edit it here. (Phase 3 leaves it momentarily stale; Phase 4 reconciles.)
-- [ ] `docs/ASYNC_AWAIT_PATTERNS.md` — add a sentence to the "Background tasks" / "Service handlers" section noting that the SocketIO client is now an `asyncio.create_task` on the HA loop, no longer a daemon thread. Keep it brief — the bulk of the design lives in this spec.
-- [ ] `UPSTREAM.md` — updated in Sub-Phase 3D.
+- [x] `docs/ARCHITECTURE.md` — Phase 4 owns the SocketIO-section rewrite. Do not edit it here. (Phase 3 leaves it momentarily stale; Phase 4 reconciles.)
+- [x] `docs/ASYNC_AWAIT_PATTERNS.md` — add a sentence to the "Background tasks" / "Service handlers" section noting that the SocketIO client is now an `asyncio.create_task` on the HA loop, no longer a daemon thread. Keep it brief — the bulk of the design lives in this spec.
+- [x] `UPSTREAM.md` — updated in Sub-Phase 3D.
 
 ### Build verification (required before marking phase complete)
 
-- [ ] `./scripts/check.sh` — clean. Pay attention to mypy/pyright errors around async signature mismatches — those are the canonical "you forgot an `await`" signal.
-- [ ] `uv run pytest` — full unit suite green.
-- [ ] `uv run pytest -m integration` — all 104 items green. Run **twice** in a row — async refactors are the canonical breeding ground for race conditions.
-- [ ] `grep -rn "lomond" custom_components/ tests/ docs/` — zero hits outside this spec and `UPSTREAM.md`'s historical record.
-- [ ] `grep -rn "run_coroutine_threadsafe" custom_components/abode_security/abode/` — zero hits.
-- [ ] `grep -rn "threading\." custom_components/abode_security/abode/socketio.py` — zero hits (Phase 3 removes both `threading.Thread` and `threading.Event`).
-- [ ] Capture a new Phase 1 audit log from this integration run; confirm `registered_device_classes` is unchanged from Phase 1's baseline (no device classes lost during refactor).
-- [ ] If `package-lock.json`, `pubspec.lock`, etc. changed, stage them. (Expected: none.)
-- [ ] Mark this file's frontmatter `status: done` only after every box above is checked.
+- [x] `./scripts/check.sh` — clean. Pay attention to mypy/pyright errors around async signature mismatches — those are the canonical "you forgot an `await`" signal.
+- [x] `uv run pytest` — full unit suite green.
+- [x] `uv run pytest -m integration` — all 104 items green. Run **twice** in a row — async refactors are the canonical breeding ground for race conditions.
+- [x] `grep -rn "lomond" custom_components/ tests/ docs/` — zero hits outside this spec and `UPSTREAM.md`'s historical record.
+- [x] `grep -rn "run_coroutine_threadsafe" custom_components/abode_security/abode/` — zero hits.
+- [x] `grep -rn "threading\." custom_components/abode_security/abode/socketio.py` — zero hits (Phase 3 removes both `threading.Thread` and `threading.Event`).
+- [x] Capture a new Phase 1 audit log from this integration run; confirm `registered_device_classes` is unchanged from Phase 1's baseline (no device classes lost during refactor).
+- [x] If `package-lock.json`, `pubspec.lock`, etc. changed, stage them. (Expected: none.)
+- [x] Mark this file's frontmatter `status: done` only after every box above is checked.
 
 ### Manual verification with MCP tools (if available)
 
-- [ ] `mcp__home_assistant__ha_get_state` on `alarm_control_panel.abode_alarm` and a couple of sensor entities — confirm states match what the mock-server's SocketIO push emitted.
-- [ ] `mcp__home_assistant__ha_get_logs` filtered to the integration's logger; confirm no new errors or warnings appear vs. the Phase 2 baseline.
-- [ ] `mcp__home_assistant__ha_get_history` covering a reconnect window — entity-update timestamps should bracket the disconnect/reconnect gap; no entities should be stuck on stale state.
+- [x] `mcp__home_assistant__ha_get_state` on `alarm_control_panel.abode_alarm` and a couple of sensor entities — confirm states match what the mock-server's SocketIO push emitted.
+- [x] `mcp__home_assistant__ha_get_logs` filtered to the integration's logger; confirm no new errors or warnings appear vs. the Phase 2 baseline.
+- [x] `mcp__home_assistant__ha_get_history` covering a reconnect window — entity-update timestamps should bracket the disconnect/reconnect gap; no entities should be stuck on stale state.
 
 ## Technical Details
 
