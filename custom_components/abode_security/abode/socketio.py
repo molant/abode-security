@@ -134,6 +134,18 @@ class SocketIO:
 
         self._callbacks = collections.defaultdict(list)
 
+    @property
+    def consecutive_connect_failures(self) -> int:
+        return self._connect_failures
+
+    @property
+    def last_packet_age_seconds(self) -> float | None:
+        if self._last_packet_time == datetime.datetime.min.replace(tzinfo=datetime.UTC):
+            return None
+        return (
+            datetime.datetime.now(tz=datetime.UTC) - self._last_packet_time
+        ).total_seconds()
+
     def set_origin(self, origin=None):
         """Set the Origin header."""
         self._origin = origin

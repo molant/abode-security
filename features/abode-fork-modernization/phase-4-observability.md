@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in_progress
 phase: 4
 feature: abode-fork-modernization
 title: Observability, audit-driven deletes, and final cleanup
@@ -37,11 +37,11 @@ custom_components/abode_security/abode/UPSTREAM.md
 
 ### Baseline test verification (before starting implementation)
 
-- [ ] Run `./scripts/check.sh` — clean.
-- [ ] Run `uv run pytest -m integration` — all 104 items green.
-- [ ] Run `uv run pytest tests/test_pkg_import_audit.py` and `tests/test_abode_websocket.py` — green.
-- [ ] Run `uv run pytest tests/test_socketio_reconnect.py` — the async reconnect contract suite is green, including any Phase 3 shutdown coverage that was placed there.
-- [ ] **Locate the Phase 1 audit log.** Pull the most recent green integration-test log; grep for `abode_security.audit.registered_device_classes=` and record the comma-separated list in the PR description before starting deletions.
+- [x] Run `./scripts/check.sh` — clean.
+- [x] Run `uv run pytest -m integration` — all 104 items green.
+- [x] Run `uv run pytest tests/test_pkg_import_audit.py` and `tests/test_abode_websocket.py` — green.
+- [x] Run `uv run pytest tests/test_socketio_reconnect.py` — the async reconnect contract suite is green, including any Phase 3 shutdown coverage that was placed there.
+- [x] **Locate the Phase 1 audit log.** Pull the most recent green integration-test log; grep for `abode_security.audit.registered_device_classes=` and record the comma-separated list in the PR description before starting deletions.
 
 ### Sub-Phase 4A: Expose health counters on `SocketIO`
 
@@ -52,7 +52,7 @@ The values exist already as private attributes inside `socketio.py`:
 
 Surface them as read-only properties with stable, snake_case public names so `diagnostics.py` can read them without breaking encapsulation.
 
-- [ ] In `socketio.py`, add:
+- [x] In `socketio.py`, add:
   ```python
   @property
   def consecutive_connect_failures(self) -> int:
@@ -64,8 +64,8 @@ Surface them as read-only properties with stable, snake_case public names so `di
           return None
       return (datetime.datetime.now() - self._last_packet_time).total_seconds()
   ```
-- [ ] Add `tests/test_socketio_diagnostics.py` with a focused property test that constructs a `SocketIO`, asserts `consecutive_connect_failures == 0` and `last_packet_age_seconds is None` before any packet, then sets `_last_packet_time = datetime.datetime.now() - timedelta(seconds=42)` and asserts `40 <= last_packet_age_seconds <= 45`.
-- [ ] Run `./scripts/check.sh` — clean.
+- [x] Add `tests/test_socketio_diagnostics.py` with a focused property test that constructs a `SocketIO`, asserts `consecutive_connect_failures == 0` and `last_packet_age_seconds is None` before any packet, then sets `_last_packet_time = datetime.datetime.now() - timedelta(seconds=42)` and asserts `40 <= last_packet_age_seconds <= 45`.
+- [x] Run `./scripts/check.sh` — clean.
 
 ### Sub-Phase 4B: Surface counters in `diagnostics.py`
 
