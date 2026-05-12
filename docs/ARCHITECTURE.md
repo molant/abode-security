@@ -40,7 +40,7 @@ flowchart TB
     Services --> Client
     Actions --> Platforms
     WSAPI --> Actions
-    EC -->|thread-safe callbacks| Loop
+    EC -->|async callbacks| Loop
     Loop --> Platforms
     Platforms --> UI
     WSAPI <-->|hass.callWS| UI
@@ -69,9 +69,9 @@ REST API gateway with session management:
 
 ### EventController (`abode/event_controller.py`)
 
-Thread-safe event dispatcher:
+Event dispatcher:
 
-- **Threading model**: SocketIO runs in a daemon thread; callbacks execute on the HA event loop via `asyncio.run_coroutine_threadsafe()`
+- **Async model**: SocketIO runs as an async task on the HA event loop; async callbacks are dispatched via `asyncio.create_task()`, sync callbacks called inline
 - **Callback types**: device updates, timeline events, connection status
 - **Event mapping**: Abode event codes → groups (ALARM, ARM, DISARM, TEST, …) via `helpers/timeline.py`
 
@@ -79,9 +79,11 @@ Thread-safe event dispatcher:
 
 WebSocket protocol implementation (no external socketio library):
 
-- **Protocol stack**: WebSocket (lomond) → EngineIO → SocketIO
+- **Protocol stack**: WebSocket (aiohttp) → EngineIO → SocketIO
 - **Reconnection**: exponential backoff, 5–30 s
 - **Events**: device updates, mode changes, timeline events
+
+**Where to look first when SocketIO is unhappy**: check `diagnostics.py`'s `"socketio"` keys (`consecutive_connect_failures`, `last_packet_age_seconds`); run `mcp__home_assistant__ha_get_logs` filtered by `custom_components.abode_security`; see `tests/test_socketio_reconnect.py` for the reconnect contract. Broader async patterns are in [`docs/ASYNC_AWAIT_PATTERNS.md`](./ASYNC_AWAIT_PATTERNS.md).
 
 ### Devices (`abode/devices/`)
 
@@ -196,23 +198,23 @@ sequenceDiagram
     Note over Abode,Entity: Real-time Update
     Abode--)EventController: device.update event
     EventController->>Client: refresh device state
-    EventController->>HA: run_coroutine_threadsafe()
+    EventController->>HA: create_task(callback())
     HA->>Entity: callback()
     Entity->>Entity: update state
 ```
 
 ## Key Patterns
 
-### Thread-Safe Callbacks
+### Async Callbacks
 
 ```python
-# EventController dispatches to HA event loop
-def _dispatch_callback(self, callback, *args):
-    if self._event_loop:
-        asyncio.run_coroutine_threadsafe(
-            self._execute_callback(callback, *args),
-            self._event_loop,
-        )
+# _execute_callback — async callbacks as tasks, sync callbacks inline
+def _execute_callback(callback, *args, **kwargs):
+    if inspect.iscoroutinefunction(callback):
+        task = asyncio.create_task(_run_callback_async(callback, args, kwargs))
+        task.add_done_callback(lambda t: _log_task_completion(callback, t))
+    else:
+        callback(*args, **kwargs)
 ```
 
 ### Error Handling Decorator (`decorators.py`)
