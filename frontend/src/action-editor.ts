@@ -1,6 +1,13 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import type { HomeAssistant, AbodeAction, Mode, SensorsByCategory, AlarmEntity } from './types';
+import type {
+  HomeAssistant,
+  AbodeAction,
+  Mode,
+  SensorsByCategory,
+  SensorEntity,
+  AlarmEntity,
+} from './types';
 import { MODES } from './types';
 import { fetchSensors, fetchAlarms, createAction, updateAction } from './api';
 import './abode-modal';
@@ -42,6 +49,11 @@ export class ActionEditor extends LitElement {
   @state() private _saving = false;
   @state() private _loading = true;
   @state() private _loadError: string | null = null;
+  // Sensor categories collapse by default to keep the form scannable
+  // (#113). Edit mode seeds this with categories that already contain
+  // selected sensors so the user can see what they've picked.
+  @state() private _expandedCategories: Set<string> = new Set();
+  @state() private _sensorSearch = '';
 
   // Tracks the in-flight _loadEntities call. Aborted on disconnect (so a
   // late-resolving fetch doesn't write state to a detached element) and on
@@ -135,6 +147,24 @@ export class ActionEditor extends LitElement {
       color: var(--primary-text-color);
     }
 
+    .sensor-search {
+      width: 100%;
+      padding: 8px 12px;
+      margin-bottom: 8px;
+      border: 1px solid var(--divider-color, #e0e0e0);
+      border-radius: 4px;
+      font-size: 13px;
+      color: var(--primary-text-color);
+      background: var(--card-background-color, #fff);
+      box-sizing: border-box;
+    }
+
+    .sensor-search:focus {
+      outline: none;
+      border-color: var(--primary-color, #03a9f4);
+      box-shadow: 0 0 0 2px rgba(3, 169, 244, 0.2);
+    }
+
     .sensor-categories {
       display: flex;
       flex-direction: column;
@@ -166,10 +196,40 @@ export class ActionEditor extends LitElement {
       cursor: pointer;
     }
 
+    .category-header > span {
+      flex: 1;
+    }
+
     .category-header input[type='checkbox'] {
       width: 16px;
       height: 16px;
       accent-color: var(--primary-color, #03a9f4);
+    }
+
+    .disclosure {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: var(--secondary-text-color, #757575);
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+
+    .disclosure[aria-expanded='true'] {
+      transform: rotate(90deg);
+    }
+
+    .disclosure:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: 2px;
+      border-radius: 2px;
     }
 
     .category-items {
@@ -338,6 +398,19 @@ export class ActionEditor extends LitElement {
       if (signal.aborted) return;
       this._sensors = sensors;
       this._alarms = alarms;
+      // Editing an action: auto-expand categories that contain at least
+      // one already-selected sensor so the user can immediately see and
+      // adjust their existing picks (#113). New actions stay fully
+      // collapsed; user-initiated expansions later override this.
+      if (this.action && this._selectedSensors.length > 0) {
+        const seeded = new Set<string>();
+        for (const [cat, list] of Object.entries(sensors)) {
+          if ((list ?? []).some((s) => this._selectedSensors.includes(s.entity_id))) {
+            seeded.add(cat);
+          }
+        }
+        this._expandedCategories = seeded;
+      }
     } catch (err) {
       if (signal.aborted) return;
       this._loadError = err instanceof Error ? err.message : 'Failed to load sensors and alarms';
@@ -372,35 +445,51 @@ export class ActionEditor extends LitElement {
 
   // Category keys are open-ended (HA `device_class`), so these helpers work
   // off plain `string` rather than the closed `SensorCategory` literal union.
-  private _isCategorySelected(category: string): boolean {
+  //
+  // `subset` lets the search filter (#113) restrict the tri-state and
+  // select-all to the *visible* sensors. Without it, clicking a header
+  // while filtering would silently bulk-select hidden items too.
+  private _isCategorySelected(category: string, subset?: readonly SensorEntity[]): boolean {
     if (!this._sensors) return false;
-    const sensors = this._sensors[category] || [];
+    const sensors = subset ?? this._sensors[category] ?? [];
     if (sensors.length === 0) return false;
     return sensors.every((s) => this._selectedSensors.includes(s.entity_id));
   }
 
-  private _isCategoryPartial(category: string): boolean {
+  private _isCategoryPartial(category: string, subset?: readonly SensorEntity[]): boolean {
     if (!this._sensors) return false;
-    const sensors = this._sensors[category] || [];
+    const sensors = subset ?? this._sensors[category] ?? [];
     if (sensors.length === 0) return false;
     const selected = sensors.filter((s) => this._selectedSensors.includes(s.entity_id));
     return selected.length > 0 && selected.length < sensors.length;
   }
 
-  private _toggleCategory(category: string) {
+  private _toggleCategory(category: string, subset?: readonly SensorEntity[]) {
     if (!this._sensors) return;
-    const sensors = this._sensors[category] || [];
+    const sensors = subset ?? this._sensors[category] ?? [];
     const entityIds = sensors.map((s) => s.entity_id);
 
-    if (this._isCategorySelected(category)) {
-      // Deselect all in category
+    if (this._isCategorySelected(category, sensors)) {
+      // Deselect every visible sensor in this category.
       this._selectedSensors = this._selectedSensors.filter((s) => !entityIds.includes(s));
     } else {
-      // Select all in category
+      // Select every visible sensor in this category.
       const newIds = entityIds.filter((id) => !this._selectedSensors.includes(id));
       this._selectedSensors = [...this._selectedSensors, ...newIds];
     }
     this._clearError('sensors');
+  }
+
+  // Reassigning a fresh Set (not in-place mutation) is required for Lit's
+  // identity-based dirty check to re-render.
+  private _toggleCategoryExpanded(category: string) {
+    const next = new Set(this._expandedCategories);
+    if (next.has(category)) {
+      next.delete(category);
+    } else {
+      next.add(category);
+    }
+    this._expandedCategories = next;
   }
 
   private _clearError(field: string) {
@@ -593,36 +682,125 @@ export class ActionEditor extends LitElement {
       return html`<div class="loading">No sensors available</div>`;
     }
 
+    const query = this._sensorSearch.trim().toLowerCase();
+    const isFiltering = query.length > 0;
+
+    // Precompute the filtered subset once per category so the header
+    // count, items render, and select-all helpers all agree on what the
+    // user can actually see.
+    const renderedCategories = nonEmptyCategories
+      .map((category) => {
+        const sensors = sensorsByCategory[category] ?? [];
+        const filtered = isFiltering
+          ? sensors.filter((s) => s.name.toLowerCase().includes(query))
+          : sensors;
+        return { category, sensors, filtered };
+      })
+      .filter(({ filtered }) => !isFiltering || filtered.length > 0);
+
+    const searchInput = html`
+      <input
+        type="search"
+        class="sensor-search"
+        aria-label="Search sensors"
+        placeholder="Search sensors…"
+        autocomplete="off"
+        spellcheck="false"
+        .value=${this._sensorSearch}
+        @input=${(e: Event) => {
+          this._sensorSearch = (e.target as HTMLInputElement).value;
+        }}
+      />
+    `;
+
+    if (renderedCategories.length === 0) {
+      return html`
+        ${searchInput}
+        <div class="loading">No sensors match “${this._sensorSearch}”</div>
+      `;
+    }
+
     return html`
+      ${searchInput}
       <div class="sensor-categories">
-        ${nonEmptyCategories.map((category) => {
-          const sensors = sensorsByCategory[category] ?? [];
+        ${renderedCategories.map(({ category, sensors, filtered }, index) => {
+          // SensorsByCategory is keyed by `string`, so a backend key with
+          // whitespace or other non-token characters would silently break
+          // `aria-controls` (parsed as multiple ids) and produce an
+          // invalid DOM id. Normalize defensively, and prefix with the
+          // render index so two keys that sanitize to the same value
+          // (e.g. "smoke detector" and "smoke-detector") still produce
+          // unique ids.
+          const safeKey = category.replace(/[^A-Za-z0-9_-]/g, '-');
+          const itemsId = `sensor-cat-${index}-${safeKey}`;
+          // Human-readable label used for both the visible header text
+          // and the accessible name on the disclosure button so a
+          // screen-reader announcement matches what sighted users see.
+          const humanLabel = category.replace(/_/g, ' ');
+          // While filtering, force-expand matched categories so search
+          // results aren't hidden behind a collapse the user can't see.
+          const isExpanded = isFiltering || this._expandedCategories.has(category);
+          const countLabel =
+            filtered.length === sensors.length
+              ? `(${sensors.length})`
+              : `(${filtered.length}/${sensors.length})`;
           return html`
             <div class="category">
-              <div class="category-header" @click=${() => this._toggleCategory(category)}>
+              <div class="category-header" @click=${() => this._toggleCategory(category, filtered)}>
                 <input
                   type="checkbox"
-                  .checked=${this._isCategorySelected(category)}
-                  .indeterminate=${this._isCategoryPartial(category)}
+                  .checked=${this._isCategorySelected(category, filtered)}
+                  .indeterminate=${this._isCategoryPartial(category, filtered)}
                   @click=${(e: Event) => e.stopPropagation()}
-                  @change=${() => this._toggleCategory(category)}
+                  @change=${() => this._toggleCategory(category, filtered)}
                 />
-                <span>${category.replace(/_/g, ' ')} (${sensors.length})</span>
+                <span>${humanLabel} ${countLabel}</span>
+                ${isFiltering
+                  ? // Search has total control of expansion while active;
+                    // rendering the chevron would let it accept clicks
+                    // that silently mutate _expandedCategories without
+                    // any visible effect, leaving the post-clear collapse
+                    // state out of sync with what the user saw.
+                    null
+                  : html`
+                      <button
+                        type="button"
+                        class="disclosure"
+                        aria-expanded=${isExpanded ? 'true' : 'false'}
+                        aria-controls=${isExpanded ? itemsId : nothing}
+                        aria-label=${isExpanded ? `Collapse ${humanLabel}` : `Expand ${humanLabel}`}
+                        @click=${(e: Event) => {
+                          // The header itself handles select-all on click,
+                          // so the disclosure must not bubble up —
+                          // otherwise a user trying to peek inside would
+                          // toggle their whole-category selection by
+                          // accident.
+                          e.stopPropagation();
+                          this._toggleCategoryExpanded(category);
+                        }}
+                      >
+                        <span aria-hidden="true">▸</span>
+                      </button>
+                    `}
               </div>
-              <div class="category-items">
-                ${sensors.map(
-                  (sensor) => html`
-                    <label>
-                      <input
-                        type="checkbox"
-                        .checked=${this._selectedSensors.includes(sensor.entity_id)}
-                        @change=${() => this._toggleSensor(sensor.entity_id)}
-                      />
-                      ${sensor.name}
-                    </label>
-                  `,
-                )}
-              </div>
+              ${isExpanded
+                ? html`
+                    <div id=${itemsId} class="category-items">
+                      ${filtered.map(
+                        (sensor) => html`
+                          <label>
+                            <input
+                              type="checkbox"
+                              .checked=${this._selectedSensors.includes(sensor.entity_id)}
+                              @change=${() => this._toggleSensor(sensor.entity_id)}
+                            />
+                            ${sensor.name}
+                          </label>
+                        `,
+                      )}
+                    </div>
+                  `
+                : null}
             </div>
           `;
         })}
