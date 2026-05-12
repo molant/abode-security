@@ -71,7 +71,7 @@ Surface them as read-only properties with stable, snake_case public names so `di
 
 `diagnostics.py` already builds a redacted diagnostics payload returned by HA's diagnostics API. Add the two new fields under a `"socketio"` key.
 
-- [ ] In `custom_components/abode_security/diagnostics.py`, locate the existing payload construction. The relevant object walk is `abode_system.abode.events._socketio`: `abode.events` is the `EventController` instance, and its `_socketio` attribute is the `SocketIO` instance. Use this walk:
+- [x] In `custom_components/abode_security/diagnostics.py`, locate the existing payload construction. The relevant object walk is `abode_system.abode.events._socketio`: `abode.events` is the `EventController` instance, and its `_socketio` attribute is the `SocketIO` instance. Use this walk:
   ```python
   socketio_inst = getattr(
       getattr(abode_system.abode, "events", None),
@@ -85,11 +85,11 @@ Surface them as read-only properties with stable, snake_case public names so `di
       }
   ```
   Each level is `getattr`-guarded because the diagnostics handler is called even on partially-set-up entries (e.g. config flow failed before `events` was constructed). Returning `null`/missing rather than raising matches the existing handler's defensive style: the current sections already fall back instead of letting attribute-shape errors escape. Do NOT dereference unconditionally — diagnostics must not crash for unconfigured entries.
-- [ ] Extend `tests/test_diagnostics.py` with exact payload assertions:
+- [x] Extend `tests/test_diagnostics.py` with exact payload assertions:
   - when `events._socketio.consecutive_connect_failures = 3` and `events._socketio.last_packet_age_seconds = 4.2`, diagnostics includes `"socketio": {"consecutive_connect_failures": 3, "last_packet_age_seconds": 4.2}`;
   - when `events` or `events._socketio` is absent, diagnostics still returns successfully and omits the `"socketio"` block rather than raising.
-- [ ] These counters are public-state-of-the-system, not credentials. Do not add them to the redaction list.
-- [ ] Run `./scripts/check.sh` — clean.
+- [x] These counters are public-state-of-the-system, not credentials. Do not add them to the redaction list.
+- [x] Run `./scripts/check.sh` — clean.
 
 ### Sub-Phase 4C: Add one structured DEBUG log per connect attempt
 
