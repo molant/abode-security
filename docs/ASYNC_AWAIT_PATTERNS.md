@@ -4,6 +4,10 @@
 
 This document outlines the async/await patterns used in the Abode Security Home Assistant integration, including design decisions and rationale to prevent future misidentification during code reviews.
 
+## Background Tasks
+
+The SocketIO real-time event client (`abode/socketio.py:SocketIO`) runs as an `asyncio.create_task` on the HA event loop (Phase 3 of the fork-modernization spec). It is no longer a daemon thread. Shutdown is coordinated via `asyncio.Event` and a 10s `asyncio.wait_for` grace period.
+
 ## Service Handler Pattern
 
 ### Key Principle
