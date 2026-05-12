@@ -2,8 +2,8 @@
 
 import asyncio
 import collections
-import concurrent.futures
 import contextlib
+import inspect
 import logging
 import os
 import threading
@@ -27,16 +27,16 @@ def _get_socketio_url():
 
     Derives from ABODE_BASE_URL environment variable or uses production default.
     """
-    base = os.environ.get('ABODE_BASE_URL', 'https://my.goabode.com')
+    base = os.environ.get("ABODE_BASE_URL", "https://my.goabode.com")
 
     # Convert http(s) to ws(s)
-    if base.startswith('https://'):
-        ws_url = base.replace('https://', 'wss://')
-    elif base.startswith('http://'):
-        ws_url = base.replace('http://', 'ws://')
+    if base.startswith("https://"):
+        ws_url = base.replace("https://", "wss://")
+    elif base.startswith("http://"):
+        ws_url = base.replace("http://", "ws://")
     else:
         # Assume it's a host without protocol, default to wss
-        ws_url = f'wss://{base}'
+        ws_url = f"wss://{base}"
 
     return f"{ws_url.rstrip('/')}/socket.io/"
 
@@ -75,11 +75,7 @@ class EventController:
         self._running = False
         self._connected = False
 
-        # Thread synchronization lock for callback collections
-        # This ensures thread-safe access from SocketIO thread and main thread
         self._callback_lock = threading.RLock()
-        # Thread synchronization lock for connection state
-        # Protects _connected flag from race conditions between SocketIO and HA threads
         self._connection_lock = threading.Lock()
 
         # Setup callback dicts
@@ -96,14 +92,6 @@ class EventController:
         # reconnect the in-memory cookie_jar may be stale and we rely on
         # _async_get_session() to refresh it.
         self._initial_seed_done = False
-
-        # In-flight `concurrent.futures.Future` handles returned by
-        # `asyncio.run_coroutine_threadsafe()` from SocketIO-thread callbacks.
-        # Tracked so `stop()` can cancel them — otherwise the asyncio Task
-        # they wrap stays pending past teardown and trips pytest-HA-cc's
-        # `verify_cleanup` lingering-task assertion (see #105).
-        self._inflight_lock = threading.Lock()
-        self._inflight_futures: set[concurrent.futures.Future] = set()
 
         # Setup SocketIO
         self._socketio = sio.SocketIO(url=url, origin=urls.BASE)
@@ -124,24 +112,8 @@ class EventController:
         self._socketio.start()
 
     async def stop(self) -> None:
-        """Stop the SocketIO task and cancel any in-flight coroutines."""
+        """Stop the SocketIO task."""
         await self._socketio.stop()
-        with self._inflight_lock:
-            futures = list(self._inflight_futures)
-        for future in futures:
-            future.cancel()
-
-    def _track_inflight(self, future):
-        """Register a `run_coroutine_threadsafe` future for shutdown tracking."""
-        with self._inflight_lock:
-            self._inflight_futures.add(future)
-        future.add_done_callback(self._discard_inflight)
-        return future
-
-    def _discard_inflight(self, future):
-        """Remove a completed future from the in-flight set."""
-        with self._inflight_lock:
-            self._inflight_futures.discard(future)
 
     def add_connection_status_callback(self, unique_id, callback):
         """Register callback for Abode server connection status."""
@@ -284,31 +256,17 @@ class EventController:
         return self._socketio
 
     def set_event_loop(self, loop):
-        """Set the event loop reference for scheduling callbacks.
+        """Legacy hook — kept for API compatibility; no longer required.
 
-        Called by Home Assistant integration to provide the running event loop.
-        This allows callbacks to be safely scheduled from the SocketIO thread.
+        Previously used to inject the HA event loop for run_coroutine_threadsafe
+        bridging from the SocketIO thread. Now that all SocketIO callbacks run
+        directly on the HA event loop, asyncio.create_task() picks up the
+        running loop implicitly and this field is unused in production code.
         """
         self._event_loop = loop
 
-    def _on_socket_started(self):
+    async def _on_socket_started(self):
         """Socket IO startup callback."""
-        # Validate event loop before attempting to use it
-        if not self._event_loop:
-            log.error(
-                "Event loop not set before SocketIO startup - "
-                "callbacks will not work properly. "
-                "Call set_event_loop() before starting SocketIO."
-            )
-            return
-
-        if not self._event_loop.is_running():
-            log.error(
-                "Event loop not running when SocketIO started - "
-                "callbacks may not execute properly"
-            )
-            return
-
         # Seed cookies from the current session only on the very first
         # `started` event. On reconnect we must NOT pre-set the cookie:
         # SocketIO clears self._cookie between iterations, and the wait
@@ -338,30 +296,15 @@ class EventController:
             )
 
         try:
-            future = self._track_inflight(
-                asyncio.run_coroutine_threadsafe(
-                    asyncio.wait_for(
-                        self._async_get_session(), timeout=self.LONG_OPERATION_TIMEOUT
-                    ),
-                    self._event_loop,
-                )
+            await asyncio.wait_for(
+                self._async_get_session(), timeout=self.LONG_OPERATION_TIMEOUT
             )
-            future.add_done_callback(self._on_session_init_done)
-        except Exception as exc:
-            log.error("Failed to schedule session initialization: %s", exc)
-
-    def _on_session_init_done(self, future):
-        """Callback when session initialization completes."""
-        try:
-            future.result()
             log.debug("Session initialized successfully")
         except TimeoutError:
             log.error("Session initialization timed out")
-        except concurrent.futures.CancelledError:
-            # Only reachable via stop()'s cancel-on-shutdown path, so this
-            # is expected. TimeoutError above is a real 30s expiry and stays
-            # at error level.
+        except asyncio.CancelledError:
             log.debug("Session initialization cancelled (shutdown in progress)")
+            raise
         except Exception as exc:
             log.warning("Session initialization failed: %s", exc)
 
@@ -404,43 +347,28 @@ class EventController:
         except Exception as exc:
             log.warning("Failed to get session: %s", exc)
 
-    def _on_socket_connected(self):
+    async def _on_socket_connected(self):
         """Socket IO connected callback."""
         with self._connection_lock:
             self._connected = True
         with contextlib.suppress(Exception):
             self._client._set_connection_status("connected")
 
-        # Schedule async refresh on the event loop
-        if self._event_loop and self._event_loop.is_running():
-            try:
-                future = self._track_inflight(
-                    asyncio.run_coroutine_threadsafe(
-                        asyncio.wait_for(
-                            self._async_refresh(), timeout=self.LONG_OPERATION_TIMEOUT
-                        ),
-                        self._event_loop,
-                    )
-                )
-                future.add_done_callback(self._on_refresh_done)
-            except Exception as exc:
-                log.error("Failed to schedule Abode refresh: %s", exc)
-        else:
-            log.warning("Event loop not running, cannot refresh Abode on connect")
-
-        # Execute connection status callbacks
-        # Use thread-safe callback execution
+        # Notify connection-status subscribers immediately (matches previous
+        # fire-and-forget behavior where callbacks fired before the refresh
+        # result was available).
         self._execute_connection_callbacks()
 
-    def _on_refresh_done(self, future):
-        """Callback when refresh completes."""
         try:
-            future.result()
+            await asyncio.wait_for(
+                self._async_refresh(), timeout=self.LONG_OPERATION_TIMEOUT
+            )
             log.debug("Abode refresh completed successfully")
         except TimeoutError:
             log.error("Abode refresh timed out")
-        except concurrent.futures.CancelledError:
+        except asyncio.CancelledError:
             log.debug("Abode refresh cancelled (shutdown in progress)")
+            raise
         except Exception as exc:
             log.warning("Abode refresh failed: %s", exc)
 
@@ -499,9 +427,9 @@ class EventController:
 
         # Execute callbacks outside the lock
         for callback in callbacks_to_execute:
-            _execute_callback(callback, self._event_loop)
+            _execute_callback(callback)
 
-    def _on_device_update(self, devid):
+    async def _on_device_update(self, devid):
         """Device callback from Abode SocketIO server."""
         devid = opt_single(devid)
 
@@ -511,40 +439,18 @@ class EventController:
 
         log.debug("Device update event for device ID: %s", devid)
 
-        # If we have an event loop, refresh device state asynchronously before dispatching
-        if self._event_loop and self._event_loop.is_running():
-            try:
-                future = self._track_inflight(
-                    asyncio.run_coroutine_threadsafe(
-                        asyncio.wait_for(
-                            self._async_refresh_device_and_dispatch(devid),
-                            timeout=self.LONG_OPERATION_TIMEOUT,
-                        ),
-                        self._event_loop,
-                    )
-                )
-                future.add_done_callback(
-                    lambda f: self._log_future_result(
-                        f, "_async_refresh_device_and_dispatch"
-                    )
-                )
-            except Exception as exc:
-                log.error("Failed to schedule device refresh for %s: %s", devid, exc)
-            return
-
-        device = self._client.get_device(devid, True)
-
-        if not device:
-            log.debug("Got device update for unknown device: %s", devid)
-            return
-
-        # Make defensive copy of callbacks under lock
-        with self._callback_lock:
-            callbacks = list(self._device_callbacks[device.id])
-
-        # Execute callbacks outside lock
-        for callback in callbacks:
-            _execute_callback(callback, self._event_loop, device)
+        try:
+            await asyncio.wait_for(
+                self._async_refresh_device_and_dispatch(devid),
+                timeout=self.LONG_OPERATION_TIMEOUT,
+            )
+        except TimeoutError:
+            log.warning("Device refresh timed out for %s", devid)
+        except asyncio.CancelledError:
+            log.debug("Device refresh cancelled (shutdown in progress)")
+            raise
+        except Exception as exc:
+            log.error("Failed to refresh device %s: %s", devid, exc)
 
     async def _async_refresh_device_and_dispatch(self, device_id):
         """Refresh device state from Abode and dispatch callbacks on the HA loop."""
@@ -567,16 +473,7 @@ class EventController:
             callbacks = list(self._device_callbacks[device.id])
 
         for callback in callbacks:
-            _execute_callback(callback, self._event_loop, device)
-
-    @staticmethod
-    def _log_future_result(future, label):
-        with contextlib.suppress(Exception):
-            future.result()
-        if future.cancelled():
-            log.warning("%s was cancelled", label)
-        elif future.exception():
-            log.warning("%s raised: %s", label, future.exception())
+            _execute_callback(callback, device)
 
     def _on_mode_change(self, mode):
         """Mode change broadcast from Abode SocketIO server."""
@@ -606,7 +503,7 @@ class EventController:
 
         # Execute callbacks outside lock
         for callback in callbacks:
-            _execute_callback(callback, self._event_loop, alarm_device)
+            _execute_callback(callback, alarm_device)
 
     def _on_timeline_update(self, event):
         """Timeline update broadcast from Abode SocketIO server."""
@@ -641,7 +538,7 @@ class EventController:
 
         # Execute callbacks outside lock
         for callback in callbacks_to_execute:
-            _execute_callback(callback, self._event_loop, event)
+            _execute_callback(callback, event)
 
     def _on_automation_update(self, event):
         """Automation update broadcast from Abode SocketIO server."""
@@ -654,53 +551,33 @@ class EventController:
 
         # Execute callbacks outside lock
         for callback in callbacks:
-            _execute_callback(callback, self._event_loop, event)
+            _execute_callback(callback, event)
 
 
 def _execute_callback(callback, *args, **kwargs):
-    """Execute a callback, handling both sync and async Home Assistant methods.
+    """Execute a callback, handling both sync and async callbacks.
 
-    Args:
-        callback: The callback function to execute
-        *args: Arguments to pass to callback (first may be event_loop for HA methods)
-        **kwargs: Keyword arguments to pass to callback
-
-    For Home Assistant entity methods like schedule_update_ha_state(), we need to
-    ensure they're called on the event loop thread, not from the SocketIO thread.
-
-    This function does NOT block the SocketIO thread. Async callbacks are scheduled
-    and the function returns immediately.
+    Async callbacks are scheduled as fire-and-forget tasks; sync callbacks
+    are called inline. Both paths consume exceptions via _log_task_completion
+    or inline logging.
     """
-    # Check if first positional arg is an event loop
-    event_loop = None
-    callback_args = args
-    if args and isinstance(args[0], asyncio.AbstractEventLoop):
-        event_loop = args[0]
-        callback_args = args[1:]
-
     try:
-        # If callback is a method from Home Assistant entity, schedule it on event loop
-        # This handles methods like schedule_update_ha_state()
-        if event_loop and hasattr(callback, "__self__"):
-            # This is a bound method - likely from Home Assistant entity
-            # Schedule it on the event loop to ensure thread safety
-            future = asyncio.run_coroutine_threadsafe(
-                _run_callback_async(callback, callback_args, kwargs),
-                event_loop,
-            )
-            future.add_done_callback(lambda f: _log_callback_completion(callback, f))
+        if inspect.iscoroutinefunction(callback):
+            task = asyncio.create_task(_run_callback_async(callback, args, kwargs))
+            task.add_done_callback(lambda t: _log_task_completion(callback, t))
         else:
-            # Regular sync callback - safe to call directly
-            callback(*callback_args, **kwargs)
+            callback(*args, **kwargs)
     except Exception as exc:
         log.error("Failed to execute callback: %s: %s", callback, exc)
 
 
-def _log_callback_completion(callback, future):
-    """Log callback completion or errors, called from event loop thread."""
+def _log_task_completion(callback, task):
+    """Consume task result and log completion or errors; called as a done-callback."""
     try:
-        future.result()
+        task.result()
         log.debug("Callback completed successfully: %s", callback)
+    except asyncio.CancelledError:
+        log.debug("Callback cancelled: %s", callback)
     except TimeoutError:
         log.error("Callback execution timed out: %s", callback)
     except Exception as exc:
@@ -708,28 +585,14 @@ def _log_callback_completion(callback, future):
 
 
 async def _run_callback_async(callback, args, kwargs):
-    """Helper to run a callback that might be sync or async.
+    """Run an async callback with timeout protection.
 
-    Wraps callback execution with a reasonable timeout to prevent hanging.
+    Only called by _execute_callback for coroutine functions; sync callbacks
+    are dispatched inline there.
     """
-    # Determine timeout based on callback characteristics
     timeout = EventController.DEFAULT_CALLBACK_TIMEOUT
     if hasattr(callback, "__name__") and "setup" in callback.__name__.lower():
         timeout = EventController.LONG_OPERATION_TIMEOUT
 
-    try:
-        async with asyncio.timeout(timeout):
-            if asyncio.iscoroutinefunction(callback):
-                await callback(*args, **kwargs)
-            else:
-                callback(*args, **kwargs)
-    except TimeoutError:
-        log.error(
-            "Callback '%s' timed out after %d seconds",
-            getattr(callback, "__name__", str(callback)),
-            timeout,
-        )
-        raise
-    except Exception as exc:
-        log.error("Callback '%s' raised exception: %s", callback, exc)
-        raise
+    async with asyncio.timeout(timeout):
+        await callback(*args, **kwargs)
