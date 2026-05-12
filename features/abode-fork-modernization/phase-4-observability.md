@@ -95,7 +95,7 @@ Surface them as read-only properties with stable, snake_case public names so `di
 
 The current `socketio.py` already logs `"Attempting to connect to SocketIO server..."` at INFO. Add a sibling DEBUG line carrying the structured context that incident triage needs.
 
-- [ ] Inside `_run()`, at the top of each iteration, after the existing `log.info("Attempting to connect to SocketIO server...")`, add:
+- [x] Inside `_run()`, at the top of each iteration, after the existing `log.info("Attempting to connect to SocketIO server...")`, add:
   ```python
   log.debug(
       "abode_security.socketio.connect_attempt attempt=%d last_packet_age=%s",
@@ -104,8 +104,8 @@ The current `socketio.py` already logs `"Attempting to connect to SocketIO serve
   )
   ```
   Note the `last_packet_age_seconds` access — Sub-Phase 4A made it a property.
-- [ ] No test required for a single DEBUG log line; verify manually by running an integration test with `LOG_LEVEL=DEBUG` and grepping for `abode_security.socketio.connect_attempt`.
-- [ ] Do NOT remove or rephrase the existing INFO `"Attempting to connect to SocketIO server..."` line. See README → "Invariants" — existing log lines are stable.
+- [x] No test required for a single DEBUG log line; verify manually by running an integration test with `LOG_LEVEL=DEBUG` and grepping for `abode_security.socketio.connect_attempt`.
+- [x] Do NOT remove or rephrase the existing INFO `"Attempting to connect to SocketIO server..."` line. See README → "Invariants" — existing log lines are stable.
 
 ### Sub-Phase 4D: Ingest the Phase 1 audit log and delete provably-unregistered device modules
 

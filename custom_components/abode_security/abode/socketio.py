@@ -198,6 +198,11 @@ class SocketIO:
 
         while self._running:
             log.info("Attempting to connect to SocketIO server...")
+            log.debug(
+                "abode_security.socketio.connect_attempt attempt=%d last_packet_age=%s",
+                self._connect_failures + 1,
+                self.last_packet_age_seconds,
+            )
 
             # On reconnect, drop any cookie left over from the previous cycle.
             # The wait-for-cookie poll inside _step then blocks until
