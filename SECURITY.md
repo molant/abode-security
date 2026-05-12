@@ -46,8 +46,6 @@ These are targets, not guarantees — this is a personal-time project.
 - The websocket API exposed to Home Assistant (`websocket_api.py`).
 - The action engine and any path that touches user-supplied configuration.
 - Vulnerabilities in the vendored `custom_components/abode_security/abode/` fork of [`jaraco.abode`](https://github.com/jaraco/jaraco.abode) — see *Bundled and unmaintained dependencies* below.
-- Vulnerabilities surfaced via the pinned `lomond` dependency, until it is replaced — see *Bundled and unmaintained dependencies* below.
-
 ### Out of scope
 
 - Vulnerabilities in Home Assistant Core itself — report those upstream at <https://github.com/home-assistant/core/security>.
@@ -57,10 +55,11 @@ These are targets, not guarantees — this is a personal-time project.
 
 ## Bundled and Unmaintained Dependencies
 
-This integration ships with two upstream codebases that are unmaintained:
+This integration ships with one upstream codebase that is unmaintained:
 
 - **`custom_components/abode_security/abode/`** — a *vendored* fork of `jaraco.abode` with async modifications, checked into this repo. CVEs disclosed against upstream `jaraco.abode` are in scope here until [the fork is replaced](https://github.com/molant/abode-security/issues/62). The maintainer commits to evaluating each CVE against the vendored copy and either backporting a fix, applying a workaround, or documenting that the vendored copy is unaffected.
-- **`lomond`** — a *pinned pip dependency* (declared in `pyproject.toml` and `manifest.json`), not vendored. Upstream's last release was in 2018. CVEs disclosed against `lomond` are in scope here until [it is replaced](https://github.com/molant/abode-security/issues/61). The maintainer commits to bumping or pinning around the affected version, applying a workaround in this integration, or documenting non-applicability.
+
+`lomond` was a previously-bundled unmaintained dependency; it was replaced by `aiohttp`'s WebSocket transport in this fork (issue #61) and is no longer a dependency of this integration.
 
 ## Disclosure
 
