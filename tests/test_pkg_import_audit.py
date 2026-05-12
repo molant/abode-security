@@ -71,3 +71,15 @@ class TestAuditLog:
 
         matching = [r for r in caplog.records if _AUDIT_KEY in r.getMessage()]
         assert len(matching) == 1
+
+    def test_module_names_are_unique(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Modules defining multiple Device subclasses must appear once in the audit log."""
+        with caplog.at_level(logging.INFO, logger=base.log.name):
+            _log_registered_classes_once()
+
+        record = next(r for r in caplog.records if _AUDIT_KEY in r.getMessage())
+        suffix = record.getMessage().split(_AUDIT_KEY, 1)[1]
+        parts = suffix.split(",") if suffix else []
+        assert len(parts) == len(set(parts)), (
+            f"audit log contains duplicate module names: {parts}"
+        )

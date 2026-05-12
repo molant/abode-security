@@ -15,6 +15,7 @@ import logging
 from unittest.mock import AsyncMock, Mock, patch
 
 from custom_components.abode_security.abode import socketio as sio_module
+from custom_components.abode_security.abode._websocket import AbodeWebSocket
 from custom_components.abode_security.abode.exceptions import SocketIOException
 from custom_components.abode_security.abode.helpers import errors as ERRORS
 from custom_components.abode_security.abode.socketio import SocketIO
@@ -163,6 +164,104 @@ class TestSocketIOShutdown:
 
         assert s._task is None
         assert task.done() and not task.cancelled()
+
+    async def test_stop_closes_websocket_when_connected(self):
+        """stop() proactively closes the websocket only after _on_websocket_connected fired."""
+        s = SocketIO(url="ws://example/socket.io/")
+        ws = Mock(spec=AbodeWebSocket)
+        ws.close = AsyncMock(return_value=None)
+        s._websocket = ws  # type: ignore[assignment]
+        s._websocket_connected = True  # simulate post-connect (receive phase)
+
+        async def cooperative_run():
+            await s._exit_event.wait()
+
+        s._task = asyncio.create_task(cooperative_run())
+        s._running = True
+
+        await s.stop()
+
+        ws.close.assert_awaited_once()
+        assert s._task is None
+
+    async def test_stop_does_not_close_websocket_during_connect(self):
+        """During connect() the gate must skip ws.close() so aiohttp's resolve_host
+        shield isn't cancelled — that path raises CancelledError that escapes
+        connect()'s aiohttp.ClientError handler and surfaces as a teardown error."""
+        s = SocketIO(url="ws://example/socket.io/")
+        ws = Mock(spec=AbodeWebSocket)
+        ws.close = AsyncMock(return_value=None)
+        s._websocket = ws  # type: ignore[assignment]
+        s._websocket_connected = False  # simulate mid-connect
+
+        async def cooperative_run():
+            await s._exit_event.wait()
+
+        s._task = asyncio.create_task(cooperative_run())
+        s._running = True
+
+        await s.stop()
+
+        ws.close.assert_not_awaited()
+        assert s._task is None
+
+    async def test_stop_called_from_within_own_task_skips_self_await(self):
+        """A callback dispatched from inside the SocketIO task may trigger
+        stop() (e.g. via an HA reload cascade). Awaiting self._task from
+        within itself raises RuntimeError — the guard must short-circuit
+        and let the task exit naturally on its next iteration."""
+        s = SocketIO(url="ws://example/socket.io/")
+        s._websocket_connected = False  # don't try to close a non-existent ws
+
+        async def run_that_calls_stop():
+            # Simulates a callback inside the task triggering stop().
+            await s.stop()
+
+        task = asyncio.create_task(run_that_calls_stop())
+        s._task = task
+        s._running = True
+
+        # If the guard is missing, the task body raises RuntimeError.
+        await task
+
+        assert not task.cancelled()
+        assert task.exception() is None, (
+            f"stop() from within own task must not raise; got {task.exception()!r}"
+        )
+        # The stop flags must have been set so _run's loop will observe them
+        # on its next iteration.
+        assert s._running is False
+        assert s._exit_event.is_set()
+        # _task intentionally NOT cleared on the self-await path: an outside
+        # stop() may still want to await it.
+        assert s._task is task
+
+    async def test_start_after_stop_clears_exit_event(self, monkeypatch):
+        """A restart (e.g. config-entry reload) must clear _exit_event so the
+        next _step()'s cookie-wait doesn't bail immediately."""
+        _stub_intervals(monkeypatch)
+        s = SocketIO(url="ws://example/socket.io/", cookie="seed")
+        # Simulate the state after a completed stop(): exit event set, task cleared.
+        s._exit_event.set()
+        s._task = None
+
+        # Track how _step() sees the exit event when the restarted task enters it.
+        seen_set_at_step_start: list[bool] = []
+
+        async def fake_step(_intervals):
+            seen_set_at_step_start.append(s._exit_event.is_set())
+            s._running = False  # exit the _run loop after one iteration
+
+        s._step = fake_step  # type: ignore[assignment]
+        s.start()
+        task: asyncio.Task[None] | None = s._task
+        assert task is not None
+        await task
+
+        assert seen_set_at_step_start == [False], (
+            "start() must clear the exit event set by stop() so the next "
+            f"_step() doesn't bail immediately; saw {seen_set_at_step_start}"
+        )
 
     async def test_stop_cancels_stuck_task_with_warning(self, caplog):
         """A stuck task that ignores the exit event is force-cancelled with a warning."""
