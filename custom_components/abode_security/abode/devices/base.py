@@ -11,6 +11,22 @@ from ._ancestry import iter_subclasses
 
 log = logging.getLogger(__name__)
 
+_AUDIT_LOGGED = False
+
+
+def _log_registered_classes_once() -> None:
+    global _AUDIT_LOGGED
+    if _AUDIT_LOGGED:
+        return
+    _AUDIT_LOGGED = True
+    registered = sorted(
+        cls.__module__ for cls in iter_subclasses(Device) if cls.__module__ != __name__
+    )
+    log.info(
+        "abode_security.audit.registered_device_classes=%s",
+        ",".join(registered),
+    )
+
 
 class Device(Stateful):
     """Class to represent each Abode device."""
@@ -134,6 +150,7 @@ class Device(Stateful):
     def new(cls, state, client):
         """Create new device object for the given type."""
         pkg.import_all()
+        _log_registered_classes_once()
         try:
             type_tag = state['type_tag']
         except KeyError as exc:

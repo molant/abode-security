@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in_progress
 phase: 1
 feature: abode-fork-modernization
 title: Fork hygiene and dynamic-discovery audit
@@ -36,9 +36,9 @@ features/abode-fork-modernization/
 
 ### Baseline test verification (before starting implementation)
 
-- [ ] Run `./scripts/check.sh` — lint + typecheck + unit tests must be clean.
+- [x] Run `./scripts/check.sh` — lint + typecheck + unit tests must be clean.
 - [ ] Run `uv run pytest -m integration` against `./scripts/dev.sh` — all 104 integration-collected items pass.
-- [ ] Note the baseline test count (`uv run pytest --collect-only -q | tail -1`) and record it in the PR description. Any change in this number after Phase 1 must be explainable.
+- [x] Note the baseline test count (`uv run pytest --collect-only -q | tail -1`) and record it in the PR description. Any change in this number after Phase 1 must be explainable.
 
 ### Sub-Phase 1A: UPSTREAM.md
 
@@ -54,18 +54,18 @@ The file must include, at minimum:
 - **Intentional rewrites**: synchronous HTTP and threading replaced with `aiohttp` and (after Phase 3) `asyncio`-native I/O.
 - **Sync policy**: "Hard divergence. No scheduled upstream sync, no quarterly diff review. If a CVE is filed against `jaraco.abode` and our fork is affected, do a targeted one-time backport. Do not enable Dependabot or other automation against this directory."
 - **Tasks**:
-  - [ ] Create the file with the structure above.
-  - [ ] Cross-reference [#62](https://github.com/molant/abode-security/issues/62) and this spec from the top of the file.
-  - [ ] Run `./scripts/check.sh` and confirm it stays clean. (UPSTREAM.md is markdown — neither pyright nor mypy touches it; the check is that lint/formatters don't object to anything in the markdown.)
+  - [x] Create the file with the structure above.
+  - [x] Cross-reference [#62](https://github.com/molant/abode-security/issues/62) and this spec from the top of the file.
+  - [x] Run `./scripts/check.sh` and confirm it stays clean. (UPSTREAM.md is markdown — neither pyright nor mypy touches it; the check is that lint/formatters don't object to anything in the markdown.)
 
 ### Sub-Phase 1B: Delete `abode/artifacts/test-mode-requests`
 
 The file is 18.8K of captured `curl` commands from the Abode web UI's developer-tools panel. No Python module references the `artifacts/` directory; the file is not loaded at runtime, not parsed by tests, not consumed by anything in the repo.
 
-- [ ] Verify zero references: `grep -rn "artifacts/\|test-mode-requests" custom_components/ tests/ scripts/ docs/ --include="*.py" --include="*.json" --include="*.yaml" --include="*.yml" --include="*.toml" --include="*.md"` — expect no hits outside this spec file.
-- [ ] `git rm custom_components/abode_security/abode/artifacts/test-mode-requests`.
-- [ ] If `custom_components/abode_security/abode/artifacts/` is now empty, remove the directory too.
-- [ ] Re-run baseline tests; nothing should change.
+- [x] Verify zero references: `grep -rn "artifacts/\|test-mode-requests" custom_components/ tests/ scripts/ docs/ --include="*.py" --include="*.json" --include="*.yaml" --include="*.yml" --include="*.toml" --include="*.md"` — expect no hits outside this spec file.
+- [x] `git rm custom_components/abode_security/abode/artifacts/test-mode-requests`.
+- [x] If `custom_components/abode_security/abode/artifacts/` is now empty, remove the directory too.
+- [x] Re-run baseline tests; nothing should change.
 
 ### Sub-Phase 1C: Instrument `pkg.import_all()` for the dynamic-discovery audit
 
@@ -75,7 +75,7 @@ The audit must therefore be **gated on a "logged once" sentinel** so it emits ex
 
 The audit is **log-only** in this phase. No deletes happen here. The log line goes through the standard `logging` module so it's captured by the existing integration-test log machinery without any new plumbing.
 
-- [ ] In `devices/base.py`, add a module-level sentinel and a helper function. Module-level (not class-level) keeps the sentinel alive across `Device` subclass changes during tests:
+- [x] In `devices/base.py`, add a module-level sentinel and a helper function. Module-level (not class-level) keeps the sentinel alive across `Device` subclass changes during tests:
   ```python
   _AUDIT_LOGGED = False
 
@@ -84,39 +84,41 @@ The audit is **log-only** in this phase. No deletes happen here. The log line go
       if _AUDIT_LOGGED:
           return
       _AUDIT_LOGGED = True
-      registered = sorted(cls.__module__ for cls in iter_subclasses(Device))
+      registered = sorted(
+          cls.__module__ for cls in iter_subclasses(Device) if cls.__module__ != __name__
+      )
       log.info(
           "abode_security.audit.registered_device_classes=%s",
           ",".join(registered),
       )
   ```
-- [ ] Call `_log_registered_classes_once()` from inside `Device.new`, immediately after `pkg.import_all()`. The sentinel makes this a one-shot per process even though `Device.new` runs per device.
+- [x] Call `_log_registered_classes_once()` from inside `Device.new`, immediately after `pkg.import_all()`. The sentinel makes this a one-shot per process even though `Device.new` runs per device.
   - Log key (Phase 4 greps for this exact string): `abode_security.audit.registered_device_classes`.
   - Format: `abode_security.audit.registered_device_classes=<comma-joined-sorted-list>`.
   - Use the file's existing `log` logger; do not introduce a new logger.
-- [ ] Add a unit test in `tests/test_pkg_import_audit.py` (new file). The test must:
+- [x] Add a unit test in `tests/test_pkg_import_audit.py` (new file). The test must:
   - Reset the sentinel before the test (`base._AUDIT_LOGGED = False`) so the log fires.
   - Assert (via `caplog`) that calling `_log_registered_classes_once()` emits exactly one log record whose message contains `abode_security.audit.registered_device_classes=`.
   - Assert that `iter_subclasses(Device)` returns at least the **9 concrete device modules** known to be live today: `alarm`, `binary_sensor`, `camera`, `cover`, `light`, `lock`, `sensor`, `switch`, `valve`. `base.py` defines `Device` itself and will NOT appear in `iter_subclasses(Device)` — only concrete subclasses do.
   - Assert that calling the helper twice only emits one record (the sentinel is honored).
   - Use the existing test conventions in `tests/test_*.py` — `aioresponses` is not needed for this test.
   - Do NOT mark this test `@pytest.mark.integration`.
-- [ ] Run `./scripts/check.sh` — must pass.
-- [ ] Run `uv run pytest tests/test_pkg_import_audit.py -v` — must pass.
+- [x] Run `./scripts/check.sh` — must pass.
+- [x] Run `uv run pytest tests/test_pkg_import_audit.py -v` — must pass.
 
 ### Documentation (end of phase)
 
-- [ ] `docs/ARCHITECTURE.md` — add a short note under the vendored-fork section pointing at `custom_components/abode_security/abode/UPSTREAM.md`. Do not edit the SocketIO section here — Phase 4 owns those edits.
-- [ ] `CLAUDE.md` (root of this directory) — no change. The fork-policy detail lives in `UPSTREAM.md` to keep CLAUDE.md focused on day-to-day workflows.
+- [x] `docs/ARCHITECTURE.md` — add a short note under the vendored-fork section pointing at `custom_components/abode_security/abode/UPSTREAM.md`. Do not edit the SocketIO section here — Phase 4 owns those edits.
+- [x] `CLAUDE.md` (root of this directory) — no change. The fork-policy detail lives in `UPSTREAM.md` to keep CLAUDE.md focused on day-to-day workflows.
 
 ### Build verification (required before marking phase complete)
 
-- [ ] `./scripts/check.sh` — clean.
-- [ ] `uv run pytest` — full unit suite green.
+- [x] `./scripts/check.sh` — clean.
+- [x] `uv run pytest` — full unit suite green.
 - [ ] `uv run pytest -m integration` (against `./scripts/dev.sh`) — all 104 integration items green.
 - [ ] **Capture audit output**: grep the integration-test run's log for `abode_security.audit.registered_device_classes=` and paste the full registered-class list into a follow-up comment on the PR. Phase 4 will ingest this.
-- [ ] Scan test/build output for new warnings or deprecation notices unrelated to this phase's edits. A zero exit code does not mean clean output.
-- [ ] If `package-lock.json`, `pubspec.lock`, or other lockfiles changed, stage them. (Expected: none — Phase 1 touches no dependencies.)
+- [x] Scan test/build output for new warnings or deprecation notices unrelated to this phase's edits. A zero exit code does not mean clean output.
+- [x] If `package-lock.json`, `pubspec.lock`, or other lockfiles changed, stage them. (Expected: none — Phase 1 touches no dependencies.)
 - [ ] Mark this file's frontmatter `status: done` only after every box above is checked.
 
 ### Manual verification with MCP tools (if available)
@@ -184,7 +186,7 @@ Expected output during an integration-test run, given today's state:
 INFO custom_components.abode_security.abode.devices.base: abode_security.audit.registered_device_classes=custom_components.abode_security.abode.devices.alarm,custom_components.abode_security.abode.devices.binary_sensor,custom_components.abode_security.abode.devices.camera,custom_components.abode_security.abode.devices.cover,custom_components.abode_security.abode.devices.light,custom_components.abode_security.abode.devices.lock,custom_components.abode_security.abode.devices.sensor,custom_components.abode_security.abode.devices.switch,custom_components.abode_security.abode.devices.valve
 ```
 
-Modules **not** appearing in that list are candidates for Phase 4 deletion. `base.py` and `status.py` are intentionally not concrete `Device` subclasses; they will not appear in the audit and are not delete candidates.
+Modules **not** appearing in that list are candidates for Phase 4 deletion. `status.py` has no concrete `Device` subclass; it will not appear in the audit and is not a delete candidate. `base.py` contains `Unknown(Device)` (the fallback class), but the audit helper filters out the `base` module itself — `base.py` is never a delete candidate.
 
 ## Constraints
 
