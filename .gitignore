@@ -132,6 +132,8 @@ dmypy.json
 *.swo
 *~
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
+**/.implement-state.json
 
 # But ignore pycache even in vendored library
 custom_components/abode_security/lib/**/__pycache__/

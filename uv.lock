@@ -16,7 +16,6 @@ dev = [
     { name = "aioresponses" },
     { name = "fastapi" },
     { name = "importlib-resources" },
-    { name = "lomond" },
     { name = "mypy" },
     { name = "platformdirs" },
     { name = "pyright" },
@@ -38,7 +37,6 @@ requires-dist = [
     { name = "aioresponses", marker = "extra == 'dev'", specifier = "==0.7.8" },
     { name = "fastapi", marker = "extra == 'dev'", specifier = "==0.136.1" },
     { name = "importlib-resources", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "lomond", marker = "extra == 'dev'", specifier = ">=0.3.3" },
     { name = "mypy", marker = "extra == 'dev'", specifier = "==2.0.0" },
     { name = "platformdirs", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "pyright", marker = "extra == 'dev'", specifier = "==1.1.409" },
@@ -1385,18 +1383,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/bb/79/efb4637d56dcd265cb9329ab502be0e01f4daed80caffdc5065b4b7956df/license_expression-30.4.3.tar.gz", hash = "sha256:49f439fea91c4d1a642f9f2902b58db1d42396c5e331045f41ce50df9b40b1f2", size = 183031, upload-time = "2025-06-25T13:02:25.76Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/03/ba/f6f6573bb21e51b838f1e7b0e8ef831d50db6d0530a5afaba700a34d9e12/license_expression-30.4.3-py3-none-any.whl", hash = "sha256:fd3db53418133e0eef917606623bc125fbad3d1225ba8d23950999ee87c99280", size = 117085, upload-time = "2025-06-25T13:02:24.503Z" },
-]
-
-[[package]]
-name = "lomond"
-version = "0.3.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "six" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c0/9e/ef7813c910d4a893f2bc763ce9246269f55cc68db21dc1327e376d6a2d02/lomond-0.3.3.tar.gz", hash = "sha256:427936596b144b4ec387ead99aac1560b77c8a78107d3d49415d3abbe79acbd3", size = 28789, upload-time = "2018-09-21T15:17:43.297Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/0f/b1/02eebed49c754b01b17de7705caa8c4ceecfb4f926cdafc220c863584360/lomond-0.3.3-py2.py3-none-any.whl", hash = "sha256:df1dd4dd7b802a12b71907ab1abb08b8ce9950195311207579379eb3b1553de7", size = 35512, upload-time = "2018-09-21T15:17:38.686Z" },
 ]
 
 [[package]]
