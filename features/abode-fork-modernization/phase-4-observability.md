@@ -124,9 +124,9 @@ Phase 1 emitted `abode_security.audit.registered_device_classes=<comma-list>` du
 
 The SocketIO section currently references lomond and the daemon-thread model. Refresh it.
 
-- [ ] Locate the SocketIO section. Update the protocol-stack bullet from `"WebSocket (lomond) → EngineIO → SocketIO"` to `"WebSocket (aiohttp) → EngineIO → SocketIO"`.
-- [ ] Update any prose describing the daemon-thread + `run_coroutine_threadsafe` bridge. Replace with a brief description of the async-task-on-HA-loop model. Reference `docs/ASYNC_AWAIT_PATTERNS.md` for the broader pattern; keep ARCHITECTURE.md short.
-- [ ] Add a "Where to look first when SocketIO is unhappy" cross-reference: `diagnostics.py`'s `"socketio"` keys; `mcp__home_assistant__ha_get_logs` filtered by `custom_components.abode_security`; the integration `tests/test_socketio_reconnect.py` for the contract.
+- [x] Locate the SocketIO section. Update the protocol-stack bullet from `"WebSocket (lomond) → EngineIO → SocketIO"` to `"WebSocket (aiohttp) → EngineIO → SocketIO"`.
+- [x] Update any prose describing the daemon-thread + `run_coroutine_threadsafe` bridge. Replace with a brief description of the async-task-on-HA-loop model. Reference `docs/ASYNC_AWAIT_PATTERNS.md` for the broader pattern; keep ARCHITECTURE.md short.
+- [x] Add a "Where to look first when SocketIO is unhappy" cross-reference: `diagnostics.py`'s `"socketio"` keys; `mcp__home_assistant__ha_get_logs` filtered by `custom_components.abode_security`; the integration `tests/test_socketio_reconnect.py` for the contract.
 
 ### Sub-Phase 4F: Close the spec and the issues
 
