@@ -475,11 +475,11 @@ class SocketIO:
         except KeyError:
             log.debug("Ignoring SocketIO message: %s", message)
 
-    async def _on_socketio_connected(self, _data: str = "") -> None:
+    async def _on_socketio_connect(self, _data: str = "") -> None:
         self._socketio_connected = True
         log.debug("SocketIO Connected")
 
-    async def _on_socketio_disconnected(self, _data: str = "") -> None:
+    async def _on_socketio_disconnect(self, _data: str = "") -> None:
         self._socketio_connected = False
         log.debug("SocketIO Disconnected")
         if self._websocket is not None:
