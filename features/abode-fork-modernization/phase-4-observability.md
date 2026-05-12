@@ -111,14 +111,14 @@ The current `socketio.py` already logs `"Attempting to connect to SocketIO serve
 
 Phase 1 emitted `abode_security.audit.registered_device_classes=<comma-list>` during integration tests. Compare that list to the filesystem.
 
-- [ ] Run `ls custom_components/abode_security/abode/devices/*.py | xargs -n1 basename | sed 's/.py$//' | sort` and note the device-module names. Subtract `__init__`, `base`, `_ancestry`, `pkg`, `status` from the list — those are infrastructure, not concrete `Device` subclasses, and will not appear in the audit.
-- [ ] Diff the remaining list against the audit-log output. **Only modules that BOTH (a) are absent from the audit AND (b) are not imported by any `custom_components/abode_security/*.py` file are deletion candidates.**
-- [ ] For each candidate:
+- [x] Run `ls custom_components/abode_security/abode/devices/*.py | xargs -n1 basename | sed 's/.py$//' | sort` and note the device-module names. Subtract `__init__`, `base`, `_ancestry`, `pkg`, `status` from the list — those are infrastructure, not concrete `Device` subclasses, and will not appear in the audit.
+- [x] Diff the remaining list against the audit-log output. **Only modules that BOTH (a) are absent from the audit AND (b) are not imported by any `custom_components/abode_security/*.py` file are deletion candidates.**
+- [x] For each candidate:
   - `git rm custom_components/abode_security/abode/devices/<name>.py`.
   - Search for the module name across the repo (`grep -rn "<name>" custom_components/ tests/ --include="*.py"`) to confirm zero post-delete references.
   - Update `UPSTREAM.md`'s "Intentional divergence" section: add a line "Deleted unused device module `<name>.py` (not registered by `pkg.import_all()` during integration tests; not imported anywhere)."
-- [ ] **If no candidates exist** (the audit registers everything in `devices/`): add a sentence to `UPSTREAM.md` recording the audit result for future contributors: "Integration-test audit on <date> registered every device module under `devices/`. No modules are dead weight." This is a positive result — record it.
-- [ ] Re-run baseline tests after any delete. `uv run pytest -m integration` must remain green.
+- [x] **If no candidates exist** (the audit registers everything in `devices/`): add a sentence to `UPSTREAM.md` recording the audit result for future contributors: "Integration-test audit on <date> registered every device module under `devices/`. No modules are dead weight." This is a positive result — record it.
+- [x] Re-run baseline tests after any delete. `uv run pytest -m integration` must remain green.
 
 ### Sub-Phase 4E: Update `docs/ARCHITECTURE.md`
 
