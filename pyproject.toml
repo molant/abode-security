@@ -83,9 +83,16 @@ where = ["custom_components"]
 
 [tool.ruff]
 line-length = 88
-# TODO: bump to py314 in lock-step with requires-python; will surface new
-# UP/pyupgrade fixes and modern-syntax suggestions that need separate review.
-target-version = "py311"
+# One minor behind `requires-python = ">=3.14.2"` because pyright 1.1.409
+# (latest on PyPI as of this commit) doesn't parse PEP 758 yet — its
+# formatter at py314 would strip parens from multi-exception `except`
+# clauses, then pyright would reject the file with "Multiple exception
+# types must be parenthesized prior to Python 3.14". py313 still gives us
+# UP043 (`Generator[T, None, None]` → `Generator[T]`) and the rest of the
+# 3.12/3.13 pyupgrade lints we want. Bump to py314 when pyright ships PEP
+# 758 support; keep `mypy.python_version` and `pyright.pythonVersion`
+# tracking `requires-python` independently for stub selection.
+target-version = "py313"
 exclude = [
     "custom_components/abode_security/abode",  # Vendored library
 ]
@@ -95,8 +102,10 @@ select = ["E", "F", "W", "I", "N", "UP", "PIE", "SIM", "ARG", "ASYNC", "DTZ"]
 ignore = ["E501", "N812", "N818"]  # Naming conventions in vendored library
 
 [tool.mypy]
-# TODO: bump to "3.14" in lock-step with requires-python.
-python_version = "3.11"
+# Matches `requires-python = ">=3.14.2"`. Enables 3.12+/3.13+/3.14+ syntax
+# checks (PEP 695 type aliases, `type` statements, etc.) and standard-library
+# stubs that match the actual runtime.
+python_version = "3.14"
 check_untyped_defs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
@@ -104,6 +113,17 @@ warn_return_any = true
 warn_unused_ignores = true
 ignore_missing_imports = true
 follow_imports = "skip"
+exclude = [
+    "custom_components/abode_security/abode",  # Vendored library
+]
+
+[tool.pyright]
+# Matches `requires-python = ">=3.14.2"` so pyright resolves against the
+# 3.14 typeshed stubs rather than whatever interpreter it auto-detects.
+# Note: pyright 1.1.409 still doesn't *parse* PEP 758 (parenless multi-
+# exception `except`) regardless of this setting — that's why the ruff
+# block above stays on py313. Bump both when pyright catches up.
+pythonVersion = "3.14"
 exclude = [
     "custom_components/abode_security/abode",  # Vendored library
 ]

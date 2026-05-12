@@ -175,7 +175,7 @@ def mock_server_url() -> str:
 
 
 @pytest.fixture(scope="session")
-def mock_server(mock_server_url: str) -> Generator[str, None, None]:
+def mock_server(mock_server_url: str) -> Generator[str]:
     """
     Start mock server for the test session if not already running.
 
@@ -229,7 +229,7 @@ def mock_server(mock_server_url: str) -> Generator[str, None, None]:
 
 
 @pytest.fixture
-def reset_mock_server(mock_server: str) -> Generator[None, None, None]:
+def reset_mock_server(mock_server: str) -> Generator[None]:
     """
     Reset mock server state before each test.
 
@@ -270,7 +270,7 @@ def mock_server_client(mock_server: str, reset_mock_server: None) -> dict[str, s
 @pytest.fixture
 async def abode_with_mock_server(
     mock_server_client: dict[str, str],
-) -> Generator[Mock, None, None]:
+) -> Generator[Mock]:
     """
     Create Abode client connected to mock server.
 
@@ -380,7 +380,7 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 @pytest.fixture(autouse=True)
 def _integration_socket_cleanup(
     request: pytest.FixtureRequest,
-) -> Generator[None, None, None]:
+) -> Generator[None]:
     """Clear `HASocketBlockedError.instances` on integration-test teardown.
 
     The setup-time clear is in `pytest_runtest_setup` above; this fixture
