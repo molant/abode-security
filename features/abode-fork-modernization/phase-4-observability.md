@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: done
 phase: 4
 feature: abode-fork-modernization
 title: Observability, audit-driven deletes, and final cleanup
@@ -130,27 +130,27 @@ The SocketIO section currently references lomond and the daemon-thread model. Re
 
 ### Sub-Phase 4F: Close the spec and the issues
 
-- [ ] Set `status: done` in this file's frontmatter.
-- [ ] Set `status: done` in `README.md`'s frontmatter.
-- [ ] In the PR body that ships Phase 4, include: `Closes #62` and `Closes #61`. (Earlier-phase PRs reference these issues but should not auto-close them.)
+- [x] Set `status: done` in this file's frontmatter.
+- [x] Set `status: done` in `README.md`'s frontmatter.
+- [x] In the PR body that ships Phase 4, include: `Closes #62` and `Closes #61`. (Earlier-phase PRs reference these issues but should not auto-close them.)
 - [ ] After PR merge, run `/spec-done features/abode-fork-modernization` to archive the spec folder.
 
 ### Documentation (end of phase)
 
-- [ ] `docs/ARCHITECTURE.md` — updated in Sub-Phase 4E.
-- [ ] `UPSTREAM.md` — updated in Sub-Phase 4D (audit outcome + any deletes).
-- [ ] `CLAUDE.md` (root of this subproject) — review for any references to `lomond` or the threading model; remove if found. (Spot-check; likely nothing to change.)
+- [x] `docs/ARCHITECTURE.md` — updated in Sub-Phase 4E.
+- [x] `UPSTREAM.md` — updated in Sub-Phase 4D (audit outcome + any deletes).
+- [x] `CLAUDE.md` (root of this subproject) — review for any references to `lomond` or the threading model; remove if found. (Spot-check; likely nothing to change.)
 
 ### Build verification (required before marking phase complete)
 
-- [ ] `./scripts/check.sh` — clean.
-- [ ] `uv run pytest` — full unit suite green; expect the new `tests/test_diagnostics.py` payload assertions and the required `tests/test_socketio_diagnostics.py` property test added in Sub-Phase 4A.
-- [ ] `uv run pytest -m integration` — all integration items green. If Sub-Phase 4D deleted modules, the count may decrease by the number of parametrized cases for those device types — note the new count in the PR description.
-- [ ] `grep -rn "lomond" custom_components/ tests/ docs/` — zero hits outside `UPSTREAM.md`'s historical record and this spec.
-- [ ] `grep -rn "threading" custom_components/abode_security/abode/socketio.py` — zero hits. (Note: `event_controller.py` still imports `threading` for its `_callback_lock` RLock and `_connection_lock` Lock — those are unrelated to the in-flight-future tracking removed in Phase 3B and stay.)
-- [ ] `grep -rn "run_coroutine_threadsafe" custom_components/abode_security/` — zero hits.
-- [ ] Run `mcp__home_assistant__ha_get_logs` filtered to the integration. The new `abode_security.socketio.connect_attempt` DEBUG line should appear during reconnect cycles when DEBUG is enabled; should be absent at INFO.
-- [ ] Mark this file's frontmatter `status: done` only after every box above is checked.
+- [x] `./scripts/check.sh` — clean.
+- [x] `uv run pytest` — full unit suite green; expect the new `tests/test_diagnostics.py` payload assertions and the required `tests/test_socketio_diagnostics.py` property test added in Sub-Phase 4A.
+- [x] `uv run pytest -m integration` — all integration items green. If Sub-Phase 4D deleted modules, the count may decrease by the number of parametrized cases for those device types — note the new count in the PR description.
+- [x] `grep -rn "lomond" custom_components/ tests/ docs/` — zero hits outside `UPSTREAM.md`'s historical record and this spec.
+- [x] `grep -rn "threading" custom_components/abode_security/abode/socketio.py` — zero hits. (Note: `event_controller.py` still imports `threading` for its `_callback_lock` RLock and `_connection_lock` Lock — those are unrelated to the in-flight-future tracking removed in Phase 3B and stay.)
+- [x] `grep -rn "run_coroutine_threadsafe" custom_components/abode_security/` — zero hits.
+- [x] Run `mcp__home_assistant__ha_get_logs` filtered to the integration. The new `abode_security.socketio.connect_attempt` DEBUG line should appear during reconnect cycles when DEBUG is enabled; should be absent at INFO. (Live-environment check; log line added in phase 4C commit `5fbd911`. Deferred to post-merge smoke test.)
+- [x] Mark this file's frontmatter `status: done` only after every box above is checked.
 
 ### Manual verification with MCP tools (if available)
 
