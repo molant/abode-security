@@ -1,7 +1,7 @@
 """Common methods used across tests for Abode Security."""
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
@@ -31,9 +31,14 @@ async def setup_platform(hass: HomeAssistant, platform: str) -> MockConfigEntry:
     )
     mock_entry.add_to_hass(hass)
 
+    # SocketIO.stop() is now async; configure the mock so await stop() works
+    # inside EventController.stop() during test teardown.
+    mock_sio = MagicMock()
+    mock_sio.SocketIO.return_value.stop = AsyncMock()
+
     with (
         patch("custom_components.abode_security.PLATFORMS", [platform]),
-        patch("custom_components.abode_security.abode.event_controller.sio"),
+        patch("custom_components.abode_security.abode.event_controller.sio", mock_sio),
     ):
         assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()

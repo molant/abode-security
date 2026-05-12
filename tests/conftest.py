@@ -95,7 +95,7 @@ def mock_abode() -> Generator[Mock]:
     mock_client.events.add_event_callback = Mock()
     mock_client.events.remove_event_callback = Mock()
     mock_client.events.set_event_loop = Mock()
-    mock_client.events.stop = Mock()
+    mock_client.events.stop = AsyncMock()
     mock_client.events.start = Mock()
     mock_client.logout = AsyncMock()
 

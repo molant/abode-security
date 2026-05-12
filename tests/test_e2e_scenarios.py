@@ -122,7 +122,7 @@ class TestFullSetupWorkflow:
             get_alarm=Mock(return_value=working_alarm),
             get_devices=AsyncMock(return_value=[]),
             get_automations=AsyncMock(return_value=[]),
-            events=Mock(),
+            events=Mock(stop=AsyncMock()),
             logout=AsyncMock(),
             cleanup=AsyncMock(),
             _async_initialize=AsyncMock(),

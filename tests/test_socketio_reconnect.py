@@ -10,6 +10,8 @@ Covers the fixes for issue #2:
    actually blocks on a fresh `_async_get_session()`.
 """
 
+import asyncio
+import logging
 from unittest.mock import Mock, patch
 
 from custom_components.abode_security.abode import socketio as sio_module
@@ -26,7 +28,7 @@ def _stub_intervals(monkeypatch):
 class TestPersistentDisconnect:
     """SocketIO surfaces a persistent_disconnect event after N failures."""
 
-    def test_fires_after_threshold_connect_failures(self, monkeypatch):
+    async def test_fires_after_threshold_connect_failures(self, monkeypatch):
         _stub_intervals(monkeypatch)
         s = SocketIO(url="ws://example/socket.io/", cookie="seed")
 
@@ -36,7 +38,7 @@ class TestPersistentDisconnect:
         threshold = SocketIO.PERSISTENT_DISCONNECT_THRESHOLD
         attempts = {"n": 0}
 
-        def fake_step(_intervals):
+        async def fake_step(_intervals):
             attempts["n"] += 1
             # Stop a couple iterations past the threshold so we see one fire.
             if attempts["n"] >= threshold + 2:
@@ -44,14 +46,14 @@ class TestPersistentDisconnect:
             raise SocketIOException(ERRORS.SOCKETIO_ERROR, details="boom")
 
         s._step = fake_step  # type: ignore[assignment]
-        s._run()
+        await s._run()
 
         assert fired == [threshold], (
             "persistent_disconnect must fire exactly once after threshold reached, "
             f"got {fired}"
         )
 
-    def test_does_not_fire_below_threshold(self, monkeypatch):
+    async def test_does_not_fire_below_threshold(self, monkeypatch):
         _stub_intervals(monkeypatch)
         s = SocketIO(url="ws://example/socket.io/", cookie="seed")
         fired = []
@@ -61,18 +63,18 @@ class TestPersistentDisconnect:
         # Stop a few iterations short of the threshold.
         stop_at = SocketIO.PERSISTENT_DISCONNECT_THRESHOLD - 2
 
-        def fake_step(_intervals):
+        async def fake_step(_intervals):
             attempts["n"] += 1
             if attempts["n"] >= stop_at:
                 s._running = False
             raise SocketIOException(ERRORS.SOCKETIO_ERROR, details="boom")
 
         s._step = fake_step  # type: ignore[assignment]
-        s._run()
+        await s._run()
 
         assert fired == []
 
-    def test_resets_after_successful_connect_then_refires(self, monkeypatch):
+    async def test_resets_after_successful_connect_then_refires(self, monkeypatch):
         """After a recovery, the threshold counter restarts so a later
         persistent failure can fire again."""
         _stub_intervals(monkeypatch)
@@ -85,20 +87,20 @@ class TestPersistentDisconnect:
         threshold = SocketIO.PERSISTENT_DISCONNECT_THRESHOLD
         attempts = {"n": 0}
 
-        def fake_step(_intervals):
+        async def fake_step(_intervals):
             attempts["n"] += 1
             # Fail enough times to fire persistent_disconnect once.
             if attempts["n"] == threshold + 2:
                 # Simulate a successful websocket connect: the handler resets
                 # counters and emits connection_recovered.
-                s._on_websocket_connected(Mock())
+                await s._on_websocket_connected(Mock())
             # Then fail again until the threshold trips a second time.
             if attempts["n"] >= 2 * threshold + 4:
                 s._running = False
             raise SocketIOException(ERRORS.SOCKETIO_ERROR, details="boom")
 
         s._step = fake_step  # type: ignore[assignment]
-        s._run()
+        await s._run()
 
         assert recovered == [True], "connection_recovered should fire after reset"
         assert fired == [threshold, threshold], (
@@ -106,12 +108,12 @@ class TestPersistentDisconnect:
             f"once after a second run of failures), got {fired}"
         )
 
-    def test_websocket_connected_resets_counter(self):
+    async def test_websocket_connected_resets_counter(self):
         s = SocketIO(url="ws://example/socket.io/", cookie="seed")
         s._connect_failures = 7
         s._persistent_disconnect_fired = False
 
-        s._on_websocket_connected(Mock())
+        await s._on_websocket_connected(Mock())
 
         assert s._connect_failures == 0
 
@@ -119,14 +121,14 @@ class TestPersistentDisconnect:
 class TestCookieClearingBetweenIterations:
     """Stale cookies are not reused across reconnect attempts."""
 
-    def test_cookie_cleared_before_subsequent_iterations(self, monkeypatch):
+    async def test_cookie_cleared_before_subsequent_iterations(self, monkeypatch):
         _stub_intervals(monkeypatch)
         s = SocketIO(url="ws://example/socket.io/", cookie="initial-cookie")
 
         seen_cookies = []
         attempts = {"n": 0}
 
-        def fake_step(_intervals):
+        async def fake_step(_intervals):
             seen_cookies.append(s._cookie)
             attempts["n"] += 1
             if attempts["n"] >= 3:
@@ -134,13 +136,77 @@ class TestCookieClearingBetweenIterations:
             raise SocketIOException(ERRORS.SOCKETIO_ERROR, details="boom")
 
         s._step = fake_step  # type: ignore[assignment]
-        s._run()
+        await s._run()
 
         assert seen_cookies[0] == "initial-cookie", "first iteration uses seeded cookie"
         assert seen_cookies[1:] == [None, None], (
             "later iterations must clear cookie so the wait loop blocks for fresh ones, "
             f"got {seen_cookies}"
         )
+
+
+class TestSocketIOShutdown:
+    """Shutdown contract for the async task."""
+
+    async def test_stop_returns_when_task_exits_cleanly(self):
+        """stop() returns normally when the task exits after _exit_event.set()."""
+        s = SocketIO(url="ws://example/socket.io/")
+
+        async def cooperative_run():
+            await s._exit_event.wait()
+
+        task = asyncio.create_task(cooperative_run())
+        s._task = task
+        s._running = True
+
+        await s.stop()
+
+        assert s._task is None
+        assert task.done() and not task.cancelled()
+
+    async def test_stop_cancels_stuck_task_with_warning(self, caplog):
+        """A stuck task that ignores the exit event is force-cancelled with a warning."""
+        s = SocketIO(url="ws://example/socket.io/")
+
+        never_resolves: asyncio.Future[None] = (
+            asyncio.get_running_loop().create_future()
+        )
+
+        async def stuck_run():
+            await never_resolves
+
+        task = asyncio.create_task(stuck_run())
+        s._task = task
+        s._running = True
+
+        # Patch wait_for: first call (10s grace) raises TimeoutError immediately;
+        # second call (1s cancel drain) uses the real wait_for so the task is
+        # properly reaped after cancel().
+        original_wait_for = asyncio.wait_for
+        first_call = {"done": False}
+
+        async def patched_wait_for(coro_or_fut, **kwargs):
+            if not first_call["done"]:
+                first_call["done"] = True
+                raise TimeoutError()
+            return await original_wait_for(coro_or_fut, **kwargs)
+
+        with (
+            patch(
+                "custom_components.abode_security.abode.socketio.asyncio.wait_for",
+                patched_wait_for,
+            ),
+            caplog.at_level(
+                logging.WARNING,
+                logger="custom_components.abode_security.abode.socketio",
+            ),
+        ):
+            await s.stop()
+
+        never_resolves.cancel()  # clean up the future so no lingering tasks remain
+        assert s._task is None
+        assert "did not exit within 10s" in caplog.text
+        assert task.cancelled()
 
 
 class TestEventControllerStartedSeeding:
@@ -165,7 +231,7 @@ class TestEventControllerStartedSeeding:
         ec._event_loop = loop
         return ec
 
-    def test_seeds_only_on_first_started(self, monkeypatch):
+    async def test_seeds_only_on_first_started(self, monkeypatch):
         ec = self._make_controller()
 
         fake_session = Mock()
