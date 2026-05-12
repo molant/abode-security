@@ -72,7 +72,6 @@ class EventController:
         if url is None:
             url = _get_socketio_url()
         self._client = client
-        self._thread = None
         self._running = False
         self._connected = False
 
@@ -121,17 +120,12 @@ class EventController:
         self._socketio.on("com.goabode.automation", self._on_automation_update)
 
     def start(self):
-        """Start a thread to handle Abode SocketIO notifications."""
+        """Schedule the SocketIO async task for Abode notifications."""
         self._socketio.start()
 
-    def stop(self):
-        """Tell the subscription thread to terminate - will block."""
-        self._socketio.stop()
-        # Cancel any in-flight coroutines scheduled by the SocketIO thread.
-        # `cancel()` is safe to call from this thread; cancellation is
-        # processed on the next event-loop iteration. Subsequent awaits in
-        # `async_unload_entry` (logout, cleanup) drive the loop, so the
-        # underlying asyncio Tasks complete before teardown returns.
+    async def stop(self) -> None:
+        """Stop the SocketIO task and cancel any in-flight coroutines."""
+        await self._socketio.stop()
         with self._inflight_lock:
             futures = list(self._inflight_futures)
         for future in futures:
@@ -352,7 +346,6 @@ class EventController:
                     self._event_loop,
                 )
             )
-            # Don't block SocketIO thread - use callback instead
             future.add_done_callback(self._on_session_init_done)
         except Exception as exc:
             log.error("Failed to schedule session initialization: %s", exc)
@@ -429,7 +422,6 @@ class EventController:
                         self._event_loop,
                     )
                 )
-                # Don't block SocketIO thread - use callback
                 future.add_done_callback(self._on_refresh_done)
             except Exception as exc:
                 log.error("Failed to schedule Abode refresh: %s", exc)
@@ -696,7 +688,6 @@ def _execute_callback(callback, *args, **kwargs):
                 _run_callback_async(callback, callback_args, kwargs),
                 event_loop,
             )
-            # Don't block SocketIO thread - use callback for completion
             future.add_done_callback(lambda f: _log_callback_completion(callback, f))
         else:
             # Regular sync callback - safe to call directly

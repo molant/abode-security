@@ -1,19 +1,18 @@
 """Small SocketIO client via Websockets."""
 
+import asyncio
 import collections
 import contextlib
 import datetime
+import inspect
 import itertools
 import json
 import logging
 import random
-import threading
 import urllib.parse
+from typing import Any
 
-from lomond import WebSocket, events
-from lomond.errors import WebSocketError
-from lomond.persist import persist
-
+from ._websocket import AbodeWebSocket, AbodeWebSocketError
 from .exceptions import SocketIOException
 from .helpers import errors as ERRORS
 from .helpers._collections import BijectiveMap
@@ -106,19 +105,25 @@ class SocketIO:
         self._cookie = cookie
         self._origin = origin
 
-        self._thread = None
-        self._websocket = None
-        # Create the exit event up front so stop() can signal the thread even
+        self._task: asyncio.Task | None = None
+        self._websocket: AbodeWebSocket | None = None
+        # Create the exit event up front so stop() can signal the task even
         # during the early cookie-wait phase (before the websocket is built).
-        self._exit_event = threading.Event()
+        # asyncio.Event() is loop-agnostic since Python 3.10; construction
+        # outside a running loop is safe — the event is used only when _run()
+        # is awaited inside a task on a real event loop.
+        self._exit_event = asyncio.Event()
         self._running = False
 
         self._websocket_connected = False
         self._engineio_connected = False
         self._socketio_connected = False
 
-        self._last_ping_time = datetime.datetime.min
-        self._last_packet_time = datetime.datetime.min
+        self._last_ping_time = datetime.datetime.min.replace(tzinfo=datetime.UTC)
+        self._last_packet_time = datetime.datetime.min.replace(tzinfo=datetime.UTC)
+        # Defensive defaults; overwritten by the EngineIO `open` packet.
+        self._ping_interval = datetime.timedelta(seconds=25)
+        self._ping_timeout = datetime.timedelta(seconds=60)
 
         # Reconnect health tracking. _connect_failures increments per
         # failed iteration of _run and resets to 0 on successful websocket
@@ -143,34 +148,37 @@ class SocketIO:
         self._callbacks[event_name].append(callback)
 
     def start(self):
-        """Start a thread to handle SocketIO notifications."""
-        if self._thread:
+        """Schedule the SocketIO async task on the running event loop."""
+        if self._task is not None and not self._task.done():
             return
 
-        log.info("Starting SocketIO thread...")
+        log.info("Starting SocketIO task...")
+        # asyncio.create_task requires a running event loop. Let RuntimeError
+        # propagate if called outside of one — a silent no-op on a missing loop
+        # is the bug that breaks cold-start.
+        self._task = asyncio.create_task(self._run())
 
-        self._thread = threading.Thread(
-            target=self._run, name="SocketIOThread", daemon=True
-        )
-        self._thread.start()
-
-    def stop(self):
-        """Tell the SocketIO thread to terminate."""
-        if not self._thread:
+    async def stop(self) -> None:
+        """Stop the SocketIO async task. Bounded by 10s timeout."""
+        if self._task is None:
             return
 
-        log.info("Stopping SocketIO thread...")
-
+        log.info("Stopping SocketIO task...")
         self._running = False
         self._exit_event.set()
 
-        # Bound the join so HA unload can't hang if the thread is stuck (e.g.,
-        # inside a network call that doesn't honor the exit event).
-        self._thread.join(timeout=10)
-        if self._thread.is_alive():
-            log.warning("SocketIO thread did not exit within 10s; abandoning")
+        try:
+            await asyncio.wait_for(self._task, timeout=10.0)
+        except TimeoutError:
+            log.warning("SocketIO task did not exit within 10s; cancelling")
+            self._task.cancel()
+            # Best-effort drain of the cancel; if it takes longer, give up.
+            with contextlib.suppress(TimeoutError, asyncio.CancelledError):
+                await asyncio.wait_for(self._task, timeout=1.0)
+        finally:
+            self._task = None
 
-    def _run(self):
+    async def _run(self) -> None:
         self._running = True
 
         intervals = BackoffIntervals()
@@ -182,17 +190,17 @@ class SocketIO:
             # On reconnect, drop any cookie left over from the previous cycle.
             # The wait-for-cookie poll inside _step then blocks until
             # _async_get_session() supplies a fresh one — without this the
-            # SocketIO thread would happily reconnect with stale cookies that
+            # SocketIO task would happily reconnect with stale cookies that
             # Abode invalidated during the disconnect window.
             if not first_iteration:
                 self._cookie = None
             first_iteration = False
 
             try:
-                self._step(intervals)
+                await self._step(intervals)
             except SocketIOException as exc:
                 log.warning("SocketIO Error: %s", exc.details)
-            except WebSocketError as exc:
+            except AbodeWebSocketError as exc:
                 log.warning("Websocket Error: %s", exc)
 
             if not self._running:
@@ -209,24 +217,26 @@ class SocketIO:
                     self._connect_failures,
                 )
                 self._persistent_disconnect_fired = True
-                self._handle_event(
+                await self._handle_event(
                     "persistent_disconnect", self._connect_failures
                 )
 
             interval = next(intervals)
             log.info("Waiting %f seconds before reconnecting...", interval)
-            if self._exit_event.wait(interval):
+            # threading.Event.wait(timeout) returned True when set (stop) and
+            # False on timeout (continue). asyncio signals timeout via exception.
+            try:
+                await asyncio.wait_for(self._exit_event.wait(), timeout=interval)
+                # .set() was called — caller wants to stop.
                 break
+            except TimeoutError:
+                # Interval elapsed normally; continue the outer loop.
+                pass
 
-        self._handle_event("stopped", None)
+        await self._handle_event("stopped", None)
 
-    def _add_header(self, name, value):
-        if value is None:
-            return
-        self._websocket.add_header(name.encode(), value.encode())
-
-    def _step(self, intervals):
-        self._handle_event("started")
+    async def _step(self, intervals: BackoffIntervals) -> None:
+        await self._handle_event("started")
 
         # Wait for cookies to be set by async callback; abort connect if none
         # available. Use the exit event so stop() interrupts the wait instead
@@ -235,11 +245,12 @@ class SocketIO:
         max_attempts = 300  # 15s total at 50ms polls
         attempt = 0
         while not self._cookie:
-            if not self._running or self._exit_event.wait(poll_interval):
+            if not self._running or self._exit_event.is_set():
                 raise SocketIOException(
                     ERRORS.SOCKETIO_ERROR,
                     details="SocketIO stopped while waiting for cookies",
                 )
+            await asyncio.sleep(poll_interval)
             attempt += 1
             if attempt >= max_attempts:
                 raise SocketIOException(
@@ -259,10 +270,8 @@ class SocketIO:
             attempt,
         )
 
-        self._websocket = WebSocket(self._url)
-        # Reset for this connection cycle (reused across reconnects). Re-check
-        # _running afterwards to close the window where stop() raced with the
-        # clear() and had its signal wiped.
+        # Reset for this connection cycle and re-check _running to close the
+        # window where stop() raced with the clear() and had its signal wiped.
         self._exit_event.clear()
         if not self._running:
             raise SocketIOException(
@@ -270,24 +279,48 @@ class SocketIO:
                 details="SocketIO stopped before WebSocket connect",
             )
 
-        self._add_header("Cookie", self._cookie)
-        self._add_header("Origin", self._origin)
+        self._websocket = AbodeWebSocket(
+            self._url, cookie=self._cookie, origin=self._origin
+        )
+        try:
+            await self._websocket.connect()
+        except AbodeWebSocketError as exc:
+            raise SocketIOException(ERRORS.SOCKETIO_ERROR, details=str(exc)) from exc
 
-        for event in persist(
-            self._websocket, ping_rate=0, poll=5.0, exit_event=self._exit_event
-        ):
-            if isinstance(event, events.Connected):
-                intervals.reset()
+        # Reset backoff here (matches today's `if isinstance(event,
+        # events.Connected): intervals.reset()` inside the persist loop).
+        intervals.reset()
 
-            name = event.__class__.__name__.lower()
-            with contextlib.suppress(AttributeError):
-                handler = getattr(self, f"_on_websocket_{name}")
-                handler(event)
+        # Drive the full _on_websocket_connected handler — it owns the connect
+        # bookkeeping (counter reset, persistent-disconnect/recovery transitions,
+        # `connected` event). Do not inline a partial version.
+        await self._on_websocket_connected(None)
 
-            if self._running is False:
-                self._websocket.close()
+        poll_task = asyncio.create_task(self._poll_loop())
+        try:
+            # _exit_event is consumed by the cookie-wait phase and cleared
+            # before we reach this point.  Once inside receive(), cooperative
+            # exit is no longer available; shutdown is driven by task
+            # cancellation (stop() cancels after a 10s grace period) or by the
+            # server closing the WebSocket.
+            async for _msg_type, text in self._websocket.receive():
+                await self._on_websocket_text(text)
+        except AbodeWebSocketError:
+            raise
+        finally:
+            poll_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await poll_task
+            await self._websocket.close()
+            await self._on_websocket_disconnected(None)
 
-    def _on_websocket_connected(self, _event):
+    async def _poll_loop(self) -> None:
+        """Runs alongside receive() to emit poll events on a 5s cadence."""
+        while True:
+            await asyncio.sleep(5.0)
+            await self._on_websocket_poll(None)
+
+    async def _on_websocket_connected(self, _event: Any) -> None:
         self._websocket_connected = True
         log.info("Websocket Connected")
         # A successful connect clears the persistent-disconnect bookkeeping.
@@ -296,54 +329,62 @@ class SocketIO:
         self._connect_failures = 0
         if self._persistent_disconnect_fired:
             self._persistent_disconnect_fired = False
-            self._handle_event("connection_recovered")
-        self._handle_event("connected")
+            await self._handle_event("connection_recovered")
+        await self._handle_event("connected")
 
-    def _on_websocket_disconnected(self, _event):
+    async def _on_websocket_disconnected(self, _event: Any) -> None:
         self._websocket_connected = False
         self._engineio_connected = False
         self._socketio_connected = False
 
         log.info("Websocket Disconnected")
-        self._handle_event("disconnected")
+        await self._handle_event("disconnected")
 
-    def _on_websocket_poll(self, _event):
-        last_packet_delta = datetime.datetime.now() - self._last_packet_time
+    async def _on_websocket_poll(self, _event: Any) -> None:
+        ws = self._websocket
+        if ws is None:
+            return
+        last_packet_delta = (
+            datetime.datetime.now(tz=datetime.UTC) - self._last_packet_time
+        )
 
         if self._engineio_connected and last_packet_delta > self._ping_timeout:
             log.warning("SocketIO Server Ping Timeout")
-            self._websocket.close()
+            await ws.close()
             return
 
-        last_ping_delta = datetime.datetime.now() - self._last_ping_time
+        last_ping_delta = datetime.datetime.now(tz=datetime.UTC) - self._last_ping_time
 
         if self._engineio_connected and last_ping_delta >= self._ping_interval:
-            self._websocket.send_text(str(EngineIO.codes["ping"]))
-            self._last_ping_time = datetime.datetime.now()
+            await ws.send_text(str(EngineIO.codes["ping"]))
+            self._last_ping_time = datetime.datetime.now(tz=datetime.UTC)
             log.debug("Client Ping")
-            self._handle_event("ping")
+            await self._handle_event("ping")
 
-        self._handle_event("poll")
+        await self._handle_event("poll")
 
-    def _on_websocket_text(self, _event):
-        self._last_packet_time = datetime.datetime.now()
+    async def _on_websocket_text(self, text: str) -> None:
+        if not text:
+            return
+        self._last_packet_time = datetime.datetime.now(tz=datetime.UTC)
 
-        log.debug("Received: %s", _event.text)
+        log.debug("Received: %s", text)
 
-        code = int(_event.text[:1])
-        message = _event.text[1:]
+        try:
+            code = int(text[:1])
+        except ValueError:
+            log.debug("Ignoring malformed EngineIO packet: %s", text[:20])
+            return
+        message = text[1:]
 
         try:
             name = EngineIO.codes[code]
             handler = getattr(self, f"_on_engineio_{name}")
-            handler(message)
+            await handler(message)
         except KeyError:
             log.debug("Ignoring unrecognized EngineIO packet")
 
-    def _on_websocket_backoff(self, _event):
-        return
-
-    def _on_engineio_open(self, message):
+    async def _on_engineio_open(self, message: str) -> None:
         packet = json.loads(message)
 
         self._ping_interval = datetime.timedelta(milliseconds=packet["pingInterval"])
@@ -355,52 +396,61 @@ class SocketIO:
         self._engineio_connected = True
         log.debug("EngineIO Connected")
 
-    def _on_engineio_close(self, message):
+    async def _on_engineio_close(self, _message: str) -> None:
         self._engineio_connected = False
         log.debug("EngineIO Disconnected")
-        self._websocket.close()
+        if self._websocket is not None:
+            await self._websocket.close()
 
-    def _on_engineio_pong(self, message):
+    async def _on_engineio_pong(self, _message: str) -> None:
         log.debug("Server Pong")
-        self._handle_event("pong")
+        await self._handle_event("pong")
 
-    def _on_engineio_message(self, message):
-        code = int(message[:1])
+    async def _on_engineio_message(self, message: str) -> None:
+        try:
+            code = int(message[:1])
+        except ValueError:
+            log.debug("Ignoring malformed SocketIO message: %s", message[:20])
+            return
         data = message[1:]
 
         try:
             name = SocketIO.codes[code]
             handler = getattr(self, f"_on_socketio_{name}")
-            handler(data)
+            await handler(data)
         except KeyError:
             log.debug("Ignoring SocketIO message: %s", message)
 
-    def _on_socketio_connected(self):
+    async def _on_socketio_connected(self, _data: str = "") -> None:
         self._socketio_connected = True
         log.debug("SocketIO Connected")
 
-    def _on_socketio_disconnected(self):
+    async def _on_socketio_disconnected(self, _data: str = "") -> None:
         self._socketio_connected = False
         log.debug("SocketIO Disconnected")
-        self._websocket.close()
+        if self._websocket is not None:
+            await self._websocket.close()
 
-    def _on_socketio_error(self, _message_data):
-        self._handle_event("error", _message_data)
+    async def _on_socketio_error(self, _message_data: str) -> None:
+        await self._handle_event("error", _message_data)
         raise SocketIOException(ERRORS.SOCKETIO_ERROR, details=_message_data)
 
-    def _on_socketio_event(self, _message_data):
+    async def _on_socketio_event(self, _message_data: str) -> None:
         try:
             json_data = find_json_list(_message_data)
         except ValueError:
             log.warning("Unable to find event [data]: %s", _message_data)
             return
-        self._handle_event("event", _message_data)
-        self._handle_event(json_data[0], json_data[1:])
+        await self._handle_event("event", _message_data)
+        await self._handle_event(json_data[0], json_data[1:])
 
-    def _handle_event(self, event_name, *args):
+    async def _handle_event(self, event_name: str, *args: Any) -> None:
         for callback in self._callbacks[event_name]:
             try:
-                callback(*args)
+                if inspect.iscoroutinefunction(callback):
+                    await callback(*args)
+                else:
+                    callback(*args)
             except Exception as exc:
                 log.exception(
                     "Captured exception during SocketIO event callback: %s", exc

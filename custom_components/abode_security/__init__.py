@@ -283,7 +283,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     abode_system: AbodeSystem = entry.runtime_data
-    abode_system.abode.events.stop()
+    await abode_system.abode.events.stop()
     await abode_system.abode.logout()
     await abode_system.abode.cleanup()
 
@@ -312,15 +312,15 @@ async def async_setup_hass_events(hass: HomeAssistant, entry: ConfigEntry) -> No
     async def logout(_event: Event) -> None:
         """Logout of Abode."""
         if not abode_system.polling:
-            abode_system.abode.events.stop()
+            await abode_system.abode.events.stop()
 
         await abode_system.abode.logout()
         await abode_system.abode.cleanup()
         LOGGER.info("Logged out of Abode")
 
     if not abode_system.polling:
-        # Start socket IO event listener (runs in separate thread)
-        LOGGER.info("Starting SocketIO thread for real-time events")
+        # Start socket IO event listener (async task on the HA event loop)
+        LOGGER.info("Starting SocketIO task for real-time events")
         abode_system.abode.events.start()
 
     abode_system.logout_listener = hass.bus.async_listen_once(
