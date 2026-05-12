@@ -1,5 +1,5 @@
 ---
-status: planned
+status: done
 phase: 2
 feature: ci-integration-tests
 title: Fix integration test gating regressions
@@ -7,7 +7,7 @@ title: Fix integration test gating regressions
 
 # Phase 2: Fix Integration Test Gating Regressions (#102, #103)
 
-**Status**: planned
+**Status**: done
 
 ## Goal
 
