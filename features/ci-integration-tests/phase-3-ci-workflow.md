@@ -28,13 +28,16 @@ Reality after Phases 1–2:
   phase added `pytest-rerunfailures` and `--reruns=2`/`--reruns-delay=1`
   to paper over async-timing flakes; the first CI run pushed the budget
   to `--reruns=3 --reruns-delay=2` because two CI-deterministic alarm
-  tests still failed. The proper fix landed in Phase 1's
-  `_integration_neutralize_socketio` autouse fixture (neutralises the
-  vendored Abode SocketIO client whose `EIO=3` handshake gets 403 from
-  the mock's python-socketio v4 server). With the fixture in place the
-  suite is fully deterministic; both the dev-dep and the CLI flags were
-  dropped in commit-cleanup, so the workflow ends up applying PR #101's
-  diff almost verbatim.
+  tests still failed. Phase 1 shipped an
+  `_integration_neutralize_socketio` autouse fixture that made the suite
+  deterministic by short-circuiting the vendored Abode SocketIO client
+  (whose `EIO=3` handshake was getting 403 from the mock's
+  `python-socketio` v4 server). #105 fixed that mismatch at the source
+  by pinning the mock to SocketIO 4.x / Engine.IO 3.x — currently
+  `python-socketio==4.6.1` + `python-engineio==3.14.2` — and the
+  fixture was removed. Both the dev-dep
+  and the CLI flags were dropped in commit-cleanup, so the workflow ends
+  up applying PR #101's diff almost verbatim.
 
 ## Source of truth: PR #101 commit
 
@@ -187,10 +190,12 @@ Commit body should explain:
 - Re-enabling `e2e-tests.yaml` (Playwright) — tracked in #100.
 - Splitting Python + integration into separate workflows for parallelism
   — not needed at current test volume.
-- Engine.IO v3↔v4 mismatch between the vendored Abode SocketIO client
-  and python-socketio 5.x. Eliminating this would let us drop Phase 1's
-  `_integration_neutralize_socketio` fixture and exercise the SocketIO
-  push path against the mock too. Tracked as #105.
+- Writing tests that exercise the SocketIO push path against the mock —
+  now possible after #105 fixed the Engine.IO v3↔v4 mismatch (pinned the
+  mock to `python-socketio==4.6.1` + `python-engineio==3.14.2`) and
+  dropped the `_integration_neutralize_socketio` fixture. Today the mock
+  can `sio.emit("com.goabode.states", ...)` but no integration test
+  listens.
 
 ## What success looks like
 

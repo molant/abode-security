@@ -2,6 +2,7 @@
 
 import asyncio
 import collections
+import concurrent.futures
 import contextlib
 import logging
 import os
@@ -11,7 +12,7 @@ from . import socketio as sio
 from ._itertools import always_iterable, opt_single, single
 from .devices.alarm import Alarm
 from .devices.base import Device
-from .exceptions import Exception
+from .exceptions import Exception as AbodeException
 from .helpers import errors, timeline, urls
 
 log = logging.getLogger(__name__)
@@ -97,6 +98,14 @@ class EventController:
         # _async_get_session() to refresh it.
         self._initial_seed_done = False
 
+        # In-flight `concurrent.futures.Future` handles returned by
+        # `asyncio.run_coroutine_threadsafe()` from SocketIO-thread callbacks.
+        # Tracked so `stop()` can cancel them — otherwise the asyncio Task
+        # they wrap stays pending past teardown and trips pytest-HA-cc's
+        # `verify_cleanup` lingering-task assertion (see #105).
+        self._inflight_lock = threading.Lock()
+        self._inflight_futures: set[concurrent.futures.Future] = set()
+
         # Setup SocketIO
         self._socketio = sio.SocketIO(url=url, origin=urls.BASE)
 
@@ -118,6 +127,27 @@ class EventController:
     def stop(self):
         """Tell the subscription thread to terminate - will block."""
         self._socketio.stop()
+        # Cancel any in-flight coroutines scheduled by the SocketIO thread.
+        # `cancel()` is safe to call from this thread; cancellation is
+        # processed on the next event-loop iteration. Subsequent awaits in
+        # `async_unload_entry` (logout, cleanup) drive the loop, so the
+        # underlying asyncio Tasks complete before teardown returns.
+        with self._inflight_lock:
+            futures = list(self._inflight_futures)
+        for future in futures:
+            future.cancel()
+
+    def _track_inflight(self, future):
+        """Register a `run_coroutine_threadsafe` future for shutdown tracking."""
+        with self._inflight_lock:
+            self._inflight_futures.add(future)
+        future.add_done_callback(self._discard_inflight)
+        return future
+
+    def _discard_inflight(self, future):
+        """Remove a completed future from the in-flight set."""
+        with self._inflight_lock:
+            self._inflight_futures.discard(future)
 
     def add_connection_status_callback(self, unique_id, callback):
         """Register callback for Abode server connection status."""
@@ -159,7 +189,7 @@ class EventController:
 
                 # Validate the device is valid
                 if not self._client.get_device(device_id):
-                    raise Exception(errors.EVENT_DEVICE_INVALID)
+                    raise AbodeException(errors.EVENT_DEVICE_INVALID)
 
                 log.debug("Subscribing to updates for device_id: %s", device_id)
 
@@ -180,7 +210,7 @@ class EventController:
                     device_id = device.id
 
                 if not self._client.get_device(device_id):
-                    raise Exception(errors.EVENT_DEVICE_INVALID)
+                    raise AbodeException(errors.EVENT_DEVICE_INVALID)
 
                 if device_id not in self._device_callbacks:
                     return False
@@ -199,7 +229,7 @@ class EventController:
         with self._callback_lock:
             for event_group in always_iterable(event_groups):
                 if event_group not in timeline.Groups.ALL:
-                    raise Exception(errors.EVENT_GROUP_INVALID)
+                    raise AbodeException(errors.EVENT_GROUP_INVALID)
 
                 log.debug("Subscribing to event group: %s", event_group)
 
@@ -215,7 +245,7 @@ class EventController:
         with self._callback_lock:
             for event_group in always_iterable(event_groups):
                 if event_group not in timeline.Groups.ALL:
-                    raise Exception(errors.EVENT_GROUP_INVALID)
+                    raise AbodeException(errors.EVENT_GROUP_INVALID)
 
                 log.debug("Unsubscribing from event group: %s", event_group)
 
@@ -235,12 +265,12 @@ class EventController:
         with self._callback_lock:
             for timeline_event in always_iterable(timeline_events):
                 if not isinstance(timeline_event, dict):
-                    raise Exception(errors.EVENT_CODE_MISSING)
+                    raise AbodeException(errors.EVENT_CODE_MISSING)
 
                 event_code = timeline_event.get("event_code")
 
                 if not event_code:
-                    raise Exception(errors.EVENT_CODE_MISSING)
+                    raise AbodeException(errors.EVENT_CODE_MISSING)
 
                 log.debug("Subscribing to timeline event: %s", timeline_event)
 
@@ -314,11 +344,13 @@ class EventController:
             )
 
         try:
-            future = asyncio.run_coroutine_threadsafe(
-                asyncio.wait_for(
-                    self._async_get_session(), timeout=self.LONG_OPERATION_TIMEOUT
-                ),
-                self._event_loop,
+            future = self._track_inflight(
+                asyncio.run_coroutine_threadsafe(
+                    asyncio.wait_for(
+                        self._async_get_session(), timeout=self.LONG_OPERATION_TIMEOUT
+                    ),
+                    self._event_loop,
+                )
             )
             # Don't block SocketIO thread - use callback instead
             future.add_done_callback(self._on_session_init_done)
@@ -332,6 +364,11 @@ class EventController:
             log.debug("Session initialized successfully")
         except TimeoutError:
             log.error("Session initialization timed out")
+        except concurrent.futures.CancelledError:
+            # Only reachable via stop()'s cancel-on-shutdown path, so this
+            # is expected. TimeoutError above is a real 30s expiry and stays
+            # at error level.
+            log.debug("Session initialization cancelled (shutdown in progress)")
         except Exception as exc:
             log.warning("Session initialization failed: %s", exc)
 
@@ -384,11 +421,13 @@ class EventController:
         # Schedule async refresh on the event loop
         if self._event_loop and self._event_loop.is_running():
             try:
-                future = asyncio.run_coroutine_threadsafe(
-                    asyncio.wait_for(
-                        self._async_refresh(), timeout=self.LONG_OPERATION_TIMEOUT
-                    ),
-                    self._event_loop,
+                future = self._track_inflight(
+                    asyncio.run_coroutine_threadsafe(
+                        asyncio.wait_for(
+                            self._async_refresh(), timeout=self.LONG_OPERATION_TIMEOUT
+                        ),
+                        self._event_loop,
+                    )
                 )
                 # Don't block SocketIO thread - use callback
                 future.add_done_callback(self._on_refresh_done)
@@ -408,6 +447,8 @@ class EventController:
             log.debug("Abode refresh completed successfully")
         except TimeoutError:
             log.error("Abode refresh timed out")
+        except concurrent.futures.CancelledError:
+            log.debug("Abode refresh cancelled (shutdown in progress)")
         except Exception as exc:
             log.warning("Abode refresh failed: %s", exc)
 
@@ -481,12 +522,14 @@ class EventController:
         # If we have an event loop, refresh device state asynchronously before dispatching
         if self._event_loop and self._event_loop.is_running():
             try:
-                future = asyncio.run_coroutine_threadsafe(
-                    asyncio.wait_for(
-                        self._async_refresh_device_and_dispatch(devid),
-                        timeout=self.LONG_OPERATION_TIMEOUT,
-                    ),
-                    self._event_loop,
+                future = self._track_inflight(
+                    asyncio.run_coroutine_threadsafe(
+                        asyncio.wait_for(
+                            self._async_refresh_device_and_dispatch(devid),
+                            timeout=self.LONG_OPERATION_TIMEOUT,
+                        ),
+                        self._event_loop,
+                    )
                 )
                 future.add_done_callback(
                     lambda f: self._log_future_result(

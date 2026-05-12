@@ -58,19 +58,16 @@ In `tests/conftest.py`:
 - An autouse fixture (`_integration_socket_cleanup`) clears
   `HASocketBlockedError.instances` after each integration test so the
   cleanup assertion at `plugins.py:468` isn't tripped by stale entries.
-- An autouse fixture (`_integration_neutralize_socketio`) monkeypatches
-  `EventController.start` to a no-op and forces
-  `EventController.connected` to always return `True` for integration
-  tests. Without this, the vendored Abode SocketIO client's `EIO=3`
-  handshake gets 403 from the mock's `python-socketio` v4 server; the
-  resulting disconnect callback flips
-  `AbodeEntity._attr_available = events.connected` to `False`, HA's
-  service dispatch then silently no-ops ("`Referenced entities ... are
-  missing or not currently available`"), and tests that patch a device
-  method to verify it was called fail with `Called 0 times.`. The
-  integration's HTTP polling path is fully exercised regardless of the
-  push channel, so neutralising the thread is safe for what the
-  integration suite actually verifies. Tracked as follow-up #105.
+
+> **Post-#105 update.** An earlier `_integration_neutralize_socketio`
+> autouse fixture used to monkeypatch `EventController.start` to a no-op
+> and force `EventController.connected` to `True` for integration tests,
+> papering over a 403 handshake against the mock's `python-socketio==5.x`
+> server (which only speaks Engine.IO v4 while the vendored Abode client
+> speaks v3). Fixed properly in #105 by pinning the mock to SocketIO 4.x
+> / Engine.IO 3.x — currently `python-socketio==4.6.1` +
+> `python-engineio==3.14.2` — so the handshake succeeds and the fixture
+> is gone.
 
 The earlier `@pytest.mark.enable_socket` markers across 10 test files were
 no-ops in this stack (HA-cc's `pytest_runtest_setup` re-disables sockets
@@ -124,9 +121,6 @@ at the bottom of the file:
 - `pytest_runtest_setup(item)` hookimpl with `tryfirst=True`.
 - `_integration_socket_cleanup` autouse fixture for `HASocketBlockedError`
   list hygiene.
-- `_integration_neutralize_socketio` autouse fixture that monkeypatches
-  `EventController.start` to a no-op and `EventController.connected` to
-  always `True` (see "The actual mechanism" above for rationale).
 
 ### 3. Edit `tests/mock_server/main.py`
 
@@ -176,9 +170,11 @@ uv run pytest tests/ -m integration --tb=line --no-cov -q
 ```
 
 Expected: 102 passed out of 104, with the 2 known bugs (#102, #103)
-remaining as the only failures (handed off to Phase 2). With the
-SocketIO-neutralisation fixture in place there are zero intermittent
-flakes — the suite is fully deterministic.
+remaining as the only failures (handed off to Phase 2). Initially this
+phase shipped an `_integration_neutralize_socketio` autouse fixture to
+keep the SocketIO thread out of the loop and make the suite fully
+deterministic; #105 fixed the underlying mock-server Engine.IO mismatch
+and the fixture was removed.
 
 ```bash
 uv run pytest tests/ -m "not integration" --no-cov -q
@@ -199,14 +195,15 @@ pre-existing fixes, and the marker-removal count.
 
 ## Known follow-ups (not Phase 1's job)
 
-- **Engine.IO v3 ↔ v4 mismatch.** The vendored Abode SocketIO client speaks
-  EIO=3; the mock's `python-socketio==5.11.0` server rejects it with 403.
-  The `_integration_neutralize_socketio` autouse fixture papers over this
-  for the integration suite by short-circuiting `EventController.start`
-  and forcing `connected` to True, but the underlying protocol drift is
-  still real (and the mock can't emit push events at all). Tracked as
-  #105; fixing it would let us drop the neutralisation fixture and
-  exercise the SocketIO path against the mock too.
+- **Engine.IO v3 ↔ v4 mismatch — resolved in #105.** Originally the
+  vendored Abode SocketIO client spoke EIO=3 and the mock's
+  `python-socketio==5.11.0` server rejected the handshake with 403.
+  Phase 1 worked around it with an `_integration_neutralize_socketio`
+  autouse fixture. #105 fixed it at the source by pinning the mock to
+  SocketIO 4.x / Engine.IO 3.x — currently
+  `python-socketio==4.6.1` + `python-engineio==3.14.2` in
+  `tests/mock_server/requirements.txt`; the fixture was removed at the
+  same time, and the SocketIO push path now works against the mock.
 
 ## Risk
 
