@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: done
 phase: 1
 feature: abode-fork-modernization
 title: Fork hygiene and dynamic-discovery audit

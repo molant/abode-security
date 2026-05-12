@@ -165,6 +165,10 @@ class SocketIO:
             return
 
         log.info("Starting SocketIO task...")
+        # Clear the exit event left over from a previous stop() so a restart
+        # (e.g. config-entry reload) doesn't immediately bail out of the
+        # cookie-wait in _step(). _running is re-armed at the top of _run().
+        self._exit_event.clear()
         # asyncio.create_task requires a running event loop. Let RuntimeError
         # propagate if called outside of one — a silent no-op on a missing loop
         # is the bug that breaks cold-start.
@@ -178,6 +182,41 @@ class SocketIO:
         log.info("Stopping SocketIO task...")
         self._running = False
         self._exit_event.set()
+
+        # Once inside receive(), the task is blocked on the websocket and
+        # ignores _exit_event. Closing the websocket here makes receive()
+        # return so the task can exit cleanly within the 10s grace and the
+        # warning path below stays reserved for genuinely stuck tasks.
+        # Only do this when _websocket_connected is True (i.e. past the
+        # connect phase): closing mid-ws_connect cancels aiohttp's internal
+        # resolve_host shield, surfacing CancelledError that escapes
+        # connect()'s aiohttp.ClientError handler and tears down the task
+        # unexpectedly. During connect(), the natural error path is fast
+        # enough — _run's backoff respects _exit_event. If stop() races
+        # with the connect→connected transition and the flag is still
+        # False, we just skip the close and fall back to the 10s grace —
+        # slower but correct, and the dangerous cancellation is foreclosed
+        # because connect() has already returned.
+        ws = self._websocket
+        if ws is not None and self._websocket_connected:
+            try:
+                await ws.close()
+            except Exception as exc:
+                log.debug("websocket close during stop() raised: %s", exc)
+
+        # If stop() is called from within the SocketIO task itself (e.g. a
+        # callback dispatched from _handle_event triggers an HA reload that
+        # cascades back into events.stop()), awaiting self._task would raise
+        # `RuntimeError: Task cannot await on itself`. Just leave _running
+        # and _exit_event set — the task picks them up on its next iteration
+        # and exits naturally. We intentionally do NOT clear self._task here
+        # so a follow-up stop() invoked from outside the task can still
+        # observe and await it.
+        if asyncio.current_task() is self._task:
+            log.debug(
+                "stop() called from within the SocketIO task; skipping self-await"
+            )
+            return
 
         try:
             await asyncio.wait_for(self._task, timeout=10.0)

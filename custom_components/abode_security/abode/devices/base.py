@@ -20,7 +20,7 @@ def _log_registered_classes_once() -> None:
         return
     _AUDIT_LOGGED = True
     registered = sorted(
-        cls.__module__ for cls in iter_subclasses(Device) if cls.__module__ != __name__
+        {cls.__module__ for cls in iter_subclasses(Device) if cls.__module__ != __name__}
     )
     log.info(
         "abode_security.audit.registered_device_classes=%s",
