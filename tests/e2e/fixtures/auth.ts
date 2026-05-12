@@ -43,7 +43,7 @@ export async function loginToHomeAssistant(page: Page) {
 /**
  * Extended test with authenticated page fixture.
  */
-export const test = base.extend({
+export const test = base.extend<{ authenticatedPage: Page }>({
   authenticatedPage: async ({ page }, use) => {
     await loginToHomeAssistant(page);
     await use(page);

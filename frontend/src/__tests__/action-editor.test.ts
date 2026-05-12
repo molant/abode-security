@@ -66,13 +66,15 @@ describe('ActionEditor', () => {
         <abode-action-editor .hass=${hass}></abode-action-editor>
       `);
 
-      // @ts-expect-error - accessing private property for testing
-      el._sensors = createMockSensors();
-      // @ts-expect-error - accessing private property for testing
-      el._alarms = createMockAlarms();
-      // @ts-expect-error - accessing private property for testing
-      el._loading = false;
-      await elementUpdated(el);
+      const sensors = createMockSensors();
+      await setState(el, {
+        _sensors: sensors,
+        _alarms: createMockAlarms(),
+        _loading: false,
+        // Categories collapse by default (#113); expand all here so the
+        // sensor-name substrings actually render to the shadow DOM.
+        _expandedCategories: new Set(Object.keys(sensors)),
+      } as Partial<ActionEditor>);
 
       // Should show sensor categories (first letter capitalized)
       expect(el.shadowRoot?.textContent).to.include('Door');
@@ -91,13 +93,14 @@ describe('ActionEditor', () => {
         garage_door: [{ entity_id: 'binary_sensor.garage', name: 'Garage Door', state: 'closed' }],
         gas: [{ entity_id: 'binary_sensor.gas_kitchen', name: 'Kitchen Gas', state: 'off' }],
       };
-      // @ts-expect-error - accessing private property for testing
-      el._sensors = wideSensors;
-      // @ts-expect-error - accessing private property for testing
-      el._alarms = createMockAlarms();
-      // @ts-expect-error - accessing private property for testing
-      el._loading = false;
-      await elementUpdated(el);
+      await setState(el, {
+        _sensors: wideSensors,
+        _alarms: createMockAlarms(),
+        _loading: false,
+        // The category-headers-render assertion below is independent of the
+        // collapse state, but the sensor-name assertions need items rendered.
+        _expandedCategories: new Set(Object.keys(wideSensors)),
+      } as Partial<ActionEditor>);
 
       // Both non-allowlisted categories should appear as category headers,
       // and each sensor inside should be selectable. Match case-insensitively
@@ -878,6 +881,420 @@ describe('ActionEditor', () => {
       // "filter accidentally removes all sensors" regression class.
       // @ts-expect-error - accessing private property for testing
       expect(el._selectedSensors).to.deep.equal(['binary_sensor.living_room_motion']);
+    });
+  });
+
+  // --- #113 collapse + search -------------------------------------------
+  // Sensor categories start collapsed; the disclosure button toggles each
+  // independently. A search box filters items by name, auto-expands
+  // categories that contain matches, and hides categories with zero
+  // matches. Editing an existing action auto-expands categories that
+  // already contain selected sensors so the user can see them.
+
+  describe('sensor categories collapse + search (#113)', () => {
+    const findHeaderForCategory = (el: ActionEditor, cat: string): HTMLElement | null => {
+      const headers = Array.from(
+        el.shadowRoot?.querySelectorAll<HTMLElement>('.category-header') ?? [],
+      );
+      return (
+        headers.find((h) => {
+          // Strip count suffix like " (2)" or " (1/2)" before matching.
+          const label = (h.querySelector('span')?.textContent ?? '')
+            .replace(/\s*\([^)]*\)\s*$/, '')
+            .trim();
+          return new RegExp(`^${cat.replace(/_/g, '[\\s_]')}$`, 'i').test(label);
+        }) ?? null
+      );
+    };
+
+    const findDisclosureForCategory = (el: ActionEditor, cat: string): HTMLButtonElement | null => {
+      const header = findHeaderForCategory(el, cat);
+      return header?.querySelector<HTMLButtonElement>('button.disclosure') ?? null;
+    };
+
+    it('starts with all sensor categories collapsed for a new action', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+      } as Partial<ActionEditor>);
+
+      // No `.category-items` rendered — all categories collapsed.
+      const items = el.shadowRoot?.querySelectorAll('.category-items') ?? [];
+      expect(items.length).to.equal(0, 'no category items should render when all collapsed');
+
+      // All disclosure buttons should report aria-expanded="false".
+      const disclosures = Array.from(el.shadowRoot?.querySelectorAll('button.disclosure') ?? []);
+      expect(disclosures.length).to.be.greaterThan(0, 'expected disclosure buttons to exist');
+      for (const d of disclosures) {
+        expect(d.getAttribute('aria-expanded')).to.equal('false');
+      }
+    });
+
+    it('auto-expands categories that contain selected sensors when editing', async () => {
+      const action = createMockAction({
+        // door has front+back; motion has living_room_motion; window is untouched.
+        sensor_entity_ids: ['binary_sensor.front_door', 'binary_sensor.living_room_motion'],
+        alarm_entity_ids: ['switch.abode_panic_alarm'],
+      });
+      const hass = createMockHass({
+        callWS: ((params: { type: string }) => {
+          if (params.type === 'abode_security/entities/sensors') {
+            return Promise.resolve({ sensors: createMockSensors() });
+          }
+          if (params.type === 'abode_security/entities/alarms') {
+            return Promise.resolve({ alarms: createMockAlarms() });
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass} .action=${action}></abode-action-editor>
+      `);
+      // Let _loadEntities resolve and the seeding re-render.
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      expect(findDisclosureForCategory(el, 'door')?.getAttribute('aria-expanded')).to.equal(
+        'true',
+        'door has selections, should be expanded',
+      );
+      expect(findDisclosureForCategory(el, 'motion')?.getAttribute('aria-expanded')).to.equal(
+        'true',
+        'motion has selections, should be expanded',
+      );
+      expect(findDisclosureForCategory(el, 'window')?.getAttribute('aria-expanded')).to.equal(
+        'false',
+        'window has no selections, should stay collapsed',
+      );
+    });
+
+    it('disclosure click toggles category expansion and aria-expanded', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+      } as Partial<ActionEditor>);
+
+      const disclosure = findDisclosureForCategory(el, 'door');
+      expect(disclosure, 'expected a door disclosure button').to.exist;
+      expect(disclosure!.getAttribute('aria-expanded')).to.equal('false');
+
+      disclosure!.click();
+      await elementUpdated(el);
+      expect(disclosure!.getAttribute('aria-expanded')).to.equal('true');
+      // Items now render in that category.
+      const items = disclosure!.closest('.category')?.querySelector('.category-items');
+      expect(items, 'category items should render when expanded').to.exist;
+
+      disclosure!.click();
+      await elementUpdated(el);
+      expect(disclosure!.getAttribute('aria-expanded')).to.equal('false');
+      // Items removed again.
+      const itemsAfter = disclosure!.closest('.category')?.querySelector('.category-items');
+      expect(itemsAfter, 'category items should disappear when collapsed again').to.not.exist;
+    });
+
+    it('clicking the disclosure does not change sensor selection', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _selectedSensors: [],
+      } as Partial<ActionEditor>);
+
+      const disclosure = findDisclosureForCategory(el, 'door');
+      disclosure!.click();
+      await elementUpdated(el);
+
+      // @ts-expect-error - accessing private property for testing
+      expect(el._selectedSensors).to.deep.equal([]);
+    });
+
+    it('clicking the category header still toggles select-all when not filtering', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+      } as Partial<ActionEditor>);
+
+      const doorHeader = findHeaderForCategory(el, 'door');
+      expect(doorHeader, 'expected a door header').to.exist;
+      doorHeader!.click();
+      await elementUpdated(el);
+
+      // @ts-expect-error - accessing private property for testing
+      expect(el._selectedSensors).to.have.members([
+        'binary_sensor.front_door',
+        'binary_sensor.back_door',
+      ]);
+    });
+
+    it('filters sensor items by name when search has a query', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _sensorSearch: 'front',
+      } as Partial<ActionEditor>);
+
+      // Only "Front Door" matches.
+      const itemLabels = Array.from(
+        el.shadowRoot?.querySelectorAll('.category-items label') ?? [],
+      ).map((l) => l.textContent?.trim() ?? '');
+      expect(itemLabels.length).to.equal(1);
+      expect(itemLabels[0]).to.include('Front Door');
+
+      // Non-matching categories should be hidden entirely (no header).
+      expect(findHeaderForCategory(el, 'door'), 'door category visible').to.exist;
+      expect(findHeaderForCategory(el, 'motion'), 'motion category hidden').to.not.exist;
+      expect(findHeaderForCategory(el, 'window'), 'window category hidden').to.not.exist;
+    });
+
+    it('auto-expands a collapsed category when search matches an item inside it', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+      } as Partial<ActionEditor>);
+      // Confirm starting state is fully collapsed.
+      expect(el.shadowRoot?.querySelectorAll('.category-items').length).to.equal(0);
+
+      await setState(el, { _sensorSearch: 'motion' } as Partial<ActionEditor>);
+
+      // Motion category becomes visible with its sensor.
+      expect(el.shadowRoot?.textContent).to.include('Living Room Motion');
+    });
+
+    it('search is case-insensitive on the sensor name', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _sensorSearch: 'BACK',
+      } as Partial<ActionEditor>);
+
+      const itemLabels = Array.from(
+        el.shadowRoot?.querySelectorAll('.category-items label') ?? [],
+      ).map((l) => l.textContent?.trim() ?? '');
+      expect(itemLabels.length).to.equal(1);
+      expect(itemLabels[0]).to.include('Back Door');
+    });
+
+    it('header select-all acts on filtered subset only while search is active', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+        // Matches only front_door among the two door sensors.
+        _sensorSearch: 'front',
+      } as Partial<ActionEditor>);
+
+      const doorHeader = findHeaderForCategory(el, 'door');
+      doorHeader!.click();
+      await elementUpdated(el);
+
+      // Only the visible match was selected — back_door is filtered out and
+      // must not be silently bulk-selected.
+      // @ts-expect-error - accessing private property for testing
+      expect(el._selectedSensors).to.deep.equal(['binary_sensor.front_door']);
+    });
+
+    it('keeps DOM ids unique when two category keys sanitize to the same safeKey', async () => {
+      // Two distinct backend keys collapse to the same `safeKey` under
+      // /[^A-Za-z0-9_-]/g → '-'. Without index-based disambiguation the
+      // two `.category-items` containers would share an id and the
+      // disclosure `aria-controls` would point at an ambiguous target
+      // (#113).
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      const collidingKeys = ['smoke detector', 'smoke-detector'];
+      const sensors: Record<string, SensorEntity[]> = {
+        [collidingKeys[0]]: [
+          { entity_id: 'binary_sensor.kitchen_smoke', name: 'Kitchen Smoke', state: 'off' },
+        ],
+        [collidingKeys[1]]: [
+          { entity_id: 'binary_sensor.bedroom_smoke', name: 'Bedroom Smoke', state: 'off' },
+        ],
+      };
+      await setState(el, {
+        _sensors: sensors,
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set(collidingKeys),
+      } as Partial<ActionEditor>);
+
+      const itemContainers = Array.from(
+        el.shadowRoot?.querySelectorAll<HTMLElement>('.category-items[id]') ?? [],
+      );
+      const ids = itemContainers.map((d) => d.id);
+      expect(ids.length).to.equal(2);
+      expect(new Set(ids).size).to.equal(
+        2,
+        `expected two unique ids for colliding sanitized keys, got: ${ids.join(', ')}`,
+      );
+    });
+
+    it('humanizes underscores in the disclosure aria-label', async () => {
+      // The visible header text replaces underscores with spaces, but
+      // `aria-label` previously used the raw `category` — screen readers
+      // would announce "Expand garage_door" instead of "Expand garage
+      // door" (#113).
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      const sensors: Record<string, SensorEntity[]> = {
+        garage_door: [{ entity_id: 'binary_sensor.garage', name: 'Garage Door', state: 'closed' }],
+      };
+      await setState(el, {
+        _sensors: sensors,
+        _alarms: createMockAlarms(),
+        _loading: false,
+      } as Partial<ActionEditor>);
+
+      const disclosure = el.shadowRoot?.querySelector<HTMLButtonElement>('button.disclosure');
+      expect(disclosure, 'expected a disclosure button').to.exist;
+      expect(disclosure!.getAttribute('aria-label')).to.equal('Expand garage door');
+
+      disclosure!.click();
+      await elementUpdated(el);
+      expect(disclosure!.getAttribute('aria-label')).to.equal('Collapse garage door');
+    });
+
+    it('sanitizes the category key when building aria-controls / items id', async () => {
+      // Backend `device_class` keys are typically snake_case identifiers,
+      // but the SensorsByCategory shape is keyed by `string` — a key with
+      // a space or other non-token character would silently turn
+      // `aria-controls` into a multi-id reference and create an invalid
+      // DOM id. Sanitize defensively (#113).
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      const unsafeKey = 'smoke detector';
+      const sensors: Record<string, SensorEntity[]> = {
+        [unsafeKey]: [
+          { entity_id: 'binary_sensor.kitchen_smoke', name: 'Kitchen Smoke', state: 'off' },
+        ],
+      };
+      await setState(el, {
+        _sensors: sensors,
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set([unsafeKey]),
+      } as Partial<ActionEditor>);
+
+      const disclosure = el.shadowRoot?.querySelector<HTMLButtonElement>('button.disclosure');
+      expect(disclosure, 'expected a disclosure button').to.exist;
+      const ariaControls = disclosure!.getAttribute('aria-controls') ?? '';
+      // The reference must be a single token (no whitespace) and must
+      // resolve to a real element in the same root.
+      expect(ariaControls).to.not.match(/\s/, 'aria-controls must be a single id token');
+      expect(ariaControls.length).to.be.greaterThan(0);
+      const itemsContainer = el.shadowRoot?.getElementById(ariaControls);
+      expect(itemsContainer, 'aria-controls must resolve to the items container').to.exist;
+    });
+
+    it('omits aria-controls on the disclosure while the category is collapsed', async () => {
+      // The controlled element (`<div id=itemsId class="category-items">`)
+      // is only rendered while expanded. Pointing `aria-controls` at a
+      // missing id is invalid ARIA — omit the attribute until the
+      // target exists (#113).
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+      } as Partial<ActionEditor>);
+
+      const disclosure = el.shadowRoot?.querySelector<HTMLButtonElement>('button.disclosure');
+      expect(disclosure, 'expected a disclosure button').to.exist;
+      expect(disclosure!.hasAttribute('aria-controls')).to.equal(
+        false,
+        'aria-controls must be absent while the controlled element is not in the DOM',
+      );
+
+      disclosure!.click();
+      await elementUpdated(el);
+      const controls = disclosure!.getAttribute('aria-controls');
+      expect(controls, 'aria-controls must be set once the items container renders').to.not.equal(
+        null,
+      );
+      const target = el.shadowRoot?.getElementById(controls!);
+      expect(target, 'aria-controls must resolve to the items container').to.exist;
+    });
+
+    it('hides the disclosure button while a search query is active', async () => {
+      // Regression: while filtering, `isExpanded` is
+      // force-true via `isFiltering || ...`, so a chevron click had no
+      // visible effect but silently mutated `_expandedCategories` —
+      // clearing the search then restored a different collapse state than
+      // the user thought they left. Hiding the button removes the trap.
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+      } as Partial<ActionEditor>);
+
+      // Baseline: disclosures present without a search query.
+      const beforeCount = el.shadowRoot?.querySelectorAll('button.disclosure').length ?? 0;
+      expect(beforeCount).to.be.greaterThan(0);
+
+      await setState(el, { _sensorSearch: 'front' } as Partial<ActionEditor>);
+      expect(el.shadowRoot?.querySelectorAll('button.disclosure').length).to.equal(
+        0,
+        'disclosure must be hidden while a search query is active',
+      );
+
+      await setState(el, { _sensorSearch: '' } as Partial<ActionEditor>);
+      const afterCount = el.shadowRoot?.querySelectorAll('button.disclosure').length ?? 0;
+      expect(afterCount).to.equal(
+        beforeCount,
+        'disclosure must return after the search query is cleared',
+      );
     });
   });
 });
