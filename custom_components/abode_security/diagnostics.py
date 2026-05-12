@@ -81,7 +81,7 @@ async def async_get_config_entry_diagnostics(
     except (AttributeError, TypeError):
         connection_diagnostics = {"status": "unavailable"}
 
-    payload = {
+    payload: dict[str, Any] = {
         "polling": abode_system.polling,
         "polling_interval": abode_system.polling_interval,
         "enable_events": abode_system.enable_events,
@@ -98,4 +98,16 @@ async def async_get_config_entry_diagnostics(
         },
         "unique_id": entry.unique_id,
     }
+
+    socketio_inst = getattr(
+        getattr(abode_system.abode, "events", None),
+        "socketio",
+        None,
+    )
+    if socketio_inst is not None:
+        payload["socketio"] = {
+            "consecutive_connect_failures": socketio_inst.consecutive_connect_failures,
+            "last_packet_age_seconds": socketio_inst.last_packet_age_seconds,
+        }
+
     return cast(dict[str, Any], async_redact_data(payload, TO_REDACT))
