@@ -44,3 +44,12 @@ class list; see that log before any module deletion.
 `Unknown(Device)` is a fallback class defined in `base.py`. The audit
 log filters it out (only modules other than `base` are logged); `base.py`
 is never a delete candidate.
+
+## Phase 4 audit result (2026-05-12)
+
+Integration-test audit registered every device module under `devices/`.
+No modules are dead weight. The nine concrete device modules that appear
+in the audit are: `alarm`, `binary_sensor`, `camera`, `cover`, `light`,
+`lock`, `sensor`, `switch`, `valve`. Infrastructure modules (`__init__`,
+`_ancestry`, `base`, `pkg`, `status`) are excluded from the audit by
+design. No modules were deleted.

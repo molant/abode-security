@@ -379,6 +379,10 @@ class EventController:
         except Exception as exc:
             log.warning("Captured exception during Abode refresh: %s", exc)
 
+    # These three handlers remain sync (no async work needed). SocketIO._handle_event
+    # dispatches them inline via callback(*args); _execute_connection_callbacks
+    # schedules any async downstream callbacks as fire-and-forget tasks.
+
     def _on_socket_disconnected(self):
         """Socket IO disconnected callback."""
         with self._connection_lock:
