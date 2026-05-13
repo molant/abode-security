@@ -14,7 +14,10 @@ from homeassistant.components.websocket_api.decorators import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .action_manager import (
     MAX_DELAY_SECONDS,
@@ -552,14 +555,36 @@ async def websocket_entities_sensors(
     """Handle listing all binary sensors grouped by device_class."""
     sensors_by_class: dict[str, list[dict[str, Any]]] = {}
 
+    # The area hint surfaced next to each sensor in the panel (#120) prefers
+    # the entity-level area; if unset, fall back to the entity's device area.
+    # Registries are looked up once up-front (cheap accessors) instead of per
+    # sensor.
+    entity_reg = er.async_get(hass)
+    device_reg = dr.async_get(hass)
+    area_reg = ar.async_get(hass)
+
     for state in hass.states.async_all("binary_sensor"):
         device_class = state.attributes.get("device_class", "other") or "other"
         friendly_name = state.attributes.get("friendly_name", state.entity_id)
+
+        area_name: str | None = None
+        entry = entity_reg.async_get(state.entity_id)
+        if entry is not None:
+            area_id = entry.area_id
+            if area_id is None and entry.device_id is not None:
+                device = device_reg.async_get(entry.device_id)
+                if device is not None:
+                    area_id = device.area_id
+            if area_id is not None:
+                area = area_reg.async_get_area(area_id)
+                if area is not None:
+                    area_name = area.name
 
         sensor_info = {
             "entity_id": state.entity_id,
             "name": friendly_name,
             "state": state.state,
+            "area": area_name,
         }
 
         if device_class not in sensors_by_class:

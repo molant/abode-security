@@ -19,6 +19,27 @@ function toggleIn<T extends string>(arr: readonly T[], value: T): T[] {
   return arr.includes(value) ? arr.filter((x) => x !== value) : [...arr, value];
 }
 
+// Display order for sensor categories (#120). HA `device_class` is open-ended;
+// anything not in this list keeps its relative alphabetical order and is
+// appended after the prioritized categories so unknown classes still surface.
+const SENSOR_CATEGORY_PRIORITY = [
+  'door',
+  'window',
+  'motion',
+  'smoke',
+  'gas',
+  'carbon_monoxide',
+  'moisture',
+] as const;
+const SENSOR_CATEGORY_RANK = new Map<string, number>(
+  SENSOR_CATEGORY_PRIORITY.map((cat, idx) => [cat, idx]),
+);
+function compareSensorCategories(a: string, b: string): number {
+  const ra = SENSOR_CATEGORY_RANK.get(a) ?? Number.MAX_SAFE_INTEGER;
+  const rb = SENSOR_CATEGORY_RANK.get(b) ?? Number.MAX_SAFE_INTEGER;
+  return ra - rb || a.localeCompare(b);
+}
+
 /**
  * Modal editor for creating or updating an Abode action. Rendered
  * inside an `<abode-modal>` (size="lg"); the parent listens for the
@@ -252,6 +273,12 @@ export class ActionEditor extends LitElement {
       width: 14px;
       height: 14px;
       accent-color: var(--primary-color, #03a9f4);
+    }
+
+    .category-items .entity-area {
+      margin-left: 6px;
+      font-size: 12px;
+      color: var(--secondary-text-color, #757575);
     }
 
     .alarm-list {
@@ -674,9 +701,11 @@ export class ActionEditor extends LitElement {
 
     // Drive categories from the response keys, not a frontend allowlist —
     // the backend keys by HA `device_class`, which is open-ended.
+    // Order by usefulness (door/window/motion/smoke/…) instead of plain
+    // alphabetical so the most commonly used categories surface first (#120).
     const nonEmptyCategories = Object.keys(sensorsByCategory)
       .filter((cat) => (sensorsByCategory[cat] ?? []).length > 0)
-      .sort();
+      .sort(compareSensorCategories);
 
     if (nonEmptyCategories.length === 0) {
       return html`<div class="loading">No sensors available</div>`;
@@ -795,6 +824,9 @@ export class ActionEditor extends LitElement {
                               @change=${() => this._toggleSensor(sensor.entity_id)}
                             />
                             ${sensor.name}
+                            ${sensor.area
+                              ? html`<span class="entity-area">· ${sensor.area}</span>`
+                              : nothing}
                           </label>
                         `,
                       )}
@@ -813,9 +845,20 @@ export class ActionEditor extends LitElement {
       return html`<div class="loading">No alarms available</div>`;
     }
 
+    // Strip the redundant "Abode Alarm" prefix HA produces from device-scoped
+    // friendly_names ("Abode Alarm CO Alarm" → "CO Alarm") and sort by the
+    // resulting display label (#120). `entity_id` is left untouched so save
+    // payloads are unaffected.
+    const displayAlarms = this._alarms
+      .map((alarm) => ({
+        entity_id: alarm.entity_id,
+        label: alarm.name.replace(/^Abode Alarm\s+/i, ''),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+
     return html`
       <div class="alarm-list">
-        ${this._alarms.map(
+        ${displayAlarms.map(
           (alarm) => html`
             <label>
               <input
@@ -823,7 +866,7 @@ export class ActionEditor extends LitElement {
                 .checked=${this._selectedAlarms.includes(alarm.entity_id)}
                 @change=${() => this._toggleAlarm(alarm.entity_id)}
               />
-              ${alarm.name}
+              ${alarm.label}
             </label>
           `,
         )}
