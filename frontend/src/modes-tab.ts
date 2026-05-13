@@ -43,13 +43,13 @@ export class ModesTab extends LitElement {
     .modes-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 16px;
+      gap: 12px;
     }
 
     .mode-card {
       background: var(--card-background-color, #fff);
       border-radius: 8px;
-      padding: 20px;
+      padding: 12px 14px;
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       border: 2px solid transparent;
       transition:
@@ -65,13 +65,13 @@ export class ModesTab extends LitElement {
     .mode-header {
       display: flex;
       align-items: center;
-      gap: 12px;
-      margin-bottom: 12px;
+      gap: 10px;
+      margin-bottom: 8px;
     }
 
     .mode-icon {
-      width: 48px;
-      height: 48px;
+      width: 36px;
+      height: 36px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -81,12 +81,12 @@ export class ModesTab extends LitElement {
     }
 
     .mode-icon ha-icon {
-      --mdc-icon-size: 24px;
+      --mdc-icon-size: 20px;
     }
 
     .mode-info h3 {
       margin: 0;
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 500;
       color: var(--primary-text-color);
       text-transform: capitalize;
@@ -114,15 +114,15 @@ export class ModesTab extends LitElement {
     }
 
     .action-list {
-      margin: 16px 0 0 0;
+      margin: 12px 0 0 0;
       padding: 0;
       list-style: none;
     }
 
     .action-list li {
-      padding: 8px 0;
+      padding: 6px 0;
       border-bottom: 1px solid var(--divider-color, #e0e0e0);
-      font-size: 14px;
+      font-size: 13px;
       color: var(--primary-text-color);
       display: flex;
       align-items: center;
@@ -187,13 +187,13 @@ export class ModesTab extends LitElement {
 
     .switch-button {
       width: 100%;
-      margin-top: 16px;
-      padding: 10px 16px;
+      margin-top: 12px;
+      padding: 8px 14px;
       border: 1px solid var(--primary-color, #03a9f4);
       border-radius: 4px;
       background: transparent;
       color: var(--primary-color, #03a9f4);
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 500;
       cursor: pointer;
       transition:
@@ -217,10 +217,10 @@ export class ModesTab extends LitElement {
     }
 
     .current-mode-label {
-      margin-top: 16px;
-      padding: 10px 16px;
+      margin-top: 12px;
+      padding: 8px 14px;
       text-align: center;
-      font-size: 13px;
+      font-size: 12px;
       color: var(--secondary-text-color);
       font-style: italic;
     }

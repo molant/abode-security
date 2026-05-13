@@ -39,6 +39,10 @@ export interface SensorEntity {
   entity_id: string;
   name: string;
   state: string;
+  // Optional HA area name surfaced next to each sensor in the editor (#120).
+  // Falls back to the device's area on the backend; `null` when neither is
+  // set. Older backends predating #120 may omit this entirely, hence optional.
+  area?: string | null;
 }
 
 // Backend keys sensors by Home Assistant `device_class`, which is open-ended

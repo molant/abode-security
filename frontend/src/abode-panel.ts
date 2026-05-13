@@ -14,7 +14,7 @@ import './actions-tab';
 @customElement('abode-configuration-panel')
 export class AbodeConfigurationPanel extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;
-  @state() private _activeTab: 'modes' | 'actions' = 'actions';
+  @state() private _activeTab: 'modes' | 'actions' = 'modes';
 
   static styles = css`
     :host {
@@ -100,16 +100,6 @@ export class AbodeConfigurationPanel extends LitElement {
         <div class="tab-bar" role="tablist">
           <button
             role="tab"
-            id="actions-tab"
-            aria-selected=${this._activeTab === 'actions'}
-            aria-controls="actions-panel"
-            class=${this._activeTab === 'actions' ? 'active' : ''}
-            @click=${() => (this._activeTab = 'actions')}
-          >
-            Actions
-          </button>
-          <button
-            role="tab"
             id="modes-tab"
             aria-selected=${this._activeTab === 'modes'}
             aria-controls="modes-panel"
@@ -117,6 +107,16 @@ export class AbodeConfigurationPanel extends LitElement {
             @click=${() => (this._activeTab = 'modes')}
           >
             Modes
+          </button>
+          <button
+            role="tab"
+            id="actions-tab"
+            aria-selected=${this._activeTab === 'actions'}
+            aria-controls="actions-panel"
+            class=${this._activeTab === 'actions' ? 'active' : ''}
+            @click=${() => (this._activeTab = 'actions')}
+          >
+            Actions
           </button>
         </div>
 

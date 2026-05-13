@@ -1115,6 +1115,111 @@ class TestWebSocketSensorsAPI:
         assert "other" in response["result"]["sensors"]
         assert len(response["result"]["sensors"]["other"]) == 1
 
+    async def test_ws_entities_sensors_includes_area_from_entity(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Sensor payload exposes the entity's area name (#120).
+
+        The user couldn't tell from "Intrusion" alone which room/device a
+        sensor came from. Surfacing the HA area gives the panel UI a hint
+        to render next to the sensor name.
+        """
+        from homeassistant.helpers import area_registry as ar
+        from homeassistant.helpers import entity_registry as er
+
+        area_reg = ar.async_get(hass)
+        area = area_reg.async_create("Living Room")
+
+        entity_reg = er.async_get(hass)
+        entity_reg.async_get_or_create(
+            "binary_sensor",
+            "abode",
+            "front_door_sensor_unique",
+            suggested_object_id="front_door",
+        )
+        entity_reg.async_update_entity("binary_sensor.front_door", area_id=area.id)
+
+        hass.states.async_set(
+            "binary_sensor.front_door",
+            "off",
+            {"device_class": "door", "friendly_name": "Front Door"},
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        door = response["result"]["sensors"]["door"][0]
+        assert door["area"] == "Living Room"
+
+    async def test_ws_entities_sensors_falls_back_to_device_area(
+        self, hass, hass_ws_client
+    ) -> None:
+        """When the entity has no area, fall back to its device's area (#120)."""
+        from homeassistant.helpers import area_registry as ar
+        from homeassistant.helpers import device_registry as dr
+        from homeassistant.helpers import entity_registry as er
+
+        area_reg = ar.async_get(hass)
+        area = area_reg.async_create("Garage")
+
+        # Register a config entry so device_registry has something to attach
+        # the device to (HA requires it for async_get_or_create).
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        mock_entry = MockConfigEntry(domain="abode_security", data={})
+        mock_entry.add_to_hass(hass)
+
+        device_reg = dr.async_get(hass)
+        device = device_reg.async_get_or_create(
+            config_entry_id=mock_entry.entry_id,
+            identifiers={("abode_security", "garage-door-device")},
+            name="Garage Door",
+        )
+        device_reg.async_update_device(device.id, area_id=area.id)
+
+        entity_reg = er.async_get(hass)
+        entity_reg.async_get_or_create(
+            "binary_sensor",
+            "abode",
+            "garage_sensor_unique",
+            suggested_object_id="garage",
+            device_id=device.id,
+        )
+
+        hass.states.async_set(
+            "binary_sensor.garage",
+            "off",
+            {"device_class": "door", "friendly_name": "Garage"},
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        garage = response["result"]["sensors"]["door"][0]
+        assert garage["area"] == "Garage"
+
+    async def test_ws_entities_sensors_area_is_null_when_unassigned(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Sensors without entity- or device-level area report `area: None` (#120)."""
+        hass.states.async_set(
+            "binary_sensor.unregistered_door",
+            "off",
+            {"device_class": "door", "friendly_name": "Unregistered"},
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        door = response["result"]["sensors"]["door"][0]
+        assert door["area"] is None
+
 
 @pytest.mark.usefixtures("mock_abode", "setup_websocket_api")
 class TestWebSocketAlarmsAPI:

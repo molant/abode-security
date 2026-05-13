@@ -165,6 +165,147 @@ describe('ActionEditor', () => {
       expect(el.shadowRoot?.textContent).to.include('Fire Alarm');
     });
 
+    it('strips the "Abode Alarm" prefix and sorts alarms alphabetically (#120)', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+
+      // Mirrors the real HA friendly_names that prompted #120.
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: [
+          { entity_id: 'switch.abode_panic_alarm', name: 'Abode Alarm CO Alarm', type: 'panic' },
+          {
+            entity_id: 'switch.abode_smoke_co_alarm',
+            name: 'Abode Alarm Smoke CO Alarm',
+            type: 'fire',
+          },
+          { entity_id: 'switch.abode_smoke_alarm', name: 'Abode Alarm Smoke Alarm', type: 'fire' },
+          {
+            entity_id: 'switch.abode_burglar_alarm',
+            name: 'Abode Alarm Burglar Alarm',
+            type: 'panic',
+          },
+        ],
+        _loading: false,
+      } as Partial<ActionEditor>);
+
+      const labels = Array.from(
+        el.shadowRoot?.querySelectorAll<HTMLLabelElement>('.alarm-list label') ?? [],
+      ).map((l) => l.textContent?.trim().replace(/\s+/g, ' ') ?? '');
+
+      // Prefix stripped from every visible label.
+      expect(labels.every((l) => !/Abode Alarm/i.test(l))).to.equal(
+        true,
+        `expected no "Abode Alarm" prefix in labels, got: ${JSON.stringify(labels)}`,
+      );
+      // Sorted alphabetically by the stripped label.
+      expect(labels).to.deep.equal(['Burglar Alarm', 'CO Alarm', 'Smoke Alarm', 'Smoke CO Alarm']);
+    });
+
+    it('renders the sensor area hint next to the name when present (#120)', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+
+      const sensors: Record<string, SensorEntity[]> = {
+        door: [
+          {
+            entity_id: 'binary_sensor.front_door',
+            name: 'Front Door',
+            state: 'off',
+            area: 'Living Room',
+          },
+          // Sensor without area must still render without crashing or
+          // showing a stray hint.
+          { entity_id: 'binary_sensor.shed_door', name: 'Shed Door', state: 'off', area: null },
+        ],
+      };
+      await setState(el, {
+        _sensors: sensors,
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set(Object.keys(sensors)),
+      } as Partial<ActionEditor>);
+
+      const items = Array.from(
+        el.shadowRoot?.querySelectorAll<HTMLLabelElement>('.category-items label') ?? [],
+      );
+      const frontDoor = items.find((l) => /Front Door/.test(l.textContent ?? ''));
+      const shedDoor = items.find((l) => /Shed Door/.test(l.textContent ?? ''));
+
+      expect(frontDoor?.querySelector('.entity-area')?.textContent).to.match(/Living Room/);
+      expect(shedDoor?.querySelector('.entity-area')).to.equal(
+        null,
+        'sensor without area should not render an empty hint',
+      );
+    });
+
+    it('orders sensor categories by usefulness, others alphabetical at end (#120)', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+
+      // Categories deliberately given in alphabetical order to prove the
+      // priority comparator (not the input order) is what drives the render.
+      const sensors: Record<string, SensorEntity[]> = {
+        carbon_monoxide: [{ entity_id: 'binary_sensor.co', name: 'CO Sensor', state: 'off' }],
+        door: [{ entity_id: 'binary_sensor.door', name: 'Front Door', state: 'off' }],
+        moisture: [{ entity_id: 'binary_sensor.leak', name: 'Leak', state: 'off' }],
+        motion: [{ entity_id: 'binary_sensor.motion', name: 'Living Motion', state: 'off' }],
+        safety: [{ entity_id: 'binary_sensor.intrusion', name: 'Intrusion', state: 'off' }],
+        smoke: [{ entity_id: 'binary_sensor.smoke', name: 'Smoke', state: 'off' }],
+        window: [{ entity_id: 'binary_sensor.window', name: 'Kitchen Window', state: 'off' }],
+      };
+      await setState(el, {
+        _sensors: sensors,
+        _alarms: createMockAlarms(),
+        _loading: false,
+      } as Partial<ActionEditor>);
+
+      const headers = Array.from(
+        el.shadowRoot?.querySelectorAll('.category-header > span') ?? [],
+      ).map((s) => (s.textContent ?? '').replace(/\s*\(\d+\)\s*$/, '').trim());
+
+      // Priority categories come first, in the documented order. Unknown
+      // categories (safety) sort alphabetically after. Underscores in the
+      // device_class key render as spaces (`humanLabel` in action-editor).
+      expect(headers).to.deep.equal([
+        'door',
+        'window',
+        'motion',
+        'smoke',
+        'carbon monoxide',
+        'moisture',
+        'safety',
+      ]);
+    });
+
+    it('falls through gracefully for alarm names without the "Abode Alarm" prefix (#120)', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: [
+          { entity_id: 'switch.abode_panic_alarm', name: 'Panic Alarm', type: 'panic' },
+          { entity_id: 'switch.abode_fire_alarm', name: 'Fire Alarm', type: 'fire' },
+        ],
+        _loading: false,
+      } as Partial<ActionEditor>);
+
+      const labels = Array.from(
+        el.shadowRoot?.querySelectorAll<HTMLLabelElement>('.alarm-list label') ?? [],
+      ).map((l) => l.textContent?.trim().replace(/\s+/g, ' ') ?? '');
+
+      expect(labels).to.deep.equal(['Fire Alarm', 'Panic Alarm']);
+    });
+
     it('shows all three mode checkboxes', async () => {
       const hass = createMockHass();
       const el = await fixture<ActionEditor>(html`
