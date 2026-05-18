@@ -26,8 +26,8 @@ dependencies = [
 # requirements-dev.txt; pyproject.toml + uv.lock is authoritative now.
 dev = [
     # Type checking
-    "mypy==2.0.0",
-    "types-requests==2.33.0.20260508",
+    "mypy==2.1.0",
+    "types-requests==2.33.0.20260518",
     # Pyright complements mypy by catching cached_property / variable-override
     # compatibility issues against HA's entity base classes (issue #70). Pinned
     # to match the locally-validated version; bump deliberately with the next
@@ -46,11 +46,11 @@ dev = [
     "aioresponses==0.7.8",
 
     # Code quality
-    "ruff==0.15.12",
+    "ruff==0.15.13",
 
     # Mock server dependencies (for running locally outside Docker)
     "fastapi==0.136.1",
-    "uvicorn[standard]==0.46.0",
+    "uvicorn[standard]==0.47.0",
 
     # Used directly by config_flow.py, conftest.py, and the mock server.
     # Lower-bound only: homeassistant pins requests to a specific patch version
@@ -66,7 +66,7 @@ dev = [
     # Home Assistant camera component dependencies. Not imported directly;
     # installed so the HA `camera`/`stream` integrations can be imported
     # during tests. Pin matches HA's own constraint to avoid dev/prod drift.
-    "PyTurboJPEG==1.8.3",
+    "PyTurboJPEG==2.2.0",
 ]
 
 [tool.pytest.ini_options]
