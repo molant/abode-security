@@ -28,7 +28,7 @@
   },
   "homepage": "https://github.com/molant/abode-security#readme",
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.60.0",
     "axios": "^1.13.2"
   }
 }
