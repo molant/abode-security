@@ -570,6 +570,17 @@ async def websocket_entities_sensors(
         area_name: str | None = None
         entry = entity_reg.async_get(state.entity_id)
         if entry is not None:
+            # Respect entity-registry visibility: skip anything the user
+            # (or an integration) has hidden. Disabled entities are
+            # already excluded — they don't get a state, so async_all
+            # skips them. Sensors without a registry entry (e.g. legacy
+            # templates set directly via hass.states.async_set) have no
+            # hidden_by signal and stay visible. ARCHITECTURE.md
+            # documents the intentional asymmetry with action_trigger,
+            # which does NOT filter hidden so existing automations keep
+            # firing.
+            if entry.hidden_by is not None:
+                continue
             area_id = entry.area_id
             if area_id is None and entry.device_id is not None:
                 device = device_reg.async_get(entry.device_id)

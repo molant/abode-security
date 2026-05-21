@@ -1220,6 +1220,77 @@ class TestWebSocketSensorsAPI:
         door = response["result"]["sensors"]["door"][0]
         assert door["area"] is None
 
+    @pytest.mark.parametrize(
+        "hider",
+        [
+            er.RegistryEntryHider.USER,
+            er.RegistryEntryHider.INTEGRATION,
+        ],
+    )
+    async def test_ws_entities_sensors_omits_hidden_entities(
+        self, hass, hass_ws_client, hider
+    ) -> None:
+        """Sensors hidden in the entity registry must not surface in the picker.
+
+        The picker is the only place users discover sensors to wire
+        into actions; surfacing a hidden one re-introduces the same
+        trap as the original "Home Test" bug — a sensor that looks
+        pickable but won't fire reliably (the user hid it for a
+        reason). Disabled entities are already excluded since they
+        don't get a state at all; this test covers the hidden case.
+
+        Parametrized across `RegistryEntryHider` variants so a future
+        refactor that narrows the predicate to e.g. `hidden_by ==
+        USER` (instead of the documented `is not None`) breaks the
+        INTEGRATION arm loudly.
+        """
+        entity_reg = er.async_get(hass)
+
+        # Visible sensor — should appear in the response.
+        entity_reg.async_get_or_create(
+            "binary_sensor",
+            "abode",
+            "visible_unique",
+            suggested_object_id="visible",
+        )
+        hass.states.async_set(
+            "binary_sensor.visible",
+            "off",
+            {"device_class": "door", "friendly_name": "Visible"},
+        )
+
+        # Hidden sensor — should be filtered out regardless of which
+        # actor hid it (user via entity-settings, or an integration
+        # marking the entity diagnostic). Source code checks
+        # `hidden_by is not None`, so every non-None hider hits the
+        # same skip branch.
+        entity_reg.async_get_or_create(
+            "binary_sensor",
+            "abode",
+            "hidden_unique",
+            suggested_object_id="hidden",
+        )
+        entity_reg.async_update_entity(
+            "binary_sensor.hidden",
+            hidden_by=hider,
+        )
+        hass.states.async_set(
+            "binary_sensor.hidden",
+            "off",
+            {"device_class": "door", "friendly_name": "Hidden"},
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        door_entity_ids = [
+            s["entity_id"] for s in response["result"]["sensors"]["door"]
+        ]
+        assert "binary_sensor.visible" in door_entity_ids
+        assert "binary_sensor.hidden" not in door_entity_ids
+
 
 @pytest.mark.usefixtures("mock_abode", "setup_websocket_api")
 class TestWebSocketAlarmsAPI:
