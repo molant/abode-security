@@ -7,6 +7,7 @@ when binary sensors activate.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +19,9 @@ from homeassistant.core import (
     HomeAssistant,
     callback,
 )
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later
 
 from .const import DOMAIN
@@ -25,6 +29,20 @@ from .helpers import find_abode_alarm_panel
 
 if TYPE_CHECKING:
     from .action_manager import AbodeAction, ActionManager
+
+
+@dataclass(frozen=True)
+class _SensorTriggerContext:
+    """Immutable snapshot of sensor state captured at the moment of trigger."""
+
+    entity_id: str
+    friendly_name: str | None
+    device_class: str | None
+    previous_state: str | None
+    new_state: str | None
+    area_id: str | None
+    area_name: str | None
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,22 +130,53 @@ class ActionTriggerCoordinator:
         if old_state is None or old_state.state != "off":
             return
 
+        # Capture sensor context at trigger time. Area resolution uses the
+        # entity → device fallback chain so a sensor without a direct area
+        # still gets area context from its device.
+        area_id: str | None = None
+        entity_entry = er.async_get(self._hass).async_get(entity_id)
+        if entity_entry is not None:
+            area_id = entity_entry.area_id
+            if area_id is None and entity_entry.device_id is not None:
+                device_entry = dr.async_get(self._hass).async_get(
+                    entity_entry.device_id
+                )
+                if device_entry is not None:
+                    area_id = device_entry.area_id
+
+        area_name: str | None = None
+        if area_id is not None:
+            area_entry = ar.async_get(self._hass).async_get_area(area_id)
+            if area_entry is not None:
+                area_name = area_entry.name
+
+        context = _SensorTriggerContext(
+            entity_id=entity_id,
+            friendly_name=new_state.attributes.get("friendly_name"),
+            device_class=new_state.attributes.get("device_class"),
+            previous_state=old_state.state,
+            new_state=new_state.state,
+            area_id=area_id,
+            area_name=area_name,
+        )
+
         # Schedule processing (don't block event loop)
         self._hass.async_create_task(
-            self._process_sensor_activation(entity_id),
+            self._process_sensor_activation(context),
             f"action_trigger_{entity_id}",
         )
 
-    async def _process_sensor_activation(self, entity_id: str) -> None:
+    async def _process_sensor_activation(self, context: _SensorTriggerContext) -> None:
         """Process a sensor activation and trigger matching actions.
 
         Args:
-            entity_id: The binary_sensor entity that was activated
+            context: Snapshot of sensor state captured at the moment of trigger
         """
         current_mode = self._get_current_mode()
         if current_mode is None:
             _LOGGER.debug(
-                "No alarm panel found, skipping action trigger for %s", entity_id
+                "No alarm panel found, skipping action trigger for %s",
+                context.entity_id,
             )
             return
 
@@ -136,18 +185,18 @@ class ActionTriggerCoordinator:
 
         for action in actions:
             # Check if this sensor is in the action's sensor list
-            if entity_id not in action.sensor_entity_ids:
+            if context.entity_id not in action.sensor_entity_ids:
                 continue
 
             # Check debounce
-            if not self._should_trigger(action.id, entity_id):
+            if not self._should_trigger(action.id, context.entity_id):
                 _LOGGER.debug(
-                    "Debouncing action %s for sensor %s", action.name, entity_id
+                    "Debouncing action %s for sensor %s", action.name, context.entity_id
                 )
                 continue
 
             # Trigger the action
-            await self._trigger_action(action, entity_id, current_mode)
+            await self._trigger_action(action, context, current_mode)
 
     def _should_trigger(self, action_id: str, sensor_id: str) -> bool:
         """Check if an action should trigger based on debounce settings.
@@ -174,25 +223,26 @@ class ActionTriggerCoordinator:
         return True
 
     async def _trigger_action(
-        self, action: AbodeAction, triggered_by: str, current_mode: str
+        self, action: AbodeAction, context: _SensorTriggerContext, current_mode: str
     ) -> None:
         """Trigger an action, potentially with delay.
 
         Args:
             action: The action to trigger
-            triggered_by: The sensor entity ID that triggered this
+            context: Snapshot of sensor state captured at the moment of trigger;
+                     carried into the closure so delayed callbacks use trigger-time data
             current_mode: The current alarm mode
         """
         _LOGGER.info(
             "Action '%s' triggered by %s in mode %s",
             action.name,
-            triggered_by,
+            context.entity_id,
             current_mode,
         )
 
         if action.delay_seconds > 0:
             # Schedule delayed execution using HA's async_call_later
-            task_key = f"{action.id}:{triggered_by}"
+            task_key = f"{action.id}:{context.entity_id}"
             _LOGGER.debug(
                 "Delaying action '%s' for %d seconds", action.name, action.delay_seconds
             )
@@ -202,7 +252,7 @@ class ActionTriggerCoordinator:
                 """Execute the delayed action."""
                 self._pending_delays.pop(task_key, None)
                 self._hass.async_create_task(
-                    self._delayed_execute(action, triggered_by, current_mode),
+                    self._delayed_execute(action, context, current_mode),
                     f"action_delay_exec_{task_key}",
                 )
 
@@ -215,16 +265,16 @@ class ActionTriggerCoordinator:
             self._pending_delays[task_key] = unsub
         else:
             # Execute immediately
-            await self._execute_action(action, triggered_by, current_mode)
+            await self._execute_action(action, context, current_mode)
 
     async def _delayed_execute(
-        self, action: AbodeAction, triggered_by: str, current_mode: str
+        self, action: AbodeAction, context: _SensorTriggerContext, current_mode: str
     ) -> None:
         """Execute an action after delay timer fires.
 
         Args:
             action: The action to execute
-            triggered_by: The sensor entity ID that triggered this
+            context: Snapshot of sensor state captured at the moment of trigger
             current_mode: The current alarm mode
         """
         # Re-check if action is still enabled
@@ -258,16 +308,16 @@ class ActionTriggerCoordinator:
         # Pass the freshly fetched current_action so any edits made during the
         # delay window (e.g. updated alarm_entity_ids) take effect — the
         # captured `action` reference may now be stale.
-        await self._execute_action(current_action, triggered_by, current_mode_now)
+        await self._execute_action(current_action, context, current_mode_now)
 
     async def _execute_action(
-        self, action: AbodeAction, triggered_by: str, current_mode: str
+        self, action: AbodeAction, context: _SensorTriggerContext, current_mode: str
     ) -> None:
         """Execute an action by triggering alarms.
 
         Args:
             action: The action to execute
-            triggered_by: The sensor entity ID that triggered this
+            context: Snapshot of sensor state captured at the moment of trigger
             current_mode: The current alarm mode
         """
         alarms_triggered: list[str] = []
@@ -298,7 +348,7 @@ class ActionTriggerCoordinator:
         event_data = {
             "action_id": action.id,
             "action_name": action.name,
-            "triggered_by": triggered_by,
+            "triggered_by": context.entity_id,
             "mode": current_mode,
             "alarms_triggered": alarms_triggered,
             "alarms_failed": alarms_failed,

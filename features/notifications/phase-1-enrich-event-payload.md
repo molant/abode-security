@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in_progress
 phase: 1
 feature: notifications
 title: Enrich event payload
@@ -41,9 +41,9 @@ No new files in this phase.
 
 ### Baseline Test Verification (before starting implementation)
 
-- [ ] Run `./scripts/check.sh` and confirm it passes (ruff, mypy, pyright, pytest unit suite).
-- [ ] Run `uv run pytest -m ""` and confirm the full suite (including integration markers) passes against the running mock server (`./scripts/dev.sh`).
-- [ ] If any test fails, **fix and commit separately** before starting Phase 1. Do not bundle baseline fixes with this phase's commit.
+- [x] Run `./scripts/check.sh` and confirm it passes (ruff, mypy, pyright, pytest unit suite).
+- [x] Run `uv run pytest -m ""` and confirm the full suite (including integration markers) passes against the running mock server (`./scripts/dev.sh`).
+- [x] If any test fails, **fix and commit separately** before starting Phase 1. Do not bundle baseline fixes with this phase's commit.
 
 ### Sub-Phase A: Thread sensor state and registry context through the trigger chain
 
@@ -51,7 +51,7 @@ Deployable on its own: at the end of this sub-phase the existing event payload i
 
 #### Code changes — `action_trigger.py`
 
-- [ ] Introduce a private frozen dataclass `_SensorTriggerContext` at the top of the module (after the existing imports). Fields, all immutable:
+- [x] Introduce a private frozen dataclass `_SensorTriggerContext` at the top of the module (after the existing imports). Fields, all immutable:
   - `entity_id: str`
   - `friendly_name: str | None`
   - `device_class: str | None`
@@ -59,36 +59,36 @@ Deployable on its own: at the end of this sub-phase the existing event payload i
   - `new_state: str | None`
   - `area_id: str | None`
   - `area_name: str | None`
-- [ ] In `_handle_state_change` (currently at lines 91–119), after the existing `off → on` guards, build a `_SensorTriggerContext`:
+- [x] In `_handle_state_change` (currently at lines 91–119), after the existing `off → on` guards, build a `_SensorTriggerContext`:
   - `friendly_name` ← `new_state.attributes.get("friendly_name")`
   - `device_class` ← `new_state.attributes.get("device_class")`
   - `previous_state` ← `old_state.state` (always populated here because of the `old_state.state != "off"` guard above, but type-annotate as `str | None` for symmetry)
   - `new_state` ← `new_state.state` (literal `"on"`, but keep the field nullable)
   - `area_id` ← `entity_registry.async_get(hass).async_get(entity_id)` → `.area_id` if the registry entry exists; fall back to `device_registry.async_get(hass).async_get(entry.device_id).area_id` when the entity has no direct area but its device does; else `None`
   - `area_name` ← `area_registry.async_get(hass).async_get_area(area_id).name` if `area_id` is non-null and the area exists; else `None`
-- [ ] Pass this `_SensorTriggerContext` object into `_process_sensor_activation` (currently takes `entity_id: str`). Update its signature to take the context. Internally it still uses `context.entity_id` for the membership check against `action.sensor_entity_ids`.
-- [ ] Update `_trigger_action` to take and forward the context to `_execute_action`. Update its docstring.
-- [ ] In the delayed-execution branch inside `_trigger_action` (lines 193–215), capture the context in the `delayed_callback` closure so `_delayed_execute` receives it intact even though the user may have edited the action in the meantime.
-- [ ] Update `_delayed_execute` to accept and forward the context.
-- [ ] Update `_execute_action` to take the context. **Decision (do not deviate)**: replace the `triggered_by: str` parameter with `context: _SensorTriggerContext` on all four methods (`_process_sensor_activation`, `_trigger_action`, `_delayed_execute`, `_execute_action`). Inside `_execute_action`, the existing `event_data["triggered_by"]` continues to be a string — populate it from `context.entity_id`. Do **not** keep both a `triggered_by` arg and a `context` arg in parallel; that is the "mixed" path that this checklist forbids.
+- [x] Pass this `_SensorTriggerContext` object into `_process_sensor_activation` (currently takes `entity_id: str`). Update its signature to take the context. Internally it still uses `context.entity_id` for the membership check against `action.sensor_entity_ids`.
+- [x] Update `_trigger_action` to take and forward the context to `_execute_action`. Update its docstring.
+- [x] In the delayed-execution branch inside `_trigger_action` (lines 193–215), capture the context in the `delayed_callback` closure so `_delayed_execute` receives it intact even though the user may have edited the action in the meantime.
+- [x] Update `_delayed_execute` to accept and forward the context.
+- [x] Update `_execute_action` to take the context. **Decision (do not deviate)**: replace the `triggered_by: str` parameter with `context: _SensorTriggerContext` on all four methods (`_process_sensor_activation`, `_trigger_action`, `_delayed_execute`, `_execute_action`). Inside `_execute_action`, the existing `event_data["triggered_by"]` continues to be a string — populate it from `context.entity_id`. Do **not** keep both a `triggered_by` arg and a `context` arg in parallel; that is the "mixed" path that this checklist forbids.
 
 #### Imports
 
-- [ ] Add at top of `action_trigger.py`:
+- [x] Add at top of `action_trigger.py`:
   - `from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er`
   - (already-present imports for `Event`, `EventStateChangedData`, etc., stay)
-- [ ] Note: the HA convention is `async_get` returns the singleton registry synchronously despite the name — do not `await` these.
+- [x] Note: the HA convention is `async_get` returns the singleton registry synchronously despite the name — do not `await` these.
 
 #### Type discipline
 
-- [ ] Run `uv run mypy custom_components/abode_security/action_trigger.py` and `uv run pyright custom_components/abode_security/action_trigger.py` — both must be clean.
-- [ ] Add `from __future__ import annotations` at the top of `action_trigger.py` if it's not already there (it is — verify).
+- [x] Run `uv run mypy custom_components/abode_security/action_trigger.py` and `uv run pyright custom_components/abode_security/action_trigger.py` — both must be clean.
+- [x] Add `from __future__ import annotations` at the top of `action_trigger.py` if it's not already there (it is — verify).
 
 #### Tests
 
-- [ ] Update existing `test_coordinator_fires_event` in `tests/test_action_trigger.py:331` to construct the `EventStateChangedData` with `friendly_name` and `device_class` attributes on the `new_state`. Assert the existing payload keys still appear and are unchanged — specifically, assert that the projection of captured `event_data` over the original 7 keys (`action_id`, `action_name`, `triggered_by`, `mode`, `alarms_triggered`, `alarms_failed`, `timestamp`) has the same types and values it had pre-Phase-1 (use `assert {k: event_data[k] for k in EXISTING_KEYS} == expected_existing` so a future regression that silently changes a value type — e.g. `triggered_by` from `str` to a context object — is caught). Do **not** assert `set(event_data) == EXISTING_KEYS` after Sub-Phase B, because the payload intentionally has 13 keys at that point.
-- [ ] Add a new test `test_trigger_context_threaded_through_delay`: configure an action with `delay_seconds=2`, fire the state change with a specific `friendly_name`, mutate the live `hass.states` mid-delay to remove the attribute, fire the timer, assert the captured `friendly_name` is preserved in the eventual event payload.
-- [ ] Add a new test `test_trigger_context_built_for_sensor_without_area`: register a sensor entity with no `area_id` and no `device_id`; trigger; assert the context is built with `area_id=None, area_name=None` and no exception.
+- [x] Update existing `test_coordinator_fires_event` in `tests/test_action_trigger.py:331` to construct the `EventStateChangedData` with `friendly_name` and `device_class` attributes on the `new_state`. Assert the existing payload keys still appear and are unchanged — specifically, assert that the projection of captured `event_data` over the original 7 keys (`action_id`, `action_name`, `triggered_by`, `mode`, `alarms_triggered`, `alarms_failed`, `timestamp`) has the same types and values it had pre-Phase-1 (use `assert {k: event_data[k] for k in EXISTING_KEYS} == expected_existing` so a future regression that silently changes a value type — e.g. `triggered_by` from `str` to a context object — is caught). Do **not** assert `set(event_data) == EXISTING_KEYS` after Sub-Phase B, because the payload intentionally has 13 keys at that point.
+- [x] Add a new test `test_trigger_context_threaded_through_delay`: configure an action with `delay_seconds=2`, fire the state change with a specific `friendly_name`, mutate the live `hass.states` mid-delay to remove the attribute, fire the timer, assert the captured `friendly_name` is preserved in the eventual event payload.
+- [x] Add a new test `test_trigger_context_built_for_sensor_without_area`: register a sensor entity with no `area_id` and no `device_id`; trigger; assert the context is built with `area_id=None, area_name=None` and no exception.
 
 ### Sub-Phase B: Add the new payload keys
 
