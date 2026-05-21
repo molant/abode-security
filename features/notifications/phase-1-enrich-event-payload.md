@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: done
 phase: 1
 feature: notifications
 title: Enrich event payload
@@ -96,7 +96,7 @@ Deployable on its own: builds on Sub-Phase A. Now the event consumers see the ne
 
 #### Code changes — `action_trigger.py`
 
-- [ ] In `_execute_action`, modify the `event_data` dict construction (lines 298–306). Append (do not reorder existing keys):
+- [x] In `_execute_action`, modify the `event_data` dict construction (lines 298–306). Append (do not reorder existing keys):
   ```python
   event_data = {
       "action_id": action.id,
@@ -115,30 +115,30 @@ Deployable on its own: builds on Sub-Phase A. Now the event consumers see the ne
       "sensor_area_name": context.area_name,
   }
   ```
-- [ ] Confirm payload key ordering: existing keys first (in their current order), new keys appended at the end. This is purely for diff readability and event-log scannability — HA event consumers should not depend on key order.
+- [x] Confirm payload key ordering: existing keys first (in their current order), new keys appended at the end. This is purely for diff readability and event-log scannability — HA event consumers should not depend on key order.
 
 #### Tests
 
-- [ ] Extend `test_coordinator_fires_event` to assert each new key is present with the exact expected value.
-- [ ] Add `test_event_payload_null_when_attributes_missing`: trigger from a sensor whose `new_state.attributes` lacks `friendly_name` and `device_class`. Assert `sensor_friendly_name` and `sensor_device_class` are `None` (not missing, not empty string, not `"unknown"`).
-- [ ] Add `test_event_payload_area_resolved_via_entity_registry`: register an entity in the entity registry with an explicit `area_id`. Confirm `sensor_area_id` and `sensor_area_name` propagate.
-- [ ] Add `test_event_payload_area_resolved_via_device_fallback`: entity has no direct `area_id` but its `device_id` does. Confirm the fallback path populates both fields.
-- [ ] Add `test_event_payload_preserves_existing_keys_exact_types`: fire an event and assert each of the original 7 keys has the exact pre-Phase-1 type (`action_id: str`, `action_name: str`, `triggered_by: str`, `mode: str`, `alarms_triggered: list[str]`, `alarms_failed: list[str]`, `timestamp: str`). This is the backwards-compatibility guardrail — if a future refactor changes any of these (e.g. embeds an object), the test fails loudly.
-- [ ] Integration test in `tests/test_actions_integration.py`: register an `event_listener = []` on `abode_security.action_triggered`, fire a sensor activation, then `await hass.async_block_till_done()`, then assert the listener saw one event with all 13 keys (7 existing + 6 new) populated as expected.
+- [x] Extend `test_coordinator_fires_event` to assert each new key is present with the exact expected value.
+- [x] Add `test_event_payload_null_when_attributes_missing`: trigger from a sensor whose `new_state.attributes` lacks `friendly_name` and `device_class`. Assert `sensor_friendly_name` and `sensor_device_class` are `None` (not missing, not empty string, not `"unknown"`).
+- [x] Add `test_event_payload_area_resolved_via_entity_registry`: register an entity in the entity registry with an explicit `area_id`. Confirm `sensor_area_id` and `sensor_area_name` propagate.
+- [x] Add `test_event_payload_area_resolved_via_device_fallback`: entity has no direct `area_id` but its `device_id` does. Confirm the fallback path populates both fields.
+- [x] Add `test_event_payload_preserves_existing_keys_exact_types`: fire an event and assert each of the original 7 keys has the exact pre-Phase-1 type (`action_id: str`, `action_name: str`, `triggered_by: str`, `mode: str`, `alarms_triggered: list[str]`, `alarms_failed: list[str]`, `timestamp: str`). This is the backwards-compatibility guardrail — if a future refactor changes any of these (e.g. embeds an object), the test fails loudly.
+- [x] Integration test in `tests/test_actions_integration.py`: register an `event_listener = []` on `abode_security.action_triggered`, fire a sensor activation, then `await hass.async_block_till_done()`, then assert the listener saw one event with all 13 keys (7 existing + 6 new) populated as expected.
 
 #### Documentation (End of Sub-Phase B)
 
-- [ ] `docs/ARCHITECTURE.md` (lines 127–145): add one paragraph after the existing action-trigger flow description noting that the event payload now includes sensor friendly name, device_class, prev/new state, and area context. Do **not** describe the camera snapshot yet — that lands in Phase 2 and would document a feature that doesn't exist yet.
-- [ ] No README update yet — `README.md` ("Notifications" section) is written in Phase 3 once the user-facing docs and blueprint exist.
-- [ ] `CLAUDE.md` — no update needed (no new commands, conventions, or AI-relevant context introduced in this phase).
+- [x] `docs/ARCHITECTURE.md` (lines 127–145): add one paragraph after the existing action-trigger flow description noting that the event payload now includes sensor friendly name, device_class, prev/new state, and area context. Do **not** describe the camera snapshot yet — that lands in Phase 2 and would document a feature that doesn't exist yet.
+- [x] No README update yet — `README.md` ("Notifications" section) is written in Phase 3 once the user-facing docs and blueprint exist.
+- [x] `CLAUDE.md` — no update needed (no new commands, conventions, or AI-relevant context introduced in this phase).
 
 ### Build Verification (required before marking phase complete)
 
-- [ ] `./scripts/check.sh` — exits zero, output ends with "All checks passed" (or equivalent).
-- [ ] `uv run pytest -m ""` — full suite passes, including integration markers (with `./scripts/dev.sh` running).
-- [ ] Scan pytest stdout for `PytestUnraisableExceptionWarning`, `RuntimeWarning: coroutine '...' was never awaited`, and any other warnings. A zero exit code from pytest does **not** catch unraisable warnings. If any new warnings appear, fix or explicitly silence with justification before marking the phase complete.
-- [ ] If `frontend/` was somehow touched (it should not be in this phase), run `cd frontend && npm test` as well.
-- [ ] Mark `status: done` in this file's frontmatter only after all the above pass.
+- [x] `./scripts/check.sh` — exits zero, output ends with "All checks passed" (or equivalent).
+- [x] `uv run pytest -m ""` — full suite passes, including integration markers (with `./scripts/dev.sh` running).
+- [x] Scan pytest stdout for `PytestUnraisableExceptionWarning`, `RuntimeWarning: coroutine '...' was never awaited`, and any other warnings. A zero exit code from pytest does **not** catch unraisable warnings. If any new warnings appear, fix or explicitly silence with justification before marking the phase complete.
+- [x] If `frontend/` was somehow touched (it should not be in this phase), run `cd frontend && npm test` as well.
+- [x] Mark `status: done` in this file's frontmatter only after all the above pass.
 
 ### Manual Verification with MCP Tools
 

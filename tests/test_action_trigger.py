@@ -4,6 +4,9 @@ from datetime import timedelta
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from custom_components.abode_security.action_manager import ActionManager
@@ -397,6 +400,14 @@ class TestActionExecution:
         assert isinstance(event_data["alarms_failed"], list)
         assert isinstance(event_data["timestamp"], str)
 
+        # Sub-Phase B: also assert new context keys are present with correct values
+        assert event_data["sensor_friendly_name"] == "Front Door"
+        assert event_data["sensor_device_class"] == "door"
+        assert event_data["previous_state"] == "off"
+        assert event_data["new_state"] == "on"
+        assert event_data["sensor_area_id"] is None
+        assert event_data["sensor_area_name"] is None
+
         await coordinator.async_stop()
 
     async def test_trigger_context_threaded_through_delay(self, hass) -> None:
@@ -459,6 +470,9 @@ class TestActionExecution:
 
         # Trigger should have fired with trigger-time context preserved
         assert len(events) == 1
+        # The friendly_name was removed from state mid-delay but the context captured
+        # at trigger time still carries it (Sub-Phase B assertion).
+        assert events[0].data["sensor_friendly_name"] == "Front Door"
 
         await coordinator.async_stop()
 
@@ -466,8 +480,7 @@ class TestActionExecution:
         """No exception when sensor has no area_id and no device_id.
 
         Sub-Phase A: verifies no exception and the event fires (area_id=None path).
-        Sub-Phase B extends this to assert event_data["sensor_area_id"] is None
-        and event_data["sensor_area_name"] is None.
+        Sub-Phase B: asserts sensor_area_id and sensor_area_name are None.
         """
         manager = _get_manager(hass)
         coordinator = ActionTriggerCoordinator(hass, manager)
@@ -500,6 +513,9 @@ class TestActionExecution:
 
         # No exception; event still fires
         assert len(events) == 1
+        # Sub-Phase B: area fields are None for an unregistered sensor
+        assert events[0].data["sensor_area_id"] is None
+        assert events[0].data["sensor_area_name"] is None
 
         await coordinator.async_stop()
 
@@ -792,6 +808,207 @@ class TestActionExecution:
 
         # Should NOT have triggered
         assert len(service_calls) == 0
+
+        await coordinator.async_stop()
+
+    async def test_event_payload_null_when_attributes_missing(self, hass) -> None:
+        """sensor_friendly_name and sensor_device_class are None when attrs absent."""
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        async def mock_service(_call):
+            pass
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        await manager.async_create(
+            name="No Attrs",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.bare"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        hass.states.async_set("binary_sensor.bare", "off", {})
+        await hass.async_block_till_done()
+
+        hass.states.async_set("binary_sensor.bare", "on", {})
+        await hass.async_block_till_done()
+
+        assert len(events) == 1
+        event_data = events[0].data
+        assert event_data["sensor_friendly_name"] is None
+        assert event_data["sensor_device_class"] is None
+        assert event_data["sensor_area_id"] is None
+        assert event_data["sensor_area_name"] is None
+
+        await coordinator.async_stop()
+
+    async def test_event_payload_area_resolved_via_entity_registry(self, hass) -> None:
+        """sensor_area_id/name are populated when the entity has a direct area."""
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        async def mock_service(_call):
+            pass
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        # Create an area and register the entity in it
+        area_reg = ar.async_get(hass)
+        area = area_reg.async_create("Living Room")
+
+        entity_reg = er.async_get(hass)
+        entity_entry = entity_reg.async_get_or_create(
+            "binary_sensor", "test_integration", "door_sensor"
+        )
+        entity_reg.async_update_entity(entity_entry.entity_id, area_id=area.id)
+
+        await manager.async_create(
+            name="Area Entity Test",
+            modes=["home"],
+            sensor_entity_ids=[entity_entry.entity_id],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        hass.states.async_set(entity_entry.entity_id, "off", {})
+        await hass.async_block_till_done()
+
+        hass.states.async_set(entity_entry.entity_id, "on", {})
+        await hass.async_block_till_done()
+
+        assert len(events) == 1
+        event_data = events[0].data
+        assert event_data["sensor_area_id"] == area.id
+        assert event_data["sensor_area_name"] == "Living Room"
+
+        await coordinator.async_stop()
+
+    async def test_event_payload_area_resolved_via_device_fallback(self, hass) -> None:
+        """sensor_area_id/name populate via device when entity has no direct area."""
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        async def mock_service(_call):
+            pass
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        # Create an area, a device in that area, and an entity under the device
+        area_reg = ar.async_get(hass)
+        area = area_reg.async_create("Garage")
+
+        config_entry = MockConfigEntry(domain="test_fallback")
+        config_entry.add_to_hass(hass)
+
+        device_reg = dr.async_get(hass)
+        device = device_reg.async_get_or_create(
+            config_entry_id=config_entry.entry_id,
+            identifiers={("test_fallback", "device_1")},
+        )
+        device_reg.async_update_device(device.id, area_id=area.id)
+
+        entity_reg = er.async_get(hass)
+        entity_entry = entity_reg.async_get_or_create(
+            "binary_sensor",
+            "test_fallback",
+            "garage_motion",
+            device_id=device.id,
+        )
+        # Entity has no direct area_id (area_id defaults to None)
+
+        await manager.async_create(
+            name="Device Fallback Test",
+            modes=["home"],
+            sensor_entity_ids=[entity_entry.entity_id],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        hass.states.async_set(entity_entry.entity_id, "off", {})
+        await hass.async_block_till_done()
+
+        hass.states.async_set(entity_entry.entity_id, "on", {})
+        await hass.async_block_till_done()
+
+        assert len(events) == 1
+        event_data = events[0].data
+        assert event_data["sensor_area_id"] == area.id
+        assert event_data["sensor_area_name"] == "Garage"
+
+        await coordinator.async_stop()
+
+    async def test_event_payload_preserves_existing_keys_exact_types(
+        self, hass
+    ) -> None:
+        """Original 7 payload keys retain their exact pre-Phase-1 types."""
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        async def mock_service(_call):
+            pass
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        action = await manager.async_create(
+            name="Type Guard",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.sensor_types"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        hass.states.async_set("binary_sensor.sensor_types", "off")
+        await hass.async_block_till_done()
+
+        hass.states.async_set("binary_sensor.sensor_types", "on")
+        await hass.async_block_till_done()
+
+        assert len(events) == 1
+        event_data = events[0].data
+
+        assert isinstance(event_data["action_id"], str)
+        assert isinstance(event_data["action_name"], str)
+        assert isinstance(event_data["triggered_by"], str)
+        assert isinstance(event_data["mode"], str)
+        assert isinstance(event_data["alarms_triggered"], list)
+        assert isinstance(event_data["alarms_failed"], list)
+        assert isinstance(event_data["timestamp"], str)
+
+        # Exact values to catch silent type changes
+        assert event_data["action_id"] == action.id
+        assert event_data["action_name"] == "Type Guard"
+        assert event_data["triggered_by"] == "binary_sensor.sensor_types"
+        assert event_data["mode"] == "home"
+        assert event_data["alarms_triggered"] == ["switch.panic_alarm"]
+        assert event_data["alarms_failed"] == []
 
         await coordinator.async_stop()
 

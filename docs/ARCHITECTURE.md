@@ -127,6 +127,8 @@ User-defined mappings from **sensor activation → alarm trigger**, gated by ala
 - `ActionTriggerCoordinator` — listens to `EVENT_STATE_CHANGED`, matches binary-sensor `off→on` transitions against enabled actions, applies per-sensor debounce (default 1.0 s) and per-action delay (0–60 s via `async_call_later`), then calls `switch.turn_on` on the configured alarm entities and fires `abode_security.action_triggered`.
 - Trigger state (pending delays, debounce timestamps) is memory-only; lost on restart by design.
 
+The `abode_security.action_triggered` event payload carries 13 keys: the original 7 (`action_id`, `action_name`, `triggered_by`, `mode`, `alarms_triggered`, `alarms_failed`, `timestamp`) plus 6 sensor-context keys added in Phase 1 of the notifications feature (`sensor_friendly_name`, `sensor_device_class`, `previous_state`, `new_state`, `sensor_area_id`, `sensor_area_name`). Context is captured at the moment of the `off→on` transition — not re-read at execute time — so delayed actions carry the state that caused the trigger rather than the current state.
+
 ```mermaid
 flowchart LR
     Sensor[Binary sensor<br/>off → on]
