@@ -2,6 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import type { HomeAssistant, AbodeAction } from './types';
+import { getEntityState, isUnavailableState } from './types';
 import { fetchActions, updateAction, deleteAction, testAction } from './api';
 import './action-editor';
 import './abode-modal';
@@ -127,6 +128,22 @@ export class ActionsTab extends LitElement {
     .trigger-info {
       font-size: 12px;
       color: var(--secondary-text-color);
+    }
+
+    /* Warning chip surfaced when a saved action references an entity
+     * that is currently unavailable in hass.states — the trap that
+     * caused the "Home Test" bug: UI looked fine but no event could
+     * ever fire because the chosen sensors were offline. */
+    .stale-warning {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--warning-color, #ff9800);
+    }
+
+    .stale-warning ha-icon {
+      --mdc-icon-size: 16px;
     }
 
     .action-controls {
@@ -576,6 +593,15 @@ export class ActionsTab extends LitElement {
 
   private _renderActionRow(action: AbodeAction) {
     const isToggling = this._togglingIds.has(action.id);
+    // A stored sensor entity_id that isn't in hass.states (renamed, deleted,
+    // integration removed) and one that is `unavailable`/`unknown` are
+    // equally unactionable — the backend trigger filter rejects anything
+    // that isn't a clean off → on. `getEntityState`'s default fallback is
+    // `'unavailable'`, so a missing entity falls into the same bucket.
+    const unavailableCount = action.sensor_entity_ids.filter((id) =>
+      isUnavailableState(getEntityState(this.hass, id)),
+    ).length;
+    const totalCount = action.sensor_entity_ids.length;
 
     return html`
       <div class="action-row ${action.enabled ? '' : 'disabled'}" role="listitem">
@@ -587,6 +613,17 @@ export class ActionsTab extends LitElement {
             </div>
             ${action.trigger_count > 0
               ? html`<span class="trigger-info">${action.trigger_count} triggers</span>`
+              : ''}
+            ${unavailableCount > 0
+              ? html`
+                  <span
+                    class="stale-warning"
+                    title="These sensors won't fire this action until they come back online."
+                  >
+                    <ha-icon icon="mdi:alert" aria-hidden="true"></ha-icon>
+                    ${unavailableCount} of ${totalCount} sensors unavailable
+                  </span>
+                `
               : ''}
           </div>
         </div>

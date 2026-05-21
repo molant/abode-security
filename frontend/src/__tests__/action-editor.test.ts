@@ -1438,4 +1438,415 @@ describe('ActionEditor', () => {
       );
     });
   });
+
+  // The original "Home Test" bug looked correctly configured in the editor
+  // — only after a separate diagnostic pass did we discover the four chosen
+  // sensors had been unavailable for a week. These tests pin the UX
+  // surface that would have made it obvious at picking time.
+  describe('sensor availability surfacing', () => {
+    // Construct a fixture where two sensors in the same category have
+    // diverging live state in hass.states: the snapshot returned by the
+    // WS endpoint says one is "off", but hass.states marks it
+    // "unavailable". The component must render the live value (so
+    // diagnostics stay current as sensors flap), not the snapshot.
+    function buildFixtureSensors() {
+      return {
+        door: [
+          { entity_id: 'binary_sensor.front_door', name: 'Front Door', state: 'off' },
+          { entity_id: 'binary_sensor.back_door', name: 'Back Door', state: 'off' },
+          { entity_id: 'binary_sensor.dead_door', name: 'Dead Door', state: 'off' },
+        ],
+      } as Record<string, SensorEntity[]>;
+    }
+
+    function buildHass(): HomeAssistant {
+      return createMockHass({
+        states: {
+          'binary_sensor.front_door': {
+            entity_id: 'binary_sensor.front_door',
+            state: 'off',
+          },
+          'binary_sensor.back_door': {
+            entity_id: 'binary_sensor.back_door',
+            state: 'on',
+          },
+          'binary_sensor.dead_door': {
+            entity_id: 'binary_sensor.dead_door',
+            state: 'unavailable',
+          },
+        },
+      });
+    }
+
+    it('renders a state pill per sensor with device-class-aware labels', async () => {
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${buildHass()}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: buildFixtureSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set(['door']),
+      } as Partial<ActionEditor>);
+
+      const pills = Array.from(el.shadowRoot?.querySelectorAll('.state-pill') ?? []).map((p) => ({
+        classes: p.className,
+        text: (p.textContent ?? '').trim(),
+      }));
+      // door device_class label map: on=open, off=closed.
+      expect(pills.some((p) => /open/i.test(p.text) && /\bon\b/.test(p.classes))).to.equal(
+        true,
+        `expected an "open" pill for the "on" sensor, got: ${JSON.stringify(pills)}`,
+      );
+      expect(pills.some((p) => /closed/i.test(p.text) && /\boff\b/.test(p.classes))).to.equal(
+        true,
+        `expected a "closed" pill for the "off" sensor, got: ${JSON.stringify(pills)}`,
+      );
+      expect(
+        pills.some((p) => /unavailable/i.test(p.text) && /\bunavailable\b/.test(p.classes)),
+      ).to.equal(
+        true,
+        `expected an "unavailable" pill for the offline sensor, got: ${JSON.stringify(pills)}`,
+      );
+    });
+
+    it('partitions unavailable sensors to the bottom of each category', async () => {
+      // Backend returns Dead Door first alphabetically — without the
+      // partition step, the dead sensor would render above the live ones.
+      const reordered = {
+        door: [
+          { entity_id: 'binary_sensor.dead_door', name: 'Dead Door', state: 'off' },
+          { entity_id: 'binary_sensor.front_door', name: 'Front Door', state: 'off' },
+          { entity_id: 'binary_sensor.back_door', name: 'Back Door', state: 'off' },
+        ],
+      } as Record<string, SensorEntity[]>;
+
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${buildHass()}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: reordered,
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set(['door']),
+      } as Partial<ActionEditor>);
+
+      const names = Array.from(
+        el.shadowRoot?.querySelectorAll('.sensor-row .entity-name') ?? [],
+      ).map((n) => (n.textContent ?? '').trim());
+      // Dead must be last; relative order of live sensors stays as the
+      // backend supplied them.
+      expect(names[names.length - 1]).to.equal('Dead Door');
+      expect(names.indexOf('Front Door')).to.be.lessThan(names.indexOf('Dead Door'));
+      expect(names.indexOf('Back Door')).to.be.lessThan(names.indexOf('Dead Door'));
+    });
+
+    it('appends an unavailable count to the category header when any sensor is offline', async () => {
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${buildHass()}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: buildFixtureSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set(['door']),
+      } as Partial<ActionEditor>);
+
+      const header = el.shadowRoot?.querySelector('.category-header > span');
+      // The count is over the whole category (3 sensors), one of which is
+      // unavailable in hass.states.
+      expect(header?.textContent ?? '').to.match(/door\s*\(3\),\s*1\s*unavailable/i);
+    });
+
+    it('omits the unavailable count when all sensors in a category are healthy', async () => {
+      // Same snapshot, but every entity is healthy in hass.states.
+      const healthyHass = createMockHass({
+        states: {
+          'binary_sensor.front_door': {
+            entity_id: 'binary_sensor.front_door',
+            state: 'off',
+          },
+          'binary_sensor.back_door': {
+            entity_id: 'binary_sensor.back_door',
+            state: 'off',
+          },
+          'binary_sensor.dead_door': {
+            entity_id: 'binary_sensor.dead_door',
+            state: 'off',
+          },
+        },
+      });
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${healthyHass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: buildFixtureSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set(['door']),
+      } as Partial<ActionEditor>);
+
+      const header = el.shadowRoot?.querySelector('.category-header > span');
+      expect((header?.textContent ?? '').toLowerCase()).to.not.include('unavailable');
+    });
+
+    it('clicking the info button fires hass-more-info with the entity_id (and does not toggle the checkbox)', async () => {
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${buildHass()}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: buildFixtureSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set(['door']),
+      } as Partial<ActionEditor>);
+
+      const events: CustomEvent[] = [];
+      el.addEventListener('hass-more-info', (e) => events.push(e as CustomEvent));
+
+      // Pick the row for the dead sensor — the realistic case the user
+      // would click to inspect why nothing is firing.
+      const rows = Array.from(el.shadowRoot?.querySelectorAll('.sensor-row') ?? []);
+      const deadRow = rows.find((r) =>
+        (r.querySelector('.entity-name')?.textContent ?? '').includes('Dead Door'),
+      );
+      expect(deadRow, 'expected a row for Dead Door').to.exist;
+      const infoButton = deadRow!.querySelector<HTMLButtonElement>('button.info-button');
+      expect(infoButton, 'expected an info button in the row').to.exist;
+
+      // Sanity: the checkbox starts unchecked.
+      const checkbox = deadRow!.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      expect(checkbox?.checked).to.equal(false);
+
+      infoButton!.click();
+      await elementUpdated(el);
+
+      expect(events.length).to.equal(1);
+      expect(events[0].detail).to.deep.equal({ entityId: 'binary_sensor.dead_door' });
+      expect(events[0].bubbles).to.equal(true);
+      expect(events[0].composed).to.equal(true);
+      // The button is a sibling of the <label>, so the click must not
+      // toggle the selection — otherwise an "inspect this sensor" click
+      // silently adds it to the action.
+      expect(checkbox?.checked).to.equal(false);
+    });
+
+    it('falls back to the snapshot state when hass.states does not yet have the entity', async () => {
+      // A hass with an empty `states` map (e.g. cold-start) plus a
+      // snapshot from fetchSensors that says "off" should render
+      // "closed", not "unavailable".
+      const coldHass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${coldHass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: {
+          door: [{ entity_id: 'binary_sensor.front_door', name: 'Front Door', state: 'off' }],
+        },
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set(['door']),
+      } as Partial<ActionEditor>);
+
+      // Default fallback in getEntityState is "unavailable", but
+      // _renderSensorRow passes sensor.state as the fallback, so the row
+      // should still render as "closed" with no warning.
+      const pill = el.shadowRoot?.querySelector('.state-pill');
+      expect((pill?.className ?? '').toLowerCase()).to.include('off');
+      expect((pill?.textContent ?? '').toLowerCase()).to.include('closed');
+      const row = el.shadowRoot?.querySelector('.sensor-row');
+      expect(row?.classList.contains('unavailable')).to.equal(
+        false,
+        'snapshot-driven row should not be marked unavailable',
+      );
+    });
+
+    // Pinning the predicate consolidation from the review: `unknown` must
+    // count as unavailable everywhere (pill, partition order, header
+    // count) — otherwise we re-introduce the split-source-of-truth bug
+    // where a red "unavailable" pill could coexist with a header that
+    // says everything's fine. Centralised in `isUnavailableState` in
+    // `types.ts`.
+    it('treats `unknown` identically to `unavailable` across pill, partition, and header', async () => {
+      const sensors = {
+        door: [
+          { entity_id: 'binary_sensor.alive', name: 'Alive Door', state: 'off' },
+          { entity_id: 'binary_sensor.spooky', name: 'Spooky Door', state: 'off' },
+        ],
+      } as Record<string, SensorEntity[]>;
+      const hass = createMockHass({
+        states: {
+          'binary_sensor.alive': { entity_id: 'binary_sensor.alive', state: 'off' },
+          // Real-world cause: integration just came up, sensor entity
+          // is registered but hasn't reported yet.
+          'binary_sensor.spooky': { entity_id: 'binary_sensor.spooky', state: 'unknown' },
+        },
+      });
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: sensors,
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set(['door']),
+      } as Partial<ActionEditor>);
+
+      // Header count must include the `unknown` row.
+      const header = el.shadowRoot?.querySelector('.category-header > span');
+      expect(header?.textContent ?? '').to.match(/door\s*\(2\),\s*1\s*unavailable/i);
+
+      // Spooky Door must render with the unavailable pill (red) and
+      // sort to the bottom of the category.
+      const names = Array.from(
+        el.shadowRoot?.querySelectorAll('.sensor-row .entity-name') ?? [],
+      ).map((n) => (n.textContent ?? '').trim());
+      expect(names[names.length - 1]).to.equal('Spooky Door');
+
+      const rows = Array.from(el.shadowRoot?.querySelectorAll('.sensor-row') ?? []);
+      const spookyRow = rows.find((r) =>
+        (r.querySelector('.entity-name')?.textContent ?? '').includes('Spooky Door'),
+      );
+      expect(spookyRow?.classList.contains('unavailable')).to.equal(true);
+      const spookyPill = spookyRow?.querySelector('.state-pill');
+      expect((spookyPill?.className ?? '').toLowerCase()).to.include('unavailable');
+    });
+
+    it('uses the device-class-specific label for motion (`detected` / `clear`)', async () => {
+      const hass = createMockHass({
+        states: {
+          'binary_sensor.hall_motion': {
+            entity_id: 'binary_sensor.hall_motion',
+            state: 'on',
+          },
+          'binary_sensor.bath_motion': {
+            entity_id: 'binary_sensor.bath_motion',
+            state: 'off',
+          },
+        },
+      });
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: {
+          motion: [
+            { entity_id: 'binary_sensor.hall_motion', name: 'Hall Motion', state: 'on' },
+            { entity_id: 'binary_sensor.bath_motion', name: 'Bath Motion', state: 'off' },
+          ],
+        },
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set(['motion']),
+      } as Partial<ActionEditor>);
+
+      const pillTexts = Array.from(el.shadowRoot?.querySelectorAll('.state-pill') ?? []).map((p) =>
+        (p.textContent ?? '').trim(),
+      );
+      // For motion, the on/off labels are "detected" / "clear" — not
+      // the door-class "open" / "closed".
+      expect(pillTexts.some((t) => /detected/i.test(t))).to.equal(
+        true,
+        `expected a "detected" pill, got: ${JSON.stringify(pillTexts)}`,
+      );
+      expect(pillTexts.some((t) => /clear/i.test(t))).to.equal(
+        true,
+        `expected a "clear" pill, got: ${JSON.stringify(pillTexts)}`,
+      );
+      // And critically — no "open"/"closed" should leak through.
+      expect(pillTexts.some((t) => /\bopen\b/i.test(t))).to.equal(false);
+    });
+
+    it('falls through to the raw state value for unmapped device classes', async () => {
+      // A device_class outside `STATE_LABELS` (e.g. `lock`) should render
+      // the raw state — better than guessing a wrong label. The lock
+      // device class isn't a binary_sensor in practice, but the
+      // fall-through behaviour is what matters: any unknown class works
+      // the same way.
+      const hass = createMockHass({
+        states: {
+          'binary_sensor.weird': { entity_id: 'binary_sensor.weird', state: 'jammed' },
+        },
+      });
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: {
+          tamper: [{ entity_id: 'binary_sensor.weird', name: 'Weird', state: 'jammed' }],
+        },
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set(['tamper']),
+      } as Partial<ActionEditor>);
+
+      const pill = el.shadowRoot?.querySelector('.state-pill');
+      expect((pill?.textContent ?? '').toLowerCase()).to.include('jammed');
+    });
+
+    // Parallel to actions-tab's "updates the badge count when hass.states
+    // changes (live)" test — without this, a refactor that pre-computes
+    // sensor state at load time (instead of reading hass.states at
+    // render) would silently break the live-update path with no test
+    // failure.
+    it('updates pill, partition order, and header live when hass is reassigned', async () => {
+      const sensors = {
+        door: [
+          { entity_id: 'binary_sensor.front', name: 'Front', state: 'off' },
+          { entity_id: 'binary_sensor.back', name: 'Back', state: 'off' },
+        ],
+      } as Record<string, SensorEntity[]>;
+
+      // Initial paint: Front is unavailable in hass.states.
+      const initialHass = createMockHass({
+        states: {
+          'binary_sensor.front': {
+            entity_id: 'binary_sensor.front',
+            state: 'unavailable',
+          },
+          'binary_sensor.back': { entity_id: 'binary_sensor.back', state: 'off' },
+        },
+      });
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${initialHass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: sensors,
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set(['door']),
+      } as Partial<ActionEditor>);
+
+      let names = Array.from(el.shadowRoot?.querySelectorAll('.sensor-row .entity-name') ?? []).map(
+        (n) => (n.textContent ?? '').trim(),
+      );
+      expect(names[names.length - 1]).to.equal('Front', 'Front (unavailable) sorts last');
+      let header = el.shadowRoot?.querySelector('.category-header > span');
+      expect(header?.textContent ?? '').to.match(/door\s*\(2\),\s*1\s*unavailable/i);
+
+      // HA pushes a state change: Front is back online. The whole hass
+      // object gets reassigned (this is how HA's frontend propagates
+      // state changes), which Lit's `@property` decorator turns into a
+      // re-render. No subscribeEvents or refetch needed.
+      el.hass = createMockHass({
+        states: {
+          'binary_sensor.front': { entity_id: 'binary_sensor.front', state: 'off' },
+          'binary_sensor.back': { entity_id: 'binary_sensor.back', state: 'off' },
+        },
+      });
+      await elementUpdated(el);
+
+      names = Array.from(el.shadowRoot?.querySelectorAll('.sensor-row .entity-name') ?? []).map(
+        (n) => (n.textContent ?? '').trim(),
+      );
+      // Healthy now — partition unchanged from backend order.
+      expect(names).to.deep.equal(['Front', 'Back']);
+      header = el.shadowRoot?.querySelector('.category-header > span');
+      expect((header?.textContent ?? '').toLowerCase()).to.not.include('unavailable');
+      const allPillsHealthy = Array.from(
+        el.shadowRoot?.querySelectorAll('.state-pill') ?? [],
+      ).every((p) => !(p.className ?? '').includes('unavailable'));
+      expect(allPillsHealthy).to.equal(true);
+    });
+  });
 });
