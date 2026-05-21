@@ -434,10 +434,15 @@ export class ActionEditor extends LitElement {
       text-transform: none;
     }
 
+    /* Responsive grid: ~180px minimum per cell, so the panel auto-fits
+     * 2-3 columns on a laptop and falls back to 1 on narrow viewports
+     * without a media-query breakpoint. The row gap is tighter than the
+     * column gap so columns read as paired up rather than as a single
+     * wall of text. */
     .alarm-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 8px 16px;
       border: 1px solid var(--divider-color, #e0e0e0);
       border-radius: 4px;
       padding: 12px;
@@ -453,7 +458,7 @@ export class ActionEditor extends LitElement {
       cursor: pointer;
     }
 
-    .alarm-list input[type='checkbox'] {
+    .alarm-list input[type='radio'] {
       width: 16px;
       height: 16px;
       accent-color: var(--primary-color, #03a9f4);
@@ -605,7 +610,12 @@ export class ActionEditor extends LitElement {
     this._modes = [...this.action.modes];
     this._delaySeconds = this.action.delay_seconds;
     this._selectedSensors = [...this.action.sensor_entity_ids];
-    this._selectedAlarms = [...this.action.alarm_entity_ids];
+    // Single-select for alarms now. Backend still accepts an array
+    // and existing storage may legitimately hold >1 alarm from before
+    // the UI restriction (the Abode timeline only meaningfully fires
+    // one alarm at a time anyway). Show the first one as selected;
+    // on save we persist only that one — a lazy migration on edit.
+    this._selectedAlarms = this.action.alarm_entity_ids.slice(0, 1);
   }
 
   private _toggleMode(mode: Mode) {
@@ -636,8 +646,12 @@ export class ActionEditor extends LitElement {
     );
   }
 
-  private _toggleAlarm(entityId: string) {
-    this._selectedAlarms = toggleIn(this._selectedAlarms, entityId);
+  // Single-select replacement for the old toggle. Stays on the
+  // `_selectedAlarms: string[]` shape (length 0 or 1) so the save
+  // payload still matches the existing `alarm_entity_ids: string[]`
+  // schema — no backend migration needed.
+  private _selectAlarm(entityId: string) {
+    this._selectedAlarms = [entityId];
     this._clearError('alarms');
   }
 
@@ -710,7 +724,7 @@ export class ActionEditor extends LitElement {
       this._errors = { ...this._errors, sensors: 'Select at least one sensor' };
     }
     if (this._selectedAlarms.length === 0) {
-      this._errors = { ...this._errors, alarms: 'Select at least one alarm' };
+      this._errors = { ...this._errors, alarms: 'Select an alarm' };
     }
 
     return Object.keys(this._errors).length === 0;
@@ -844,7 +858,7 @@ export class ActionEditor extends LitElement {
       </div>
 
       <div class="form-group">
-        <label>Alarms to trigger (at least one required)</label>
+        <label>Alarm to trigger (required)</label>
         ${this._renderAlarmSelection()}
         ${this._errors.alarms ? html`<span class="error-text">${this._errors.alarms}</span>` : ''}
       </div>
@@ -1088,15 +1102,22 @@ export class ActionEditor extends LitElement {
       }))
       .sort((a, b) => a.label.localeCompare(b.label));
 
+    // Radios sharing the same `name` get native single-select
+    // behaviour from the browser — selecting one auto-deselects the
+    // others, so we don't need to track "previous selection" in JS.
+    // The name is local to this shadow root so it won't collide with
+    // anything in the host document.
     return html`
-      <div class="alarm-list">
+      <div class="alarm-list" role="radiogroup" aria-label="Alarm to trigger">
         ${displayAlarms.map(
           (alarm) => html`
             <label>
               <input
-                type="checkbox"
+                type="radio"
+                name="abode-action-alarm"
+                value=${alarm.entity_id}
                 .checked=${this._selectedAlarms.includes(alarm.entity_id)}
-                @change=${() => this._toggleAlarm(alarm.entity_id)}
+                @change=${() => this._selectAlarm(alarm.entity_id)}
               />
               ${alarm.label}
             </label>
