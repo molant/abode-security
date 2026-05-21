@@ -602,6 +602,18 @@ async def websocket_entities_sensors(
             sensors_by_class[device_class] = []
         sensors_by_class[device_class].append(sensor_info)
 
+    # Stable alphabetical order by friendly_name within each device class.
+    # `hass.states.async_all()` returns entities in registration order — fine
+    # while the integration is loaded once, but the order shifts on restart
+    # or after a new entity registers. Sorting here gives the picker a
+    # deterministic layout across reloads, and lets the frontend partition
+    # (live before unavailable) preserve a predictable in-half order. Sort
+    # case-insensitively so "0x..." Zigbee identifiers don't all clump
+    # before "Backyard" — they still come first as a natural consequence of
+    # ASCII order, but mixed-case friendly_names interleave correctly.
+    for sensors in sensors_by_class.values():
+        sensors.sort(key=lambda s: (s["name"] or "").lower())
+
     connection.send_result(msg["id"], {"sensors": sensors_by_class})
 
 

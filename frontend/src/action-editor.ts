@@ -1062,10 +1062,15 @@ export class ActionEditor extends LitElement {
           <span class="entity-name">${sensor.name}</span>
           <!-- Area column always rendered (even when empty) so the
                state-pill column lines up across rows that do and don't
-               have an area assigned. Empty cells are aria-hidden so
-               screen readers skip them — the cell exists only for
-               layout, not for semantics. -->
-          <span class="entity-area" ?aria-hidden=${!sensor.area}> ${sensor.area ?? nothing} </span>
+               have an area assigned. Empty cells get aria-hidden="true"
+               so screen readers skip them — the cell exists only for
+               layout, not for semantics. ARIA attributes are enumerated
+               (string "true"/"false"), not HTML boolean attributes, so
+               we set the value explicitly when needed and omit the
+               attribute entirely via Lit's nothing sentinel otherwise. -->
+          <span class="entity-area" aria-hidden=${!sensor.area ? 'true' : nothing}>
+            ${sensor.area ?? nothing}
+          </span>
           <span class="state-pill ${pillClass}" aria-label="${sensor.name} state: ${pillLabel}">
             ${isUnavailable
               ? html`<ha-icon icon="mdi:alert-circle-outline" aria-hidden="true"></ha-icon>`

@@ -1291,6 +1291,38 @@ class TestWebSocketSensorsAPI:
         assert "binary_sensor.visible" in door_entity_ids
         assert "binary_sensor.hidden" not in door_entity_ids
 
+    async def test_ws_entities_sensors_sorts_by_friendly_name(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Sensors within a device_class are returned alphabetically by name.
+
+        `hass.states.async_all()` returns entities in registration order,
+        which shifts on restart and after new entities register. Sorting
+        case-insensitively by friendly_name gives the picker a
+        deterministic layout the frontend partition can rely on (live
+        sensors before unavailable ones, stable order within each half).
+        """
+        # Register intentionally out-of-order so a no-op pass-through
+        # would produce a non-alphabetical result.
+        for object_id, friendly_name in (
+            ("zulu_door", "Zulu Door"),
+            ("alpha_door", "alpha door"),  # lowercase to exercise case-fold
+            ("mike_door", "Mike Door"),
+        ):
+            hass.states.async_set(
+                f"binary_sensor.{object_id}",
+                "off",
+                {"device_class": "door", "friendly_name": friendly_name},
+            )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        names = [s["name"] for s in response["result"]["sensors"]["door"]]
+        assert names == ["alpha door", "Mike Door", "Zulu Door"]
+
 
 @pytest.mark.usefixtures("mock_abode", "setup_websocket_api")
 class TestWebSocketAlarmsAPI:
