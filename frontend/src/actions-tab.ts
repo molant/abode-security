@@ -610,10 +610,13 @@ export class ActionsTab extends LitElement {
               ? html`
                   <span
                     class="stale-warning"
-                    title="These sensors won't fire this action until they come back online."
+                    title=${unavailableCount === 1
+                      ? "This sensor won't fire this action until it comes back online."
+                      : "These sensors won't fire this action until they come back online."}
                   >
                     <ha-icon icon="mdi:alert" aria-hidden="true"></ha-icon>
-                    ${unavailableCount} of ${totalCount} sensors unavailable
+                    ${unavailableCount} of ${totalCount} ${totalCount === 1 ? 'sensor' : 'sensors'}
+                    unavailable
                   </span>
                 `
               : ''}

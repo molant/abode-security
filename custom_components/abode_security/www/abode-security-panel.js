@@ -545,10 +545,15 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
           <span class="entity-name">${t.name}</span>
           <!-- Area column always rendered (even when empty) so the
                state-pill column lines up across rows that do and don't
-               have an area assigned. Empty cells are aria-hidden so
-               screen readers skip them — the cell exists only for
-               layout, not for semantics. -->
-          <span class="entity-area" ?aria-hidden=${!t.area}> ${t.area??W} </span>
+               have an area assigned. Empty cells get aria-hidden="true"
+               so screen readers skip them — the cell exists only for
+               layout, not for semantics. ARIA attributes are enumerated
+               (string "true"/"false"), not HTML boolean attributes, so
+               we set the value explicitly when needed and omit the
+               attribute entirely via Lit's nothing sentinel otherwise. -->
+          <span class="entity-area" aria-hidden=${t.area?W:"true"}>
+            ${t.area??W}
+          </span>
           <span class="state-pill ${r}" aria-label="${t.name} state: ${s}">
             ${i?B`<ha-icon icon="mdi:alert-circle-outline" aria-hidden="true"></ha-icon>`:W}
             ${s}
@@ -1086,10 +1091,11 @@ function t(t,e,o,i){var r,s=arguments.length,n=s<3?e:null===i?i=Object.getOwnPro
             ${o>0?B`
                   <span
                     class="stale-warning"
-                    title="These sensors won't fire this action until they come back online."
+                    title=${1===o?"This sensor won't fire this action until it comes back online.":"These sensors won't fire this action until they come back online."}
                   >
                     <ha-icon icon="mdi:alert" aria-hidden="true"></ha-icon>
-                    ${o} of ${i} sensors unavailable
+                    ${o} of ${i} ${1===i?"sensor":"sensors"}
+                    unavailable
                   </span>
                 `:""}
           </div>

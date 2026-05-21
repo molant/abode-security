@@ -896,7 +896,34 @@ describe('ActionsTab', () => {
 
       const warning = el.shadowRoot?.querySelector('.stale-warning');
       expect(warning, 'expected a .stale-warning element').to.exist;
-      expect((warning?.textContent ?? '').trim()).to.match(/2 of 3 sensors unavailable/i);
+      expect((warning?.textContent ?? '').trim()).to.match(/2 of 3 sensors\s+unavailable/i);
+    });
+
+    it('uses singular noun and title when the action references only one sensor', async () => {
+      // Pluralization regression: previously rendered "1 of 1 sensors
+      // unavailable" / "These sensors won't fire" regardless of count.
+      const hass = hassWithStates({
+        'binary_sensor.only_one': 'unavailable',
+      });
+      const actions = [
+        createMockAction({
+          sensor_entity_ids: ['binary_sensor.only_one'],
+        }),
+      ];
+      const el = await fixture<ActionsTab>(html`
+        <abode-actions-tab .hass=${hass}></abode-actions-tab>
+      `);
+      await setState(el, {
+        _actions: actions,
+        _loading: false,
+      } as Partial<ActionsTab>);
+
+      const warning = el.shadowRoot?.querySelector('.stale-warning');
+      expect((warning?.textContent ?? '').trim()).to.match(/1 of 1 sensor\s+unavailable/i);
+      expect((warning?.textContent ?? '').toLowerCase()).to.not.include('sensors');
+      // Title also flips to singular tense.
+      const title = warning?.getAttribute('title') ?? '';
+      expect(title).to.match(/This sensor won't fire .* until it comes back/i);
     });
 
     it('omits the badge when every referenced sensor is reachable', async () => {
@@ -952,7 +979,7 @@ describe('ActionsTab', () => {
 
       const warning = el.shadowRoot?.querySelector('.stale-warning');
       expect(warning, 'expected a .stale-warning for the `unknown` sensor').to.exist;
-      expect((warning?.textContent ?? '').trim()).to.match(/1 of 2 sensors unavailable/i);
+      expect((warning?.textContent ?? '').trim()).to.match(/1 of 2 sensors\s+unavailable/i);
     });
 
     it('updates the badge count when hass.states changes (live)', async () => {
@@ -976,7 +1003,7 @@ describe('ActionsTab', () => {
         _loading: false,
       } as Partial<ActionsTab>);
       expect((el.shadowRoot?.querySelector('.stale-warning')?.textContent ?? '').trim()).to.match(
-        /2 of 2 sensors unavailable/i,
+        /2 of 2 sensors\s+unavailable/i,
       );
 
       // HA replaces the entire hass object on state changes — mimic
@@ -987,7 +1014,7 @@ describe('ActionsTab', () => {
       });
       await elementUpdated(el);
       expect((el.shadowRoot?.querySelector('.stale-warning')?.textContent ?? '').trim()).to.match(
-        /1 of 2 sensors unavailable/i,
+        /1 of 2 sensors\s+unavailable/i,
       );
 
       // Fully recovered — badge disappears.
