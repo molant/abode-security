@@ -856,4 +856,147 @@ describe('ActionsTab', () => {
       expect(el._formatTime(null)).to.equal('');
     });
   });
+
+  // The bug that motivated this work: a configured action references
+  // sensors that are unavailable, so it can never fire — but the list
+  // gave the user no hint. The badge below makes that obvious before
+  // the user re-tests and burns time chasing a phantom integration bug.
+  describe('stale-sensor warning badge', () => {
+    function hassWithStates(states: Record<string, string>): HomeAssistant {
+      return createMockHass({
+        states: Object.fromEntries(
+          Object.entries(states).map(([id, state]) => [id, { entity_id: id, state }]),
+        ),
+      });
+    }
+
+    it("renders 'N of M sensors unavailable' when any referenced sensor is unavailable", async () => {
+      const hass = hassWithStates({
+        'binary_sensor.front': 'off',
+        'binary_sensor.back': 'unavailable',
+        // 'binary_sensor.side' deliberately omitted — a stored entity_id
+        // missing from hass.states (renamed, deleted, integration
+        // removed) is just as unactionable as `unavailable`, so it must
+        // count the same way.
+      });
+      const actions = [
+        createMockAction({
+          id: 'home-test',
+          name: 'Home Test',
+          sensor_entity_ids: ['binary_sensor.front', 'binary_sensor.back', 'binary_sensor.side'],
+        }),
+      ];
+      const el = await fixture<ActionsTab>(html`
+        <abode-actions-tab .hass=${hass}></abode-actions-tab>
+      `);
+      await setState(el, {
+        _actions: actions,
+        _loading: false,
+      } as Partial<ActionsTab>);
+
+      const warning = el.shadowRoot?.querySelector('.stale-warning');
+      expect(warning, 'expected a .stale-warning element').to.exist;
+      expect((warning?.textContent ?? '').trim()).to.match(/2 of 3 sensors unavailable/i);
+    });
+
+    it('omits the badge when every referenced sensor is reachable', async () => {
+      const hass = hassWithStates({
+        'binary_sensor.front': 'off',
+        'binary_sensor.back': 'on',
+      });
+      const actions = [
+        createMockAction({
+          id: 'home-test',
+          sensor_entity_ids: ['binary_sensor.front', 'binary_sensor.back'],
+        }),
+      ];
+      const el = await fixture<ActionsTab>(html`
+        <abode-actions-tab .hass=${hass}></abode-actions-tab>
+      `);
+      await setState(el, {
+        _actions: actions,
+        _loading: false,
+      } as Partial<ActionsTab>);
+
+      expect(el.shadowRoot?.querySelector('.stale-warning')).to.equal(null);
+    });
+
+    it('counts `unknown`-state sensors as unavailable too', async () => {
+      // Same predicate as the editor: a sensor that's `unknown` cannot
+      // produce a clean off → on transition, so the trigger pipeline
+      // can't fire on it. Both surfaces must agree — otherwise a
+      // `unknown` sensor would show a red pill in the editor but no
+      // warning chip on the list, and the user would chase the wrong
+      // bug again.
+      const hass = createMockHass({
+        states: {
+          'binary_sensor.online': { entity_id: 'binary_sensor.online', state: 'off' },
+          'binary_sensor.uninitialized': {
+            entity_id: 'binary_sensor.uninitialized',
+            state: 'unknown',
+          },
+        },
+      });
+      const actions = [
+        createMockAction({
+          sensor_entity_ids: ['binary_sensor.online', 'binary_sensor.uninitialized'],
+        }),
+      ];
+      const el = await fixture<ActionsTab>(html`
+        <abode-actions-tab .hass=${hass}></abode-actions-tab>
+      `);
+      await setState(el, {
+        _actions: actions,
+        _loading: false,
+      } as Partial<ActionsTab>);
+
+      const warning = el.shadowRoot?.querySelector('.stale-warning');
+      expect(warning, 'expected a .stale-warning for the `unknown` sensor').to.exist;
+      expect((warning?.textContent ?? '').trim()).to.match(/1 of 2 sensors unavailable/i);
+    });
+
+    it('updates the badge count when hass.states changes (live)', async () => {
+      // Replicates the real-world recovery flow: user fixes one
+      // sensor's battery, HA reassigns `hass`, the panel should
+      // re-render with the new count without a refetch.
+      const initialHass = hassWithStates({
+        'binary_sensor.front': 'unavailable',
+        'binary_sensor.back': 'unavailable',
+      });
+      const actions = [
+        createMockAction({
+          sensor_entity_ids: ['binary_sensor.front', 'binary_sensor.back'],
+        }),
+      ];
+      const el = await fixture<ActionsTab>(html`
+        <abode-actions-tab .hass=${initialHass}></abode-actions-tab>
+      `);
+      await setState(el, {
+        _actions: actions,
+        _loading: false,
+      } as Partial<ActionsTab>);
+      expect((el.shadowRoot?.querySelector('.stale-warning')?.textContent ?? '').trim()).to.match(
+        /2 of 2 sensors unavailable/i,
+      );
+
+      // HA replaces the entire hass object on state changes — mimic
+      // that here rather than mutating in place.
+      el.hass = hassWithStates({
+        'binary_sensor.front': 'off',
+        'binary_sensor.back': 'unavailable',
+      });
+      await elementUpdated(el);
+      expect((el.shadowRoot?.querySelector('.stale-warning')?.textContent ?? '').trim()).to.match(
+        /1 of 2 sensors unavailable/i,
+      );
+
+      // Fully recovered — badge disappears.
+      el.hass = hassWithStates({
+        'binary_sensor.front': 'off',
+        'binary_sensor.back': 'off',
+      });
+      await elementUpdated(el);
+      expect(el.shadowRoot?.querySelector('.stale-warning')).to.equal(null);
+    });
+  });
 });

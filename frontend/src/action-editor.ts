@@ -8,7 +8,7 @@ import type {
   SensorEntity,
   AlarmEntity,
 } from './types';
-import { MODES } from './types';
+import { MODES, getEntityState, isUnavailableState } from './types';
 import { fetchSensors, fetchAlarms, createAction, updateAction } from './api';
 import './abode-modal';
 
@@ -38,6 +38,32 @@ function compareSensorCategories(a: string, b: string): number {
   const ra = SENSOR_CATEGORY_RANK.get(a) ?? Number.MAX_SAFE_INTEGER;
   const rb = SENSOR_CATEGORY_RANK.get(b) ?? Number.MAX_SAFE_INTEGER;
   return ra - rb || a.localeCompare(b);
+}
+
+// Per-device-class labels for the "on" / "off" states. "Door open" reads
+// natural; "motion on" does not. Anything not in this map falls back to the
+// raw on/off — better than guessing wrong for an unfamiliar class.
+const STATE_LABELS: Record<string, { on: string; off: string }> = {
+  door: { on: 'open', off: 'closed' },
+  window: { on: 'open', off: 'closed' },
+  garage_door: { on: 'open', off: 'closed' },
+  opening: { on: 'open', off: 'closed' },
+  motion: { on: 'detected', off: 'clear' },
+  occupancy: { on: 'detected', off: 'clear' },
+  presence: { on: 'detected', off: 'clear' },
+  moisture: { on: 'wet', off: 'dry' },
+  smoke: { on: 'detected', off: 'clear' },
+  gas: { on: 'detected', off: 'clear' },
+  carbon_monoxide: { on: 'detected', off: 'clear' },
+};
+
+function describeState(state: string, category: string): string {
+  if (isUnavailableState(state)) return 'unavailable';
+  const labels = STATE_LABELS[category];
+  if (!labels) return state;
+  if (state === 'on') return labels.on;
+  if (state === 'off') return labels.off;
+  return state;
 }
 
 /**
@@ -281,6 +307,114 @@ export class ActionEditor extends LitElement {
       color: var(--secondary-text-color, #757575);
     }
 
+    /* Row layout: checkbox is sibling of an inner label so the click target
+     * stays standard, but the info button sits outside the label so clicking
+     * it doesn't toggle selection. */
+    .sensor-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sensor-row > label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+      cursor: pointer;
+    }
+
+    .sensor-row.unavailable > label .entity-name {
+      text-decoration: line-through;
+      opacity: 0.7;
+    }
+
+    .entity-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* State pill — colored dot plus label. Pulls from HA's CSS variable
+     * palette where available so it follows light/dark theming. */
+    .state-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: 6px;
+      font-size: 11px;
+      color: var(--secondary-text-color, #757575);
+      white-space: nowrap;
+    }
+
+    .state-pill::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .state-pill.on {
+      color: var(--state-binary_sensor-active-color, var(--warning-color, #ff9800));
+    }
+
+    .state-pill.off {
+      color: var(--state-binary_sensor-color, var(--success-color, #4caf50));
+    }
+
+    .state-pill.unavailable {
+      color: var(--error-color, #f44336);
+    }
+
+    .state-pill.unavailable::before {
+      /* Hide the dot for unavailable rows — the template renders an
+       * <ha-icon> (mdi:alert-circle-outline) in its place. */
+      display: none;
+    }
+
+    .state-pill.unavailable ha-icon {
+      --mdc-icon-size: 14px;
+    }
+
+    .info-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: var(--secondary-text-color, #757575);
+      cursor: pointer;
+      border-radius: 4px;
+    }
+
+    .info-button:hover {
+      color: var(--primary-text-color);
+      background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
+    }
+
+    .info-button:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: 1px;
+    }
+
+    .info-button ha-icon {
+      --mdc-icon-size: 18px;
+    }
+
+    .category-header .unavailable-count {
+      margin-left: 4px;
+      font-size: 12px;
+      font-weight: normal;
+      color: var(--error-color, #f44336);
+      text-transform: none;
+    }
+
     .alarm-list {
       display: flex;
       flex-direction: column;
@@ -463,6 +597,24 @@ export class ActionEditor extends LitElement {
   private _toggleSensor(entityId: string) {
     this._selectedSensors = toggleIn(this._selectedSensors, entityId);
     this._clearError('sensors');
+  }
+
+  // Fires HA's standard "open more-info dialog" event. `composed: true` is
+  // required to escape this panel's shadow DOM; HA's root listener picks
+  // it up and routes through ha-more-info-dialog. `stopPropagation` is
+  // defensive — the button is a sibling of the row's `<label>`, so a
+  // click landing on the button itself can't toggle the checkbox today,
+  // but if a future refactor wraps the row in a wider click handler we
+  // don't want "inspect this sensor" to also select it.
+  private _openMoreInfo(entityId: string, e: Event) {
+    e.stopPropagation();
+    this.dispatchEvent(
+      new CustomEvent('hass-more-info', {
+        detail: { entityId },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   private _toggleAlarm(entityId: string) {
@@ -716,14 +868,28 @@ export class ActionEditor extends LitElement {
 
     // Precompute the filtered subset once per category so the header
     // count, items render, and select-all helpers all agree on what the
-    // user can actually see.
+    // user can actually see. Also partition the filtered list so
+    // unavailable sensors sort to the bottom (and are visually dimmed in
+    // the row template) — picking a dead sensor was exactly the trap the
+    // "Home Test" bug hit.
+    // Same predicate the pill, header count, and actions-tab badge all
+    // use — `unknown` is dead too, since the backend trigger filter
+    // rejects any transition that isn't a clean off → on.
+    const isDead = (s: SensorEntity): boolean =>
+      isUnavailableState(getEntityState(this.hass, s.entity_id, s.state));
     const renderedCategories = nonEmptyCategories
       .map((category) => {
         const sensors = sensorsByCategory[category] ?? [];
         const filtered = isFiltering
           ? sensors.filter((s) => s.name.toLowerCase().includes(query))
           : sensors;
-        return { category, sensors, filtered };
+        // Stable partition preserves the backend's intra-group order
+        // (alphabetical by friendly_name) within each half.
+        const live = filtered.filter((s) => !isDead(s));
+        const dead = filtered.filter((s) => isDead(s));
+        const ordered = [...live, ...dead];
+        const unavailableTotal = sensors.filter(isDead).length;
+        return { category, sensors, filtered, ordered, unavailableTotal };
       })
       .filter(({ filtered }) => !isFiltering || filtered.length > 0);
 
@@ -752,90 +918,130 @@ export class ActionEditor extends LitElement {
     return html`
       ${searchInput}
       <div class="sensor-categories">
-        ${renderedCategories.map(({ category, sensors, filtered }, index) => {
-          // SensorsByCategory is keyed by `string`, so a backend key with
-          // whitespace or other non-token characters would silently break
-          // `aria-controls` (parsed as multiple ids) and produce an
-          // invalid DOM id. Normalize defensively, and prefix with the
-          // render index so two keys that sanitize to the same value
-          // (e.g. "smoke detector" and "smoke-detector") still produce
-          // unique ids.
-          const safeKey = category.replace(/[^A-Za-z0-9_-]/g, '-');
-          const itemsId = `sensor-cat-${index}-${safeKey}`;
-          // Human-readable label used for both the visible header text
-          // and the accessible name on the disclosure button so a
-          // screen-reader announcement matches what sighted users see.
-          const humanLabel = category.replace(/_/g, ' ');
-          // While filtering, force-expand matched categories so search
-          // results aren't hidden behind a collapse the user can't see.
-          const isExpanded = isFiltering || this._expandedCategories.has(category);
-          const countLabel =
-            filtered.length === sensors.length
-              ? `(${sensors.length})`
-              : `(${filtered.length}/${sensors.length})`;
-          return html`
-            <div class="category">
-              <div class="category-header" @click=${() => this._toggleCategory(category, filtered)}>
-                <input
-                  type="checkbox"
-                  .checked=${this._isCategorySelected(category, filtered)}
-                  .indeterminate=${this._isCategoryPartial(category, filtered)}
-                  @click=${(e: Event) => e.stopPropagation()}
-                  @change=${() => this._toggleCategory(category, filtered)}
-                />
-                <span>${humanLabel} ${countLabel}</span>
-                ${isFiltering
-                  ? // Search has total control of expansion while active;
-                    // rendering the chevron would let it accept clicks
-                    // that silently mutate _expandedCategories without
-                    // any visible effect, leaving the post-clear collapse
-                    // state out of sync with what the user saw.
-                    null
-                  : html`
-                      <button
-                        type="button"
-                        class="disclosure"
-                        aria-expanded=${isExpanded ? 'true' : 'false'}
-                        aria-controls=${isExpanded ? itemsId : nothing}
-                        aria-label=${isExpanded ? `Collapse ${humanLabel}` : `Expand ${humanLabel}`}
-                        @click=${(e: Event) => {
-                          // The header itself handles select-all on click,
-                          // so the disclosure must not bubble up —
-                          // otherwise a user trying to peek inside would
-                          // toggle their whole-category selection by
-                          // accident.
-                          e.stopPropagation();
-                          this._toggleCategoryExpanded(category);
-                        }}
-                      >
-                        <span aria-hidden="true">▸</span>
-                      </button>
-                    `}
+        ${renderedCategories.map(
+          ({ category, sensors, filtered, ordered, unavailableTotal }, index) => {
+            // SensorsByCategory is keyed by `string`, so a backend key with
+            // whitespace or other non-token characters would silently break
+            // `aria-controls` (parsed as multiple ids) and produce an
+            // invalid DOM id. Normalize defensively, and prefix with the
+            // render index so two keys that sanitize to the same value
+            // (e.g. "smoke detector" and "smoke-detector") still produce
+            // unique ids.
+            const safeKey = category.replace(/[^A-Za-z0-9_-]/g, '-');
+            const itemsId = `sensor-cat-${index}-${safeKey}`;
+            // Human-readable label used for both the visible header text
+            // and the accessible name on the disclosure button so a
+            // screen-reader announcement matches what sighted users see.
+            const humanLabel = category.replace(/_/g, ' ');
+            // While filtering, force-expand matched categories so search
+            // results aren't hidden behind a collapse the user can't see.
+            const isExpanded = isFiltering || this._expandedCategories.has(category);
+            const countLabel =
+              filtered.length === sensors.length
+                ? `(${sensors.length})`
+                : `(${filtered.length}/${sensors.length})`;
+            // Only show "K unavailable" when there's something to flag. The
+            // count is over the *full* category (not the filter result) so
+            // the user sees the same dead-sensor count whether or not they
+            // typed a search query.
+            const unavailableLabel =
+              unavailableTotal > 0
+                ? html`<span class="unavailable-count">, ${unavailableTotal} unavailable</span>`
+                : nothing;
+            return html`
+              <div class="category">
+                <div
+                  class="category-header"
+                  @click=${() => this._toggleCategory(category, filtered)}
+                >
+                  <input
+                    type="checkbox"
+                    .checked=${this._isCategorySelected(category, filtered)}
+                    .indeterminate=${this._isCategoryPartial(category, filtered)}
+                    @click=${(e: Event) => e.stopPropagation()}
+                    @change=${() => this._toggleCategory(category, filtered)}
+                  />
+                  <span>${humanLabel} ${countLabel}${unavailableLabel}</span>
+                  ${isFiltering
+                    ? // Search has total control of expansion while active;
+                      // rendering the chevron would let it accept clicks
+                      // that silently mutate _expandedCategories without
+                      // any visible effect, leaving the post-clear collapse
+                      // state out of sync with what the user saw.
+                      null
+                    : html`
+                        <button
+                          type="button"
+                          class="disclosure"
+                          aria-expanded=${isExpanded ? 'true' : 'false'}
+                          aria-controls=${isExpanded ? itemsId : nothing}
+                          aria-label=${isExpanded
+                            ? `Collapse ${humanLabel}`
+                            : `Expand ${humanLabel}`}
+                          @click=${(e: Event) => {
+                            // The header itself handles select-all on click,
+                            // so the disclosure must not bubble up —
+                            // otherwise a user trying to peek inside would
+                            // toggle their whole-category selection by
+                            // accident.
+                            e.stopPropagation();
+                            this._toggleCategoryExpanded(category);
+                          }}
+                        >
+                          <span aria-hidden="true">▸</span>
+                        </button>
+                      `}
+                </div>
+                ${isExpanded
+                  ? html`
+                      <div id=${itemsId} class="category-items">
+                        ${ordered.map((sensor) => this._renderSensorRow(sensor, category))}
+                      </div>
+                    `
+                  : null}
               </div>
-              ${isExpanded
-                ? html`
-                    <div id=${itemsId} class="category-items">
-                      ${filtered.map(
-                        (sensor) => html`
-                          <label>
-                            <input
-                              type="checkbox"
-                              .checked=${this._selectedSensors.includes(sensor.entity_id)}
-                              @change=${() => this._toggleSensor(sensor.entity_id)}
-                            />
-                            ${sensor.name}
-                            ${sensor.area
-                              ? html`<span class="entity-area">· ${sensor.area}</span>`
-                              : nothing}
-                          </label>
-                        `,
-                      )}
-                    </div>
-                  `
-                : null}
-            </div>
-          `;
-        })}
+            `;
+          },
+        )}
+      </div>
+    `;
+  }
+
+  private _renderSensorRow(sensor: SensorEntity, category: string) {
+    // Pull from live hass.states so the pill updates when a sensor changes
+    // without re-fetching. Falls back to the snapshot value from the WS
+    // response so first-paint is correct in test harnesses and during the
+    // brief window before HA's first state push.
+    const state = getEntityState(this.hass, sensor.entity_id, sensor.state);
+    const isUnavailable = isUnavailableState(state);
+    const pillClass = isUnavailable ? 'unavailable' : state === 'on' ? 'on' : 'off';
+    const pillLabel = describeState(state, category);
+    return html`
+      <div class="sensor-row ${isUnavailable ? 'unavailable' : ''}">
+        <label>
+          <input
+            type="checkbox"
+            .checked=${this._selectedSensors.includes(sensor.entity_id)}
+            @change=${() => this._toggleSensor(sensor.entity_id)}
+          />
+          <span class="entity-name">${sensor.name}</span>
+          ${sensor.area ? html`<span class="entity-area">· ${sensor.area}</span>` : nothing}
+          <span class="state-pill ${pillClass}" aria-label="${sensor.name} state: ${pillLabel}">
+            ${isUnavailable
+              ? html`<ha-icon icon="mdi:alert-circle-outline" aria-hidden="true"></ha-icon>`
+              : nothing}
+            ${pillLabel}
+          </span>
+        </label>
+        <button
+          type="button"
+          class="info-button"
+          aria-label="More info for ${sensor.name}"
+          title="More info"
+          @click=${(e: Event) => this._openMoreInfo(sensor.entity_id, e)}
+        >
+          <ha-icon icon="mdi:information-outline"></ha-icon>
+        </button>
       </div>
     `;
   }

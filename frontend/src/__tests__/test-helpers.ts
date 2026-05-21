@@ -54,6 +54,10 @@ export function createMockHass(
 
   return {
     callWS: defaultCallWS,
+    // Default to an empty states map so existing tests (which don't care
+    // about per-entity state) keep working. Tests that *do* care pass a
+    // populated `states` via overrides.
+    states: {},
     ...rest,
   } as HomeAssistant;
 }

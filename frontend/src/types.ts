@@ -3,8 +3,61 @@
  */
 
 // Home Assistant types
+
+// Minimal shape of an HA state object. The real HassEntity has many more
+// fields (attributes, last_changed, context, …); we only narrow to what the
+// panel actually reads. The Lit `@property` reassignment-triggers-update
+// mechanic relies on HA replacing `hass` wholesale on state changes, so
+// reading `hass.states[id].state` at render time is enough to stay live.
+export interface HassEntityState {
+  entity_id: string;
+  state: string;
+  attributes?: Record<string, unknown>;
+}
+
 export interface HomeAssistant {
   callWS<T>(params: { type: string; [key: string]: unknown }): Promise<T>;
+  states: Record<string, HassEntityState>;
+}
+
+/**
+ * Read an entity's current state from `hass.states` with a fallback.
+ *
+ * Used by the action editor (sensor pills) and actions tab (stale-sensor
+ * badge) so they react to live state changes without re-fetching: HA
+ * reassigns `hass` on every state change, and Lit re-renders on property
+ * reassignment, so reading from `hass.states` at render time is enough.
+ *
+ * The `fallback` covers the brief window before the panel has the entity
+ * in `hass.states` (test harnesses, cold-start, or an entity created
+ * after the panel loaded) — without it, picking the right pill state
+ * would flicker through "unavailable" on first paint.
+ */
+export function getEntityState(
+  hass: HomeAssistant,
+  entityId: string,
+  fallback = 'unavailable',
+): string {
+  return hass.states?.[entityId]?.state ?? fallback;
+}
+
+/**
+ * Predicate: would this state prevent the action_trigger pipeline from
+ * firing? The backend filter requires a clean `off → on` transition
+ * (see `custom_components/abode_security/action_trigger.py`); both
+ * `unavailable` and `unknown` are dead-ends for that. We treat them
+ * identically in the UI — pill colour, partition order, header count,
+ * and the saved-action warning chip — so the user sees one consistent
+ * story whichever surface they're looking at.
+ *
+ * Centralising this is load-bearing: a previous iteration of this
+ * helper split the predicate across four call sites, and reviewers
+ * caught that `unknown` rendered as a red "unavailable" pill while
+ * still counting as healthy in the header count and warning chip.
+ * Anyone adding a fifth surface should reuse this, not redefine it.
+ */
+export function isUnavailableState(state: string): boolean {
+  return state === 'unavailable' || state === 'unknown';
 }
 
 // Single source of truth for the closed set of mode IDs. Iterating MODES
