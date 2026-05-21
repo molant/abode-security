@@ -765,7 +765,7 @@ describe('ActionEditor', () => {
       // @ts-expect-error - calling private method for testing
       el._validate();
       // @ts-expect-error - accessing private property for testing
-      expect(el._errors.alarms).to.equal('Select at least one alarm');
+      expect(el._errors.alarms).to.equal('Select an alarm');
     });
 
     it('clears a field error via _clearError', async () => {
@@ -915,6 +915,11 @@ describe('ActionEditor', () => {
 
   describe('_populateForm (#31)', () => {
     it('populates state fields from the action prop on connect', async () => {
+      // The action has two alarms in storage from before we restricted
+      // the picker to single-select. The editor should coerce on
+      // populate so the radio UI shows exactly one selected; the
+      // second value is dropped only when the user saves (lazy
+      // migration), not by mutating storage here.
       const action = createMockAction({
         id: 'a1',
         name: 'Edited',
@@ -937,11 +942,9 @@ describe('ActionEditor', () => {
       expect(el._delaySeconds).to.equal(15);
       // @ts-expect-error - accessing private property for testing
       expect(el._selectedSensors).to.deep.equal(['binary_sensor.front_door']);
+      // Single-select: only the first alarm survives in editor state.
       // @ts-expect-error - accessing private property for testing
-      expect(el._selectedAlarms).to.deep.equal([
-        'switch.abode_panic_alarm',
-        'switch.abode_fire_alarm',
-      ]);
+      expect(el._selectedAlarms).to.deep.equal(['switch.abode_panic_alarm']);
     });
   });
 
@@ -1852,6 +1855,92 @@ describe('ActionEditor', () => {
         el.shadowRoot?.querySelectorAll('.state-pill') ?? [],
       ).every((p) => !(p.className ?? '').includes('unavailable'));
       expect(allPillsHealthy).to.equal(true);
+    });
+  });
+
+  // The Abode timeline only meaningfully surfaces one alarm at a time
+  // (911 dispatch is downstream of whichever alarm code fires), so the
+  // picker enforces single-select. Backend storage still accepts an
+  // array — these tests pin the editor-side semantics: radios, lazy
+  // migration of legacy multi-alarm actions, validation copy.
+  describe('alarm single-select', () => {
+    it('renders alarms as radios in a shared group', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+      } as Partial<ActionEditor>);
+
+      const inputs = Array.from(
+        el.shadowRoot?.querySelectorAll<HTMLInputElement>('.alarm-list input') ?? [],
+      );
+      expect(inputs.length).to.be.greaterThan(0);
+      const types = new Set(inputs.map((i) => i.type));
+      expect(types.has('radio')).to.equal(true, 'expected radio inputs');
+      expect(types.has('checkbox')).to.equal(false, 'no checkboxes should remain');
+      const names = new Set(inputs.map((i) => i.name));
+      expect(names.size).to.equal(
+        1,
+        `all alarm radios must share a name attribute to get native single-select; got ${[...names]}`,
+      );
+    });
+
+    it('selecting one alarm replaces a prior selection (no multi-select)', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _selectedAlarms: ['switch.abode_panic_alarm'],
+      } as Partial<ActionEditor>);
+
+      // Pick a different radio via its DOM change event — same path
+      // the user takes. The change handler should *replace*, not toggle.
+      const fireRadio = Array.from(
+        el.shadowRoot?.querySelectorAll<HTMLInputElement>('.alarm-list input[type=radio]') ?? [],
+      ).find((r) => r.value === 'switch.abode_fire_alarm');
+      expect(fireRadio, 'expected a Fire Alarm radio').to.exist;
+      fireRadio!.click();
+      await elementUpdated(el);
+
+      // @ts-expect-error - accessing private property for testing
+      expect(el._selectedAlarms).to.deep.equal(['switch.abode_fire_alarm']);
+    });
+
+    it('applies a responsive grid layout to the alarm list', async () => {
+      // Layout assertion: the .alarm-list container must use CSS grid
+      // with auto-fit columns so the panel reflows from 1 to 2-3
+      // columns based on width. Without this rule the list collapses
+      // back to the old single-column flex layout.
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+      } as Partial<ActionEditor>);
+
+      const list = el.shadowRoot?.querySelector('.alarm-list');
+      expect(list, 'expected an .alarm-list container').to.exist;
+      const computed = getComputedStyle(list as Element);
+      expect(computed.display).to.equal('grid');
+      // grid-template-columns resolves to track sizes once laid out;
+      // the panel sets `repeat(auto-fit, minmax(180px, 1fr))`, which
+      // computed style serialises as one or more `<length>` track
+      // sizes. We don't pin the exact pixel layout (depends on
+      // viewport), only that the property is set to a non-empty,
+      // non-`none` value — proving auto-fit is in effect.
+      expect(computed.gridTemplateColumns).to.not.equal('');
+      expect(computed.gridTemplateColumns).to.not.equal('none');
     });
   });
 });
