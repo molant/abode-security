@@ -154,6 +154,8 @@ Frontend-facing command registry. All commands namespaced `abode_security/*`:
 
 Mutating commands (`create`, `update`, `delete`, `toggle`, `config/set`) require admin. `test` directly invokes an alarm trigger without persisting, for form validation.
 
+**Hidden-entity asymmetry.** `entities/sensors` filters out entries with `hidden_by != None` so users can't accidentally pick a sensor they've intentionally hidden from the UI. The `ActionTriggerCoordinator` *does not* apply the same filter — it listens on `EVENT_STATE_CHANGED` regardless of `hidden_by`, so existing actions referencing a now-hidden sensor keep firing. Hiding an entity is a UI-clutter decision, not a "retire this automation" signal.
+
 ### Config flow (`config_flow.py`, `config_store.py`)
 
 | Step | Purpose |
