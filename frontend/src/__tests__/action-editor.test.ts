@@ -237,10 +237,13 @@ describe('ActionEditor', () => {
       const shedDoor = items.find((l) => /Shed Door/.test(l.textContent ?? ''));
 
       expect(frontDoor?.querySelector('.entity-area')?.textContent).to.match(/Living Room/);
-      expect(shedDoor?.querySelector('.entity-area')).to.equal(
-        null,
-        'sensor without area should not render an empty hint',
-      );
+      // The area cell is always rendered (even when empty) so the
+      // state-pill and info-button columns align across rows in the
+      // grid layout (#119). Cells for sensors without an area should
+      // be present but have no meaningful text content.
+      const shedArea = shedDoor?.querySelector('.entity-area');
+      expect(shedArea, 'expected an empty area cell, not its absence').to.exist;
+      expect((shedArea?.textContent ?? '').trim()).to.equal('');
     });
 
     it('orders sensor categories by usefulness, others alphabetical at end (#120)', async () => {
@@ -1554,8 +1557,10 @@ describe('ActionEditor', () => {
 
       const header = el.shadowRoot?.querySelector('.category-header > span');
       // The count is over the whole category (3 sensors), one of which is
-      // unavailable in hass.states.
-      expect(header?.textContent ?? '').to.match(/door\s*\(3\),\s*1\s*unavailable/i);
+      // unavailable in hass.states. No comma between the totals — the
+      // leading separator is a plain space so the red span only colours
+      // the meaningful "N unavailable" string.
+      expect(header?.textContent ?? '').to.match(/door\s*\(3\)\s+1\s*unavailable/i);
     });
 
     it('omits the unavailable count when all sensors in a category are healthy', async () => {
@@ -1694,7 +1699,7 @@ describe('ActionEditor', () => {
 
       // Header count must include the `unknown` row.
       const header = el.shadowRoot?.querySelector('.category-header > span');
-      expect(header?.textContent ?? '').to.match(/door\s*\(2\),\s*1\s*unavailable/i);
+      expect(header?.textContent ?? '').to.match(/door\s*\(2\)\s+1\s*unavailable/i);
 
       // Spooky Door must render with the unavailable pill (red) and
       // sort to the bottom of the category.
@@ -1822,7 +1827,7 @@ describe('ActionEditor', () => {
       );
       expect(names[names.length - 1]).to.equal('Front', 'Front (unavailable) sorts last');
       let header = el.shadowRoot?.querySelector('.category-header > span');
-      expect(header?.textContent ?? '').to.match(/door\s*\(2\),\s*1\s*unavailable/i);
+      expect(header?.textContent ?? '').to.match(/door\s*\(2\)\s+1\s*unavailable/i);
 
       // HA pushes a state change: Front is back online. The whole hass
       // object gets reassigned (this is how HA's frontend propagates
