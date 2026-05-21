@@ -353,6 +353,15 @@ class ActionTriggerCoordinator:
             "alarms_triggered": alarms_triggered,
             "alarms_failed": alarms_failed,
             "timestamp": datetime.now(UTC).isoformat(),
+            # Sensor context captured at trigger time — not re-fetched here so
+            # delayed actions carry the state that caused the trigger, not the
+            # current state which may have changed.
+            "sensor_friendly_name": context.friendly_name,
+            "sensor_device_class": context.device_class,
+            "previous_state": context.previous_state,
+            "new_state": context.new_state,
+            "sensor_area_id": context.area_id,
+            "sensor_area_name": context.area_name,
         }
         self._hass.bus.async_fire("abode_security.action_triggered", event_data)
 

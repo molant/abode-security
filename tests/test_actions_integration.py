@@ -625,3 +625,77 @@ class TestActionTriggerIntegration:
 
         assert updated1.trigger_count == 1
         assert updated2.trigger_count == 1
+
+    async def test_enriched_event_payload_all_13_keys(
+        self, hass: HomeAssistant, integration_setup
+    ) -> None:
+        """Fired event includes all 7 original keys plus 6 new context keys."""
+        action_manager = integration_setup["action_manager"]
+        events_fired = []
+
+        def event_listener(event):
+            events_fired.append(event)
+
+        hass.bus.async_listen("abode_security.action_triggered", event_listener)
+
+        # Set up sensor state with known friendly_name and device_class
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        hass.states.async_set(
+            "binary_sensor.enriched_sensor",
+            STATE_OFF,
+            {"friendly_name": "Enriched Door", "device_class": "door"},
+        )
+
+        action = await action_manager.async_create(
+            name="Enriched Payload Test",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.enriched_sensor"],
+            alarm_entity_ids=["switch.abode_panic_alarm"],
+            delay_seconds=0,
+        )
+
+        # Trigger the sensor
+        hass.states.async_set(
+            "binary_sensor.enriched_sensor",
+            STATE_ON,
+            {"friendly_name": "Enriched Door", "device_class": "door"},
+        )
+        await hass.async_block_till_done()
+
+        assert len(events_fired) == 1
+        event_data = events_fired[0].data
+
+        # All 13 keys must be present
+        expected_keys = {
+            "action_id",
+            "action_name",
+            "triggered_by",
+            "mode",
+            "alarms_triggered",
+            "alarms_failed",
+            "timestamp",
+            "sensor_friendly_name",
+            "sensor_device_class",
+            "previous_state",
+            "new_state",
+            "sensor_area_id",
+            "sensor_area_name",
+        }
+        assert set(event_data.keys()) == expected_keys
+
+        # Original 7 keys
+        assert event_data["action_id"] == action.id
+        assert event_data["action_name"] == "Enriched Payload Test"
+        assert event_data["triggered_by"] == "binary_sensor.enriched_sensor"
+        assert event_data["mode"] == "home"
+        assert isinstance(event_data["alarms_triggered"], list)
+        assert isinstance(event_data["alarms_failed"], list)
+        assert isinstance(event_data["timestamp"], str)
+
+        # 6 new context keys
+        assert event_data["sensor_friendly_name"] == "Enriched Door"
+        assert event_data["sensor_device_class"] == "door"
+        assert event_data["previous_state"] == "off"
+        assert event_data["new_state"] == "on"
+        assert event_data["sensor_area_id"] is None  # no area assigned
+        assert event_data["sensor_area_name"] is None
