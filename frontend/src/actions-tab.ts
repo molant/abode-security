@@ -125,11 +125,6 @@ export class ActionsTab extends LitElement {
       text-transform: uppercase;
     }
 
-    .trigger-info {
-      font-size: 12px;
-      color: var(--secondary-text-color);
-    }
-
     /* Warning chip surfaced when a saved action references an entity
      * that is currently unavailable in hass.states — the trap that
      * caused the "Home Test" bug: UI looked fine but no event could
@@ -611,9 +606,6 @@ export class ActionsTab extends LitElement {
             <div class="modes-list">
               ${action.modes.map((mode) => html`<span class="mode-chip">${mode}</span>`)}
             </div>
-            ${action.trigger_count > 0
-              ? html`<span class="trigger-info">${action.trigger_count} triggers</span>`
-              : ''}
             ${unavailableCount > 0
               ? html`
                   <span

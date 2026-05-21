@@ -302,30 +302,47 @@ export class ActionEditor extends LitElement {
     }
 
     .category-items .entity-area {
-      margin-left: 6px;
       font-size: 12px;
       color: var(--secondary-text-color, #757575);
     }
 
-    /* Row layout: checkbox is sibling of an inner label so the click target
-     * stays standard, but the info button sits outside the label so clicking
-     * it doesn't toggle selection. */
+    /* Row layout: a flex row that puts the info button on the right
+     * and the clickable label on the left. The label itself is a CSS
+     * grid so name, area, and state pill align in columns across rows
+     * like a table. Earlier we tried display:contents on the label to
+     * make its children direct grid items of .sensor-row, but
+     * Chromium's handling of display:contents on form controls is
+     * inconsistent (the label loses its implicit click-forwarding to
+     * the wrapped <input> under some conditions), which broke the
+     * picker. The current shape is dumber and works.
+     *
+     * Column widths inside the label grid:
+     *   checkbox    auto, minimal
+     *   name        1fr,  takes remaining space and ellipsis-truncates
+     *   area        minmax(0, auto), fits its content (collapses to 0
+     *               on rows without an area so the state pill still
+     *               aligns one column over)
+     *   state pill  minmax(6.5rem, auto) — "unavailable" doesn't force
+     *               ellipsis but a short "open" still column-aligns
+     *               with longer labels in adjacent rows
+     */
     .sensor-row {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
     }
 
     .sensor-row > label {
-      display: flex;
-      align-items: center;
-      gap: 8px;
       flex: 1;
       min-width: 0;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) minmax(0, auto) minmax(6.5rem, auto);
+      align-items: center;
+      column-gap: 12px;
       cursor: pointer;
     }
 
-    .sensor-row.unavailable > label .entity-name {
+    .sensor-row.unavailable .entity-name {
       text-decoration: line-through;
       opacity: 0.7;
     }
@@ -334,15 +351,17 @@ export class ActionEditor extends LitElement {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      min-width: 0;
     }
 
     /* State pill — colored dot plus label. Pulls from HA's CSS variable
-     * palette where available so it follows light/dark theming. */
+     * palette where available so it follows light/dark theming. The
+     * leading "·" separator from the area column is dropped now that
+     * the area sits in its own grid column. */
     .state-pill {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      margin-left: 6px;
       font-size: 11px;
       color: var(--secondary-text-color, #757575);
       white-space: nowrap;
@@ -943,10 +962,12 @@ export class ActionEditor extends LitElement {
             // Only show "K unavailable" when there's something to flag. The
             // count is over the *full* category (not the filter result) so
             // the user sees the same dead-sensor count whether or not they
-            // typed a search query.
+            // typed a search query. The leading space is rendered as a
+            // sibling text node rather than inside the red span — putting
+            // it inside the span made the separator look like noise.
             const unavailableLabel =
               unavailableTotal > 0
-                ? html`<span class="unavailable-count">, ${unavailableTotal} unavailable</span>`
+                ? html` <span class="unavailable-count">${unavailableTotal} unavailable</span>`
                 : nothing;
             return html`
               <div class="category">
@@ -1025,7 +1046,12 @@ export class ActionEditor extends LitElement {
             @change=${() => this._toggleSensor(sensor.entity_id)}
           />
           <span class="entity-name">${sensor.name}</span>
-          ${sensor.area ? html`<span class="entity-area">· ${sensor.area}</span>` : nothing}
+          <!-- Area column always rendered (even when empty) so the
+               state-pill column lines up across rows that do and don't
+               have an area assigned. Empty cells are aria-hidden so
+               screen readers skip them — the cell exists only for
+               layout, not for semantics. -->
+          <span class="entity-area" ?aria-hidden=${!sensor.area}> ${sensor.area ?? nothing} </span>
           <span class="state-pill ${pillClass}" aria-label="${sensor.name} state: ${pillLabel}">
             ${isUnavailable
               ? html`<ha-icon icon="mdi:alert-circle-outline" aria-hidden="true"></ha-icon>`
