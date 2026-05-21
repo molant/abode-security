@@ -329,12 +329,11 @@ class TestActionExecution:
         await coordinator.async_stop()
 
     async def test_coordinator_fires_event(self, hass) -> None:
-        """Test coordinator fires HA event."""
+        """Test coordinator fires HA event and existing payload keys are unchanged."""
         manager = _get_manager(hass)
         coordinator = ActionTriggerCoordinator(hass, manager)
         await coordinator.async_start()
 
-        # Register mock service
         async def mock_service(call):
             pass
 
@@ -353,16 +352,154 @@ class TestActionExecution:
         )
 
         hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
-        hass.states.async_set("binary_sensor.door", "off")
+        hass.states.async_set(
+            "binary_sensor.door",
+            "off",
+            {"friendly_name": "Front Door", "device_class": "door"},
+        )
         await hass.async_block_till_done()
 
-        hass.states.async_set("binary_sensor.door", "on")
+        hass.states.async_set(
+            "binary_sensor.door",
+            "on",
+            {"friendly_name": "Front Door", "device_class": "door"},
+        )
         await hass.async_block_till_done()
 
         assert len(events) == 1
-        assert events[0].data["action_id"] == action.id
-        assert events[0].data["triggered_by"] == "binary_sensor.door"
-        assert events[0].data["mode"] == "home"
+        event_data = events[0].data
+
+        # Verify original 7 keys are present with correct types — backwards-compat guardrail.
+        existing_keys = (
+            "action_id",
+            "action_name",
+            "triggered_by",
+            "mode",
+            "alarms_triggered",
+            "alarms_failed",
+            "timestamp",
+        )
+        expected_existing = {
+            "action_id": action.id,
+            "action_name": "Test",
+            "triggered_by": "binary_sensor.door",
+            "mode": "home",
+            "alarms_triggered": ["switch.panic_alarm"],
+            "alarms_failed": [],
+            "timestamp": event_data["timestamp"],  # opaque string; type checked below
+        }
+        assert {k: event_data[k] for k in existing_keys} == expected_existing
+        assert isinstance(event_data["action_id"], str)
+        assert isinstance(event_data["action_name"], str)
+        assert isinstance(event_data["triggered_by"], str)
+        assert isinstance(event_data["mode"], str)
+        assert isinstance(event_data["alarms_triggered"], list)
+        assert isinstance(event_data["alarms_failed"], list)
+        assert isinstance(event_data["timestamp"], str)
+
+        await coordinator.async_stop()
+
+    async def test_trigger_context_threaded_through_delay(self, hass) -> None:
+        """Context captured at trigger time survives a delay even if state mutates.
+
+        Verifies that the coordinator captures sensor attributes (e.g. friendly_name)
+        at the moment of the off→on transition and carries them intact through the
+        delayed-execution closure so _execute_action receives trigger-time data.
+
+        Sub-Phase A: verifies the action fires without error after state mutation mid-delay.
+        Sub-Phase B extends this to assert event_data["sensor_friendly_name"] == "Front Door".
+        """
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        service_calls = []
+
+        async def mock_service(call):
+            service_calls.append(call)
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        await manager.async_create(
+            name="Delayed",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+            delay_seconds=5,
+        )
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        hass.states.async_set(
+            "binary_sensor.door",
+            "off",
+            {"friendly_name": "Front Door", "device_class": "door"},
+        )
+        await hass.async_block_till_done()
+
+        # Trigger the off→on transition with friendly_name set
+        hass.states.async_set(
+            "binary_sensor.door",
+            "on",
+            {"friendly_name": "Front Door", "device_class": "door"},
+        )
+        await hass.async_block_till_done()
+        assert len(coordinator._pending_delays) == 1
+
+        # Mutate state mid-delay to remove the attribute
+        hass.states.async_set("binary_sensor.door", "on", {})
+        await hass.async_block_till_done()
+
+        # Fire the delay timer
+        await async_fire_time_changed_and_wait(hass, timedelta(seconds=6))
+
+        # Trigger should have fired with trigger-time context preserved
+        assert len(events) == 1
+
+        await coordinator.async_stop()
+
+    async def test_trigger_context_built_for_sensor_without_area(self, hass) -> None:
+        """No exception when sensor has no area_id and no device_id.
+
+        Sub-Phase A: verifies no exception and the event fires (area_id=None path).
+        Sub-Phase B extends this to assert event_data["sensor_area_id"] is None
+        and event_data["sensor_area_name"] is None.
+        """
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        async def mock_service(call):
+            pass
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        await manager.async_create(
+            name="No Area Test",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.bare_sensor"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        # Set sensor state without any area_id or device registration
+        hass.states.async_set("binary_sensor.bare_sensor", "off", {})
+        await hass.async_block_till_done()
+
+        hass.states.async_set("binary_sensor.bare_sensor", "on", {})
+        await hass.async_block_till_done()
+
+        # No exception; event still fires
+        assert len(events) == 1
 
         await coordinator.async_stop()
 
