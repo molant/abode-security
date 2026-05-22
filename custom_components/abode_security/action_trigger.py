@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import EVENT_STATE_CHANGED
@@ -24,6 +25,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later
 
+from . import snapshot
 from .const import DOMAIN
 from .helpers import find_abode_alarm_panel
 
@@ -344,6 +346,31 @@ class ActionTriggerCoordinator:
         # Record the trigger
         await self._action_manager.async_record_trigger(action.id)
 
+        # Resolve co-located camera and optionally capture a snapshot.
+        # Snapshot runs only in home/away — standby still populates camera_entity_id
+        # so users can see the wiring, but snapshot_path stays None.
+        camera_entity_id = snapshot.resolve_co_located_camera(
+            self._hass, context.entity_id
+        )
+        snapshot_path: str | None = None
+        snapshot_error: str | None = None
+        if camera_entity_id is not None and current_mode in ("home", "away"):
+            fs_path, url = snapshot.build_snapshot_path(
+                action.id,
+                context.entity_id,
+                datetime.now(UTC),
+                Path(self._hass.config.path("www")),
+            )
+            capture_err = await snapshot.async_capture(
+                self._hass,
+                camera_entity_id=camera_entity_id,
+                filesystem_path=fs_path,
+            )
+            if capture_err is None:
+                snapshot_path = url
+            else:
+                snapshot_error = capture_err
+
         # Fire event
         event_data = {
             "action_id": action.id,
@@ -362,6 +389,9 @@ class ActionTriggerCoordinator:
             "new_state": context.new_state,
             "sensor_area_id": context.area_id,
             "sensor_area_name": context.area_name,
+            "camera_entity_id": camera_entity_id,
+            "snapshot_path": snapshot_path,
+            "snapshot_error": snapshot_error,
         }
         self._hass.bus.async_fire("abode_security.action_triggered", event_data)
 

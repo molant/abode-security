@@ -240,6 +240,13 @@ The integration uses an async-first architecture with:
 
 For detailed information on async patterns, see [ASYNC_AWAIT_PATTERNS.md](docs/ASYNC_AWAIT_PATTERNS.md).
 
+## Notifications
+
+When an action triggers, the integration fires `abode_security.action_triggered` with the triggering sensor's friendly name, area, prior/new state, and (when the sensor's device exposes a camera) a snapshot URL. The integration does not send notifications itself — wire your own via an HA automation or import the bundled blueprint.
+
+See [`docs/notifications.md`](./docs/notifications.md) for the event reference and automation examples, or import the bundled blueprint manually from Settings → Automations → Blueprints → Import from URL:
+`https://raw.githubusercontent.com/molant/abode-security/main/blueprints/abode_security_notification.yaml`
+
 ## Known Limitations
 
 1. **No 2FA Support** - Two-factor authentication not currently supported

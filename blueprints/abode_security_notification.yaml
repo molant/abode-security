@@ -1,0 +1,118 @@
+blueprint:
+  name: "Abode Security — Action notification"
+  description: >
+    Sends a mobile notification whenever an Abode action fires. When the triggering sensor's
+    device exposes a co-located camera and the system is in home or away mode, the notification
+    includes a snapshot image. Optionally filter to a single action by its ID, and optionally
+    send as a critical alert (iOS: bypasses Do Not Disturb; Android: high-priority channel).
+  domain: automation
+  source_url: https://github.com/molant/abode-security/blob/main/blueprints/abode_security_notification.yaml
+  input:
+    notify_target:
+      name: Notification target
+      description: >
+        The notify service to call, e.g. `notify.mobile_app_iphone` or
+        `notify.mobile_app_pixel`. Do not include the `service:` keyword —
+        just the dotted service name.
+      selector:
+        text:
+          multiline: false
+
+    action_filter:
+      name: Action filter
+      description: >
+        Leave blank to notify for **all** triggered actions. Enter an `action_id` UUID
+        (found in the automation trace or the event payload) to restrict notifications
+        to that one action.
+      default: ""
+      selector:
+        text:
+          multiline: false
+
+    critical:
+      name: Critical alert
+      description: >
+        iOS: sends a critical alert that bypasses Do Not Disturb (requires the
+        HA Companion app permission to be granted in iOS Settings).
+        Android: sets a high-priority notification channel.
+      default: false
+      selector:
+        boolean:
+
+trigger:
+  - platform: event
+    event_type: abode_security.action_triggered
+
+variables:
+  action_filter: !input action_filter
+  critical: !input critical
+
+condition:
+  - condition: template
+    value_template: >
+      {{ (action_filter | trim) == "" or
+         trigger.event.data.action_id == (action_filter | trim) }}
+
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.event.data.snapshot_path is not none }}"
+        sequence:
+          - service: !input notify_target
+            data:
+              title: "{{ trigger.event.data.action_name }}"
+              message: >-
+                {{ trigger.event.data.sensor_friendly_name or trigger.event.data.triggered_by }}
+                {{ 'opened' if trigger.event.data.sensor_device_class in ['door', 'window']
+                   else 'detected motion' if trigger.event.data.sensor_device_class == 'motion'
+                   else 'triggered' }}
+                ({{ trigger.event.data.mode }})
+              data: >
+                {% set base = {
+                  "image": trigger.event.data.snapshot_path
+                } %}
+                {% if critical %}
+                  {% set base = dict(base, **{
+                    "push": {
+                      "interruption-level": "critical",
+                      "sound": {
+                        "name": "default",
+                        "critical": 1,
+                        "volume": 1.0
+                      }
+                    },
+                    "channel": "critical",
+                    "priority": "high",
+                    "ttl": 0
+                  }) %}
+                {% endif %}
+                {{ base }}
+    default:
+      - service: !input notify_target
+        data:
+          title: "{{ trigger.event.data.action_name }}"
+          message: >-
+            {{ trigger.event.data.sensor_friendly_name or trigger.event.data.triggered_by }}
+            {{ 'opened' if trigger.event.data.sensor_device_class in ['door', 'window']
+               else 'detected motion' if trigger.event.data.sensor_device_class == 'motion'
+               else 'triggered' }}
+            ({{ trigger.event.data.mode }})
+          data: >
+            {% set base = {} %}
+            {% if critical %}
+              {% set base = {
+                "push": {
+                  "interruption-level": "critical",
+                  "sound": {
+                    "name": "default",
+                    "critical": 1,
+                    "volume": 1.0
+                  }
+                },
+                "channel": "critical",
+                "priority": "high",
+                "ttl": 0
+              } %}
+            {% endif %}
+            {{ base }}
