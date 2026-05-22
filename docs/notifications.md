@@ -148,6 +148,26 @@ The blueprint inputs are:
 
 ---
 
+## Testing without arming the panel
+
+The `abode_security.fire_test_notification` service runs the full event-fire and snapshot-capture path for a chosen action — but skips the alarm `switch.turn_on` calls, the mode gate, and the debounce. It writes a real JPEG under `/config/www/abode_security_snapshots/` (when the sensor has a co-located camera) and fires a real `abode_security.action_triggered` event, so your blueprint or automation reacts exactly as it would for a real trigger.
+
+**Opt-in:** the service refuses to run unless **debug logging** is enabled in the integration options (**Settings → Devices & Services → Abode Security → Configure → Debug logging**).
+
+Call it from **Developer Tools → Services**:
+
+```yaml
+service: abode_security.fire_test_notification
+data:
+  action_id: "7f3b6a2c-1234-5678-abcd-ef0123456789"
+  sensor_entity_id: binary_sensor.front_door
+  mode: home  # optional — defaults to "home"; snapshot is forced regardless
+```
+
+The event payload mirrors a real trigger except `alarms_triggered` / `alarms_failed` are empty lists. Use it to verify your notification target, critical-alert configuration, and image rendering without arming the system or walking past a sensor.
+
+---
+
 ## Troubleshooting
 
 ### I'm not getting `snapshot_path` — why?

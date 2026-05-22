@@ -346,15 +346,49 @@ class ActionTriggerCoordinator:
         # Record the trigger
         await self._action_manager.async_record_trigger(action.id)
 
-        # Resolve co-located camera and optionally capture a snapshot.
-        # Snapshot runs only in home/away — standby still populates camera_entity_id
-        # so users can see the wiring, but snapshot_path stays None.
+        await self._capture_and_fire(
+            action=action,
+            context=context,
+            current_mode=current_mode,
+            alarms_triggered=alarms_triggered,
+            alarms_failed=alarms_failed,
+            force_snapshot=False,
+        )
+
+        _LOGGER.info(
+            "Action '%s' executed: %d alarms triggered, %d failed",
+            action.name,
+            len(alarms_triggered),
+            len(alarms_failed),
+        )
+
+    async def _capture_and_fire(
+        self,
+        *,
+        action: AbodeAction,
+        context: _SensorTriggerContext,
+        current_mode: str,
+        alarms_triggered: list[str],
+        alarms_failed: list[str],
+        force_snapshot: bool,
+    ) -> None:
+        """Resolve the co-located camera, optionally snapshot, and fire the event.
+
+        Args:
+            force_snapshot: When True, capture regardless of mode (used by the
+                debug fire_test_notification path so callers can exercise the
+                snapshot pipeline without arming the panel). When False, only
+                home/away modes trigger a capture.
+        """
         camera_entity_id = snapshot.resolve_co_located_camera(
             self._hass, context.entity_id
         )
         snapshot_path: str | None = None
         snapshot_error: str | None = None
-        if camera_entity_id is not None and current_mode in ("home", "away"):
+        should_capture = camera_entity_id is not None and (
+            force_snapshot or current_mode in ("home", "away")
+        )
+        if should_capture and camera_entity_id is not None:
             fs_path, url = snapshot.build_snapshot_path(
                 action.id,
                 context.entity_id,
@@ -371,7 +405,6 @@ class ActionTriggerCoordinator:
             else:
                 snapshot_error = capture_err
 
-        # Fire event
         event_data = {
             "action_id": action.id,
             "action_name": action.name,
@@ -395,12 +428,86 @@ class ActionTriggerCoordinator:
         }
         self._hass.bus.async_fire("abode_security.action_triggered", event_data)
 
-        _LOGGER.info(
-            "Action '%s' executed: %d alarms triggered, %d failed",
-            action.name,
-            len(alarms_triggered),
-            len(alarms_failed),
+    async def async_fire_test_notification(
+        self,
+        action_id: str,
+        sensor_entity_id: str,
+        mode: str = "home",
+    ) -> bool:
+        """Fire `abode_security.action_triggered` for an action without arming.
+
+        Debug helper used by the `abode_security.fire_test_notification`
+        service. Runs the same snapshot + event-fire path as a real trigger
+        but skips the alarm switch.turn_on calls, the mode gate, and the
+        debounce. Snapshot capture is forced so the blueprint receives a
+        real `snapshot_path` whenever a co-located camera exists.
+
+        Returns True when the event was fired, False on lookup failure.
+        """
+        action = await self._action_manager.async_get(action_id)
+        if action is None:
+            _LOGGER.warning("fire_test_notification: action %s not found", action_id)
+            return False
+        if mode not in ("standby", "home", "away"):
+            _LOGGER.warning("fire_test_notification: invalid mode %s", mode)
+            return False
+
+        # Synthesize a payload that matches what a real "off"→"on" transition
+        # would produce. Pulling new_state from the sensor's *current* value
+        # would surprise users testing while their door is already open (they'd
+        # see new_state="on" but no transition), and pulling previous_state
+        # from history is overkill for a debug helper.
+        state = self._hass.states.get(sensor_entity_id)
+        friendly_name: str | None = None
+        device_class: str | None = None
+        previous_state: str | None = "off"
+        new_state: str | None = "on"
+        if state is not None:
+            friendly_name = state.attributes.get("friendly_name")
+            device_class = state.attributes.get("device_class")
+
+        area_id: str | None = None
+        entity_entry = er.async_get(self._hass).async_get(sensor_entity_id)
+        if entity_entry is not None:
+            area_id = entity_entry.area_id
+            if area_id is None and entity_entry.device_id is not None:
+                device_entry = dr.async_get(self._hass).async_get(
+                    entity_entry.device_id
+                )
+                if device_entry is not None:
+                    area_id = device_entry.area_id
+
+        area_name: str | None = None
+        if area_id is not None:
+            area_entry = ar.async_get(self._hass).async_get_area(area_id)
+            if area_entry is not None:
+                area_name = area_entry.name
+
+        context = _SensorTriggerContext(
+            entity_id=sensor_entity_id,
+            friendly_name=friendly_name,
+            device_class=device_class,
+            previous_state=previous_state,
+            new_state=new_state,
+            area_id=area_id,
+            area_name=area_name,
         )
+
+        _LOGGER.info(
+            "fire_test_notification: action='%s' sensor=%s mode=%s",
+            action.name,
+            sensor_entity_id,
+            mode,
+        )
+        await self._capture_and_fire(
+            action=action,
+            context=context,
+            current_mode=mode,
+            alarms_triggered=[],
+            alarms_failed=[],
+            force_snapshot=True,
+        )
+        return True
 
     def cancel_pending_for_action(self, action_id: str) -> None:
         """Cancel all pending delayed triggers for an action.

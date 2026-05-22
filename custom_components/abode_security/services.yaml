@@ -56,3 +56,26 @@ dismiss_alarm:
 enable_test_mode: {}
 
 disable_test_mode: {}
+
+fire_test_notification:
+  fields:
+    action_id:
+      required: true
+      example: "00000000-0000-0000-0000-000000000000"
+      selector:
+        text:
+    sensor_entity_id:
+      required: true
+      example: binary_sensor.front_door
+      selector:
+        entity:
+          domain: binary_sensor
+    mode:
+      default: home
+      example: home
+      selector:
+        select:
+          options:
+            - standby
+            - home
+            - away

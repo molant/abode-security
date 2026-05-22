@@ -1515,3 +1515,166 @@ class TestSnapshotIntegration:
         assert len(service_calls) == 1
 
         await coordinator.async_stop()
+
+
+@pytest.mark.usefixtures("mock_abode", "setup_coordinator")
+class TestFireTestNotification:
+    """Tests for async_fire_test_notification (debug-only path)."""
+
+    async def test_fires_event_with_snapshot_and_no_alarm_calls(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Forces snapshot, skips switch.turn_on, fills the synthesized context."""
+        sensor_entity_id, camera_entity_id = _setup_sensor_with_camera(hass)
+
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        switch_calls: list[object] = []
+
+        async def mock_switch(call):
+            switch_calls.append(call)
+
+        hass.services.async_register("switch", "turn_on", mock_switch)
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        action = await manager.async_create(
+            name="Test Notif",
+            modes=["home"],
+            sensor_entity_ids=[sensor_entity_id],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        # Sensor must have a state so the synthesized context picks up
+        # friendly_name + new_state — exercises the same payload path the
+        # blueprint depends on.
+        hass.states.async_set(
+            sensor_entity_id,
+            "off",
+            {"friendly_name": "Front Door", "device_class": "door"},
+        )
+        await hass.async_block_till_done()
+
+        with patch(
+            "custom_components.abode_security.action_trigger.snapshot.async_capture",
+            new=AsyncMock(return_value=None),
+        ):
+            fired = await coordinator.async_fire_test_notification(
+                action.id, sensor_entity_id
+            )
+            await hass.async_block_till_done()
+
+        assert fired is True
+        # No alarm switch should have been touched.
+        assert switch_calls == []
+        assert len(events) == 1
+        data = events[0].data
+        assert data["action_id"] == action.id
+        assert data["action_name"] == "Test Notif"
+        assert data["mode"] == "home"
+        assert data["alarms_triggered"] == []
+        assert data["alarms_failed"] == []
+        assert data["sensor_friendly_name"] == "Front Door"
+        assert data["sensor_device_class"] == "door"
+        assert data["camera_entity_id"] == camera_entity_id
+        assert data["snapshot_path"] is not None
+        assert data["snapshot_error"] is None
+
+        await coordinator.async_stop()
+
+    async def test_forces_snapshot_in_standby(self, hass: HomeAssistant) -> None:
+        """Snapshot is captured even in standby — that's the point of the debug path."""
+        sensor_entity_id, camera_entity_id = _setup_sensor_with_camera(hass)
+
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        action = await manager.async_create(
+            name="Standby Test",
+            modes=["standby"],
+            sensor_entity_ids=[sensor_entity_id],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        hass.states.async_set(sensor_entity_id, "off")
+        await hass.async_block_till_done()
+
+        with patch(
+            "custom_components.abode_security.action_trigger.snapshot.async_capture",
+            new=AsyncMock(return_value=None),
+        ):
+            fired = await coordinator.async_fire_test_notification(
+                action.id, sensor_entity_id, mode="standby"
+            )
+            await hass.async_block_till_done()
+
+        assert fired is True
+        assert len(events) == 1
+        data = events[0].data
+        assert data["mode"] == "standby"
+        assert data["camera_entity_id"] == camera_entity_id
+        assert data["snapshot_path"] is not None
+
+        await coordinator.async_stop()
+
+    async def test_returns_false_for_unknown_action(self, hass: HomeAssistant) -> None:
+        sensor_entity_id, _ = _setup_sensor_with_camera(hass)
+
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        fired = await coordinator.async_fire_test_notification(
+            "no-such-action-id", sensor_entity_id
+        )
+        await hass.async_block_till_done()
+
+        assert fired is False
+        assert events == []
+
+        await coordinator.async_stop()
+
+    async def test_rejects_invalid_mode(self, hass: HomeAssistant) -> None:
+        sensor_entity_id, _ = _setup_sensor_with_camera(hass)
+
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        action = await manager.async_create(
+            name="Bad Mode",
+            modes=["home"],
+            sensor_entity_ids=[sensor_entity_id],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        fired = await coordinator.async_fire_test_notification(
+            action.id, sensor_entity_id, mode="bogus"
+        )
+        await hass.async_block_till_done()
+
+        assert fired is False
+        assert events == []
+
+        await coordinator.async_stop()
