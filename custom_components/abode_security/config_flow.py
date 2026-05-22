@@ -33,9 +33,11 @@ from .const import (
     CONF_POLLING,
     CONF_POLLING_INTERVAL,
     CONF_RETRY_COUNT,
+    CONF_SNAPSHOT_RETENTION_DAYS,
     DEFAULT_ENABLE_EVENTS,
     DEFAULT_POLLING_INTERVAL,
     DEFAULT_RETRY_COUNT,
+    DEFAULT_SNAPSHOT_RETENTION_DAYS,
     DOMAIN,
     LOGGER,
 )
@@ -263,6 +265,9 @@ class AbodeOptionsFlowHandler(OptionsFlow):
         retry_count = self.config_entry.options.get(
             CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT
         )
+        snapshot_retention_days = self.config_entry.options.get(
+            CONF_SNAPSHOT_RETENTION_DAYS, DEFAULT_SNAPSHOT_RETENTION_DAYS
+        )
         debug_logging = self.config_entry.options.get(CONF_DEBUG_LOGGING, False)
 
         options_schema = vol.Schema(
@@ -282,6 +287,13 @@ class AbodeOptionsFlowHandler(OptionsFlow):
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1, max=5, mode=selector.NumberSelectorMode.BOX
+                    ),
+                ),
+                vol.Optional(
+                    CONF_SNAPSHOT_RETENTION_DAYS, default=snapshot_retention_days
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1, max=365, step=1, mode=selector.NumberSelectorMode.BOX
                     ),
                 ),
                 vol.Optional(

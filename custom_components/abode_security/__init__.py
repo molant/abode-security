@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
 from typing import cast
@@ -22,17 +23,22 @@ from homeassistant.const import (
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.util import dt as dt_util
 
+from . import snapshot
 from .const import (
     CONF_DEBUG_LOGGING,
     CONF_ENABLE_EVENTS,
     CONF_POLLING,
     CONF_POLLING_INTERVAL,
     CONF_RETRY_COUNT,
+    CONF_SNAPSHOT_RETENTION_DAYS,
     DEFAULT_ENABLE_EVENTS,
     DEFAULT_POLLING_INTERVAL,
     DEFAULT_RETRY_COUNT,
+    DEFAULT_SNAPSHOT_RETENTION_DAYS,
     DOMAIN,
     LOGGER,
 )
@@ -272,6 +278,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as ex:
         # Panel registration is optional - don't fail setup if it fails
         LOGGER.warning("Could not register frontend panel: %s", ex)
+
+    async def _purge_callback(now: datetime) -> None:
+        retention = int(
+            entry.options.get(
+                CONF_SNAPSHOT_RETENTION_DAYS, DEFAULT_SNAPSHOT_RETENTION_DAYS
+            )
+        )
+        snapshot_dir = Path(hass.config.path("www/abode_security_snapshots"))
+        deleted = await snapshot.async_purge_old(
+            snapshot_dir, retention_days=retention, now=now
+        )
+        if deleted:
+            LOGGER.info("Purged %d snapshot(s) older than %d days", deleted, retention)
+
+    unsub_purge = async_track_time_interval(
+        hass, _purge_callback, timedelta(days=1), cancel_on_shutdown=True
+    )
+    entry.async_on_unload(unsub_purge)
+    # Run once on startup so a long-offline instance doesn't wait 24h for first purge.
+    entry.async_create_background_task(
+        hass, _purge_callback(dt_util.utcnow()), "abode_security_purge_startup"
+    )
 
     return True
 

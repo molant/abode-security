@@ -14,12 +14,14 @@ CONF_ENABLE_EVENTS = "enable_events"
 CONF_RETRY_COUNT = "retry_count"
 CONF_EVENT_FILTER = "event_filter"
 CONF_DEBUG_LOGGING = "debug_logging"
+CONF_SNAPSHOT_RETENTION_DAYS = "snapshot_retention_days"
 
 # Default configuration values
 DEFAULT_POLLING_INTERVAL = 30  # seconds
 DEFAULT_ENABLE_EVENTS = True
 DEFAULT_RETRY_COUNT = 3
 DEFAULT_EVENT_FILTER: list[str] = []  # No filtering by default
+DEFAULT_SNAPSHOT_RETENTION_DAYS = 30
 
 # Event types for filtering
 EVENT_TYPES = [

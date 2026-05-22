@@ -14,7 +14,12 @@ from custom_components.abode_security.abode.exceptions import (
     AuthenticationException as AbodeAuthenticationException,
 )
 from custom_components.abode_security.abode.helpers.errors import MFA_CODE_REQUIRED
-from custom_components.abode_security.const import CONF_POLLING, DOMAIN
+from custom_components.abode_security.const import (
+    CONF_POLLING,
+    CONF_SNAPSHOT_RETENTION_DAYS,
+    DEFAULT_SNAPSHOT_RETENTION_DAYS,
+    DOMAIN,
+)
 from tests.common import MockConfigEntry
 
 pytestmark = pytest.mark.usefixtures("mock_setup_entry")
@@ -335,3 +340,54 @@ async def test_step_reauth_preserves_polling(hass: HomeAssistant) -> None:
     assert entry.data[CONF_PASSWORD] == "new_password"
     # CONF_POLLING must survive reauth — the bug overwrote entry.data wholesale.
     assert entry.data[CONF_POLLING] is True
+
+
+async def test_options_flow_includes_snapshot_retention(hass: HomeAssistant) -> None:
+    """Options flow schema includes snapshot_retention_days with correct defaults."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_USERNAME: "user@email.com", CONF_PASSWORD: "password"},
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "init"
+    schema = result["data_schema"].schema
+    field_names = [k.schema if hasattr(k, "schema") else k for k in schema]
+    assert CONF_SNAPSHOT_RETENTION_DAYS in field_names
+
+    # Default is 30 days (DEFAULT_SNAPSHOT_RETENTION_DAYS).
+    retention_field = next(
+        k
+        for k in schema
+        if (k.schema if hasattr(k, "schema") else k) == CONF_SNAPSHOT_RETENTION_DAYS
+    )
+    assert retention_field.default() == DEFAULT_SNAPSHOT_RETENTION_DAYS
+
+
+async def test_options_flow_persists_snapshot_retention(hass: HomeAssistant) -> None:
+    """Submitting options form with snapshot_retention_days=60 persists to entry options.
+
+    HA's config flow framework applies schema validation before calling async_step_init,
+    so all optional fields receive their defaults. entry.options therefore contains all
+    fields. We assert only the new field's value here; the rest are schema defaults.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_USERNAME: "user@email.com", CONF_PASSWORD: "password"},
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={CONF_SNAPSHOT_RETENTION_DAYS: 60},
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    # NumberSelector returns float; 60 == 60.0 so both pass.
+    assert entry.options[CONF_SNAPSHOT_RETENTION_DAYS] == 60
