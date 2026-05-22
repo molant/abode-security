@@ -1,6 +1,8 @@
 """Tests for the ActionTriggerCoordinator module."""
 
+import asyncio
 from datetime import timedelta
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -8,6 +10,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.abode_security.action_manager import ActionManager
 from custom_components.abode_security.action_trigger import ActionTriggerCoordinator
@@ -1181,5 +1184,334 @@ class TestStateTransitionRegressions:
         await async_fire_time_changed_and_wait(hass, timedelta(seconds=6))
 
         assert service_calls == []
+
+        await coordinator.async_stop()
+
+
+# --- Sub-Phase B: Snapshot integration ---
+
+
+def _setup_sensor_with_camera(
+    hass: HomeAssistant,
+) -> tuple[str, str]:
+    """Register a binary_sensor and camera on the same device.
+
+    Returns (sensor_entity_id, camera_entity_id).
+    Intended for one call per test — identifiers are fixed; relies on a fresh hass fixture per test.
+    """
+    config_entry = MockConfigEntry(domain="test_snap")
+    config_entry.add_to_hass(hass)
+
+    device_reg = dr.async_get(hass)
+    device = device_reg.async_get_or_create(
+        config_entry_id=config_entry.entry_id,
+        identifiers={("test_snap", "snap_dev")},
+    )
+
+    entity_reg = er.async_get(hass)
+    sensor_entry = entity_reg.async_get_or_create(
+        "binary_sensor", "test_snap", "door_sensor", device_id=device.id
+    )
+    camera_entry = entity_reg.async_get_or_create(
+        "camera", "test_snap", "door_cam", device_id=device.id
+    )
+    return sensor_entry.entity_id, camera_entry.entity_id
+
+
+@pytest.mark.usefixtures("mock_abode", "setup_coordinator")
+class TestSnapshotIntegration:
+    """Tests for snapshot capture wired into _execute_action (Sub-Phase B)."""
+
+    async def test_event_payload_includes_snapshot_in_home_mode(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Snapshot is captured and snapshot_path is populated when mode is home."""
+        sensor_entity_id, camera_entity_id = _setup_sensor_with_camera(hass)
+
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        async def mock_switch(_call):
+            pass
+
+        hass.services.async_register("switch", "turn_on", mock_switch)
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        await manager.async_create(
+            name="Snap Home",
+            modes=["home"],
+            sensor_entity_ids=[sensor_entity_id],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        hass.states.async_set(sensor_entity_id, "off")
+        await hass.async_block_till_done()
+
+        with patch(
+            "custom_components.abode_security.action_trigger.snapshot.async_capture",
+            new=AsyncMock(return_value=None),
+        ):
+            hass.states.async_set(sensor_entity_id, "on")
+            await hass.async_block_till_done()
+
+        assert len(events) == 1
+        event_data = events[0].data
+        assert event_data["camera_entity_id"] == camera_entity_id
+        assert event_data["snapshot_path"] is not None
+        assert event_data["snapshot_path"].startswith(
+            "/local/abode_security_snapshots/"
+        )
+        assert event_data["snapshot_error"] is None
+
+        await coordinator.async_stop()
+
+    async def test_event_payload_includes_snapshot_in_away_mode(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Snapshot is captured and snapshot_path is populated when mode is away."""
+        sensor_entity_id, camera_entity_id = _setup_sensor_with_camera(hass)
+
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        async def mock_switch(_call):
+            pass
+
+        hass.services.async_register("switch", "turn_on", mock_switch)
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        await manager.async_create(
+            name="Snap Away",
+            modes=["away"],
+            sensor_entity_ids=[sensor_entity_id],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_away")
+        hass.states.async_set(sensor_entity_id, "off")
+        await hass.async_block_till_done()
+
+        with patch(
+            "custom_components.abode_security.action_trigger.snapshot.async_capture",
+            new=AsyncMock(return_value=None),
+        ):
+            hass.states.async_set(sensor_entity_id, "on")
+            await hass.async_block_till_done()
+
+        assert len(events) == 1
+        event_data = events[0].data
+        assert event_data["camera_entity_id"] == camera_entity_id
+        assert event_data["snapshot_path"] is not None
+        assert event_data["snapshot_error"] is None
+
+        await coordinator.async_stop()
+
+    async def test_event_payload_no_snapshot_in_standby_mode(
+        self, hass: HomeAssistant
+    ) -> None:
+        """In standby, camera_entity_id is populated but no snapshot is taken."""
+        sensor_entity_id, camera_entity_id = _setup_sensor_with_camera(hass)
+
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        async def mock_switch(_call):
+            pass
+
+        hass.services.async_register("switch", "turn_on", mock_switch)
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        await manager.async_create(
+            name="Snap Standby",
+            modes=["standby"],
+            sensor_entity_ids=[sensor_entity_id],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "disarmed")
+        hass.states.async_set(sensor_entity_id, "off")
+        await hass.async_block_till_done()
+
+        mock_capture = AsyncMock(return_value=None)
+        with patch(
+            "custom_components.abode_security.action_trigger.snapshot.async_capture",
+            new=mock_capture,
+        ):
+            hass.states.async_set(sensor_entity_id, "on")
+            await hass.async_block_till_done()
+
+        assert len(events) == 1
+        event_data = events[0].data
+        assert event_data["camera_entity_id"] == camera_entity_id
+        assert event_data["snapshot_path"] is None
+        assert event_data["snapshot_error"] is None
+        mock_capture.assert_not_called()
+
+        await coordinator.async_stop()
+
+    async def test_event_payload_camera_entity_null_when_no_co_located_camera(
+        self, hass: HomeAssistant
+    ) -> None:
+        """All three snapshot keys are None when the sensor has no co-located camera."""
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        async def mock_switch(_call):
+            pass
+
+        hass.services.async_register("switch", "turn_on", mock_switch)
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        # Sensor not in registry at all (no device, no co-located camera)
+        await manager.async_create(
+            name="No Camera",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.standalone"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        mock_capture = AsyncMock(return_value=None)
+        with patch(
+            "custom_components.abode_security.action_trigger.snapshot.async_capture",
+            new=mock_capture,
+        ):
+            hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+            hass.states.async_set("binary_sensor.standalone", "off")
+            await hass.async_block_till_done()
+
+            hass.states.async_set("binary_sensor.standalone", "on")
+            await hass.async_block_till_done()
+
+        assert len(events) == 1
+        event_data = events[0].data
+        assert event_data["camera_entity_id"] is None
+        assert event_data["snapshot_path"] is None
+        assert event_data["snapshot_error"] is None
+        mock_capture.assert_not_called()
+
+        await coordinator.async_stop()
+
+    async def test_event_payload_snapshot_error_on_timeout(
+        self, hass: HomeAssistant
+    ) -> None:
+        """When async_capture returns an error, snapshot_path is None and event still fires."""
+        sensor_entity_id, _camera_entity_id = _setup_sensor_with_camera(hass)
+
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        service_calls = []
+
+        async def mock_switch(call):
+            service_calls.append(call)
+
+        hass.services.async_register("switch", "turn_on", mock_switch)
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        await manager.async_create(
+            name="Timeout Snap",
+            modes=["home"],
+            sensor_entity_ids=[sensor_entity_id],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        hass.states.async_set(sensor_entity_id, "off")
+        await hass.async_block_till_done()
+
+        with patch(
+            "custom_components.abode_security.action_trigger.snapshot.async_capture",
+            new=AsyncMock(return_value="timeout"),
+        ):
+            hass.states.async_set(sensor_entity_id, "on")
+            await hass.async_block_till_done()
+
+        assert len(events) == 1
+        event_data = events[0].data
+        assert event_data["snapshot_path"] is None
+        assert event_data["snapshot_error"] == "timeout"
+        # Alarms were still triggered despite snapshot failure
+        assert event_data["alarms_triggered"] == ["switch.panic_alarm"]
+        assert len(service_calls) == 1
+
+        await coordinator.async_stop()
+
+    async def test_snapshot_does_not_block_alarms(self, hass: HomeAssistant) -> None:
+        """Event fires and alarms are recorded even when async_capture yields.
+
+        The structural non-blocking guarantee (alarms before snapshot) comes from
+        the sequential ordering in _execute_action, not from this test. This test
+        verifies the event is eventually fired and alarms_triggered is populated
+        when async_capture does a cooperative yield before returning.
+        """
+        sensor_entity_id, _camera_entity_id = _setup_sensor_with_camera(hass)
+
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        service_calls = []
+
+        async def mock_switch(call):
+            service_calls.append(call)
+
+        hass.services.async_register("switch", "turn_on", mock_switch)
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        await manager.async_create(
+            name="Slow Snap",
+            modes=["home"],
+            sensor_entity_ids=[sensor_entity_id],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        hass.states.async_set(sensor_entity_id, "off")
+        await hass.async_block_till_done()
+
+        async def slow_capture(_hass: object, **_kwargs: object) -> str | None:
+            await asyncio.sleep(0)
+            return None
+
+        with patch(
+            "custom_components.abode_security.action_trigger.snapshot.async_capture",
+            new=slow_capture,
+        ):
+            hass.states.async_set(sensor_entity_id, "on")
+            await hass.async_block_till_done()
+
+        assert len(events) == 1
+        assert events[0].data["alarms_triggered"] == ["switch.panic_alarm"]
+        assert len(service_calls) == 1
 
         await coordinator.async_stop()
