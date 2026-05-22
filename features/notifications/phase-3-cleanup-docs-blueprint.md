@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: done
 phase: 3
 feature: notifications
 title: Cleanup, docs, and blueprint
