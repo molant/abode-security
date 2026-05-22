@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +18,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.abode_security.snapshot import (
     async_capture,
+    async_purge_old,
     build_snapshot_path,
     resolve_co_located_camera,
 )
@@ -276,3 +278,151 @@ class TestAsyncCapture:
 
         assert result is not None
         assert result.startswith("io_error:")
+
+
+# ---------------------------------------------------------------------------
+# async_purge_old
+# ---------------------------------------------------------------------------
+
+
+def _write_file_aged(path: Path, age_days: float, now: datetime) -> None:
+    """Write a file and set its mtime to now - age_days."""
+    path.write_bytes(b"jpeg")
+    mtime = (now - timedelta(days=age_days)).timestamp()
+    os.utime(path, (mtime, mtime))
+
+
+class TestAsyncPurgeOld:
+    async def test_deletes_files_older_than_retention(self, tmp_path: Path) -> None:
+        now = datetime(2026, 1, 31, 12, 0, 0, tzinfo=UTC)
+        snap_dir = tmp_path / "snapshots"
+        snap_dir.mkdir()
+        _write_file_aged(snap_dir / "old31.jpg", 31, now)
+        _write_file_aged(snap_dir / "old29.jpg", 29, now)
+        _write_file_aged(snap_dir / "old1.jpg", 1, now)
+        _write_file_aged(snap_dir / "old0.jpg", 0, now)
+        _write_file_aged(snap_dir / "fresh.jpg", 0.001, now)
+
+        result = await async_purge_old(snap_dir, retention_days=30, now=now)
+
+        assert result == 1
+        assert not (snap_dir / "old31.jpg").exists()
+        assert (snap_dir / "old29.jpg").exists()
+        assert (snap_dir / "old1.jpg").exists()
+        assert (snap_dir / "old0.jpg").exists()
+        assert (snap_dir / "fresh.jpg").exists()
+
+    async def test_returns_zero_when_directory_empty(self, tmp_path: Path) -> None:
+        snap_dir = tmp_path / "snapshots"
+        snap_dir.mkdir()
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+
+        result = await async_purge_old(snap_dir, retention_days=30, now=now)
+
+        assert result == 0
+
+    async def test_creates_directory_if_missing(self, tmp_path: Path) -> None:
+        snap_dir = tmp_path / "does_not_exist"
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+
+        result = await async_purge_old(snap_dir, retention_days=30, now=now)
+
+        assert result == 0
+        assert snap_dir.exists()
+
+    async def test_ignores_non_jpg_files(self, tmp_path: Path) -> None:
+        snap_dir = tmp_path / "snapshots"
+        snap_dir.mkdir()
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        txt_file = snap_dir / "foo.txt"
+        _write_file_aged(txt_file, 100, now)
+
+        await async_purge_old(snap_dir, retention_days=30, now=now)
+
+        assert txt_file.exists()
+
+    async def test_continues_on_oserror(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        snap_dir = tmp_path / "snapshots"
+        snap_dir.mkdir()
+        now = datetime(2026, 1, 31, tzinfo=UTC)
+        fail_file = snap_dir / "fail.jpg"
+        ok_file = snap_dir / "ok.jpg"
+        _write_file_aged(fail_file, 31, now)
+        _write_file_aged(ok_file, 31, now)
+
+        original_unlink = Path.unlink
+
+        def selective_unlink(self: Path, missing_ok: bool = False) -> None:
+            if self.name == "fail.jpg":
+                raise OSError("permission denied")
+            original_unlink(self, missing_ok=missing_ok)
+
+        with (
+            patch.object(Path, "unlink", selective_unlink),
+            caplog.at_level(logging.WARNING),
+        ):
+            result = await async_purge_old(snap_dir, retention_days=30, now=now)
+
+        assert result == 1
+        assert not ok_file.exists()
+        assert any(
+            "fail.jpg" in record.message and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
+    async def test_handles_file_disappearing_between_glob_and_unlink(
+        self, tmp_path: Path
+    ) -> None:
+        snap_dir = tmp_path / "snapshots"
+        snap_dir.mkdir()
+        now = datetime(2026, 1, 31, tzinfo=UTC)
+        vanished = snap_dir / "vanished.jpg"
+        ok_file = snap_dir / "ok.jpg"
+        _write_file_aged(vanished, 31, now)
+        _write_file_aged(ok_file, 31, now)
+
+        original_unlink = Path.unlink
+
+        def selective_unlink(self: Path, missing_ok: bool = False) -> None:
+            if self.name == "vanished.jpg":
+                raise FileNotFoundError("already gone")
+            original_unlink(self, missing_ok=missing_ok)
+
+        with patch.object(Path, "unlink", selective_unlink):
+            result = await async_purge_old(snap_dir, retention_days=30, now=now)
+
+        assert result == 1
+        assert not ok_file.exists()
+
+    async def test_only_touches_snapshot_dir(self, tmp_path: Path) -> None:
+        snap_dir = tmp_path / "snapshots"
+        other_dir = tmp_path / "other_dir"
+        other_dir.mkdir()
+        now = datetime(2026, 1, 31, tzinfo=UTC)
+        sibling_file = other_dir / "old.jpg"
+        _write_file_aged(sibling_file, 100, now)
+
+        await async_purge_old(snap_dir, retention_days=30, now=now)
+
+        assert sibling_file.exists()
+
+    async def test_rejects_relative_or_parent_paths(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+
+        with caplog.at_level(logging.WARNING):
+            result_rel = await async_purge_old(
+                Path("abode_security_snapshots"), retention_days=30, now=now
+            )
+            result_parent = await async_purge_old(
+                tmp_path / "foo" / ".." / "snapshots", retention_days=30, now=now
+            )
+
+        assert result_rel == 0
+        assert result_parent == 0
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) >= 2
+        assert not (tmp_path / "foo" / ".." / "snapshots").exists()
