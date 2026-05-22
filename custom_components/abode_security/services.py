@@ -12,7 +12,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .abode.exceptions import Exception as AbodeException
-from .const import DOMAIN, LOGGER
+from .const import CONF_DEBUG_LOGGING, DOMAIN, LOGGER
 
 if TYPE_CHECKING:
     from .models import AbodeSystem
@@ -25,11 +25,15 @@ SERVICE_ACKNOWLEDGE_ALARM = "acknowledge_alarm"
 SERVICE_DISMISS_ALARM = "dismiss_alarm"
 SERVICE_ENABLE_TEST_MODE = "enable_test_mode"
 SERVICE_DISABLE_TEST_MODE = "disable_test_mode"
+SERVICE_FIRE_TEST_NOTIFICATION = "fire_test_notification"
 
 ATTR_SETTING = "setting"
 ATTR_VALUE = "value"
 ATTR_ALARM_TYPE = "alarm_type"
 ATTR_TIMELINE_ID = "timeline_id"
+ATTR_ACTION_ID = "action_id"
+ATTR_SENSOR_ENTITY_ID = "sensor_entity_id"
+ATTR_MODE = "mode"
 
 
 CHANGE_SETTING_SCHEMA = vol.Schema(
@@ -49,6 +53,16 @@ DISMISS_ALARM_SCHEMA = vol.Schema({vol.Required(ATTR_TIMELINE_ID): cv.string})
 ENABLE_TEST_MODE_SCHEMA = vol.Schema({})
 
 DISABLE_TEST_MODE_SCHEMA = vol.Schema({})
+
+FIRE_TEST_NOTIFICATION_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_ACTION_ID): cv.string,
+        vol.Required(ATTR_SENSOR_ENTITY_ID): vol.All(
+            cv.entity_id, vol.Match(r"^binary_sensor\.")
+        ),
+        vol.Optional(ATTR_MODE, default="home"): vol.In(("standby", "home", "away")),
+    }
+)
 
 
 def _create_service_handler(
@@ -153,6 +167,47 @@ async def _trigger_automation(call: ServiceCall) -> None:
         async_dispatcher_send(call.hass, signal)
 
 
+def _debug_logging_enabled(hass: HomeAssistant) -> bool:
+    """Return True when any Abode config entry has debug_logging enabled."""
+    return any(
+        entry.options.get(CONF_DEBUG_LOGGING, False)
+        for entry in hass.config_entries.async_entries(DOMAIN)
+    )
+
+
+async def _fire_test_notification(call: ServiceCall) -> None:
+    """Fire abode_security.action_triggered without arming — debug helper.
+
+    Refuses to run unless the config entry has debug_logging enabled, so the
+    service is opt-in even though HA registers it globally at setup time.
+    """
+    if not _debug_logging_enabled(call.hass):
+        LOGGER.warning(
+            "fire_test_notification: refused — enable 'debug_logging' in the "
+            "integration options to use this service"
+        )
+        return
+
+    coordinator = call.hass.data.get(DOMAIN, {}).get("action_trigger")
+    if coordinator is None:
+        LOGGER.error("fire_test_notification: action trigger coordinator not ready")
+        return
+
+    action_id = call.data[ATTR_ACTION_ID]
+    sensor_entity_id = call.data[ATTR_SENSOR_ENTITY_ID]
+    mode = call.data[ATTR_MODE]
+
+    fired = await coordinator.async_fire_test_notification(
+        action_id, sensor_entity_id, mode=mode
+    )
+    if not fired:
+        LOGGER.warning(
+            "fire_test_notification: did not fire for action=%s sensor=%s",
+            action_id,
+            sensor_entity_id,
+        )
+
+
 async def _trigger_alarm_handler(call: ServiceCall) -> None:
     """Trigger a manual alarm (special handler for multi-step operation)."""
     alarm_type = call.data[ATTR_ALARM_TYPE]
@@ -250,4 +305,11 @@ def setup_services(hass: HomeAssistant) -> None:
             target="system",
         ),
         schema=DISABLE_TEST_MODE_SCHEMA,
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_FIRE_TEST_NOTIFICATION,
+        _fire_test_notification,
+        schema=FIRE_TEST_NOTIFICATION_SCHEMA,
     )
