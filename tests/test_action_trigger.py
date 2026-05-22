@@ -334,6 +334,56 @@ class TestActionExecution:
 
         await coordinator.async_stop()
 
+    async def test_notification_only_action_fires_event_without_alarm(
+        self, hass
+    ) -> None:
+        """Action with empty alarm_entity_ids fires the event and skips switch.turn_on."""
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        switch_calls = []
+
+        async def mock_service(call):
+            switch_calls.append(call)
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        events = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        action = await manager.async_create(
+            name="Notify Only",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=[],
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        hass.states.async_set("binary_sensor.door", "off")
+        await hass.async_block_till_done()
+
+        hass.states.async_set("binary_sensor.door", "on")
+        await hass.async_block_till_done()
+
+        assert switch_calls == []
+        assert len(events) == 1
+        assert events[0].data["alarms_triggered"] == []
+        assert events[0].data["alarms_failed"] == []
+        assert events[0].data["action_name"] == "Notify Only"
+
+        # trigger_count / last_triggered must still update — the value of a
+        # notification-only action is that the rest of the trigger pipeline
+        # runs identically. Guards against a future early-return refactor.
+        refreshed = await manager.async_get(action.id)
+        assert refreshed is not None
+        assert refreshed.trigger_count == 1
+        assert refreshed.last_triggered is not None
+
+        await coordinator.async_stop()
+
     async def test_coordinator_fires_event(self, hass) -> None:
         """Test coordinator fires HA event and existing payload keys are unchanged."""
         manager = _get_manager(hass)

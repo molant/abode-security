@@ -148,6 +148,14 @@ The blueprint inputs are:
 
 ---
 
+## Notification-only actions
+
+The **Alarm to trigger** field in the action editor is optional. Pick **None (notification only)** to create an action that fires `abode_security.action_triggered` (with snapshot, area, etc.) but does not arm any switch. Useful for sensors that should notify without escalating, and for testing the notification path end-to-end without setting off the panel.
+
+In the event payload, `alarms_triggered` and `alarms_failed` are both empty lists for notification-only actions.
+
+---
+
 ## Testing without arming the panel
 
 The `abode_security.fire_test_notification` service runs the full event-fire and snapshot-capture path for a chosen action — but skips the alarm `switch.turn_on` calls, the mode gate, and the debounce. It writes a real JPEG under `/config/www/abode_security_snapshots/` (when the sensor has a co-located camera) and fires a real `abode_security.action_triggered` event, so your blueprint or automation reacts exactly as it would for a real trigger.

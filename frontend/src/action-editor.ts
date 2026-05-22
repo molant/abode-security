@@ -655,6 +655,14 @@ export class ActionEditor extends LitElement {
     this._clearError('alarms');
   }
 
+  // Notification-only mode — clears the alarm selection. Saves with
+  // alarm_entity_ids=[] so _execute_action skips switch.turn_on and just
+  // fires the abode_security.action_triggered event.
+  private _clearAlarmSelection() {
+    this._selectedAlarms = [];
+    this._clearError('alarms');
+  }
+
   // Category keys are open-ended (HA `device_class`), so these helpers work
   // off plain `string` rather than the closed `SensorCategory` literal union.
   //
@@ -723,9 +731,8 @@ export class ActionEditor extends LitElement {
     if (this._selectedSensors.length === 0) {
       this._errors = { ...this._errors, sensors: 'Select at least one sensor' };
     }
-    if (this._selectedAlarms.length === 0) {
-      this._errors = { ...this._errors, alarms: 'Select an alarm' };
-    }
+    // Alarm is intentionally optional: an empty selection means
+    // "notification-only" — the trigger event fires without arming any switch.
 
     return Object.keys(this._errors).length === 0;
   }
@@ -858,7 +865,7 @@ export class ActionEditor extends LitElement {
       </div>
 
       <div class="form-group">
-        <label>Alarm to trigger (required)</label>
+        <label>Alarm to trigger (optional)</label>
         ${this._renderAlarmSelection()}
         ${this._errors.alarms ? html`<span class="error-text">${this._errors.alarms}</span>` : ''}
       </div>
@@ -1114,6 +1121,16 @@ export class ActionEditor extends LitElement {
     // anything in the host document.
     return html`
       <div class="alarm-list" role="radiogroup" aria-label="Alarm to trigger">
+        <label>
+          <input
+            type="radio"
+            name="abode-action-alarm"
+            value=""
+            .checked=${this._selectedAlarms.length === 0}
+            @change=${() => this._clearAlarmSelection()}
+          />
+          None (notification only)
+        </label>
         ${displayAlarms.map(
           (alarm) => html`
             <label>

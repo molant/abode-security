@@ -185,9 +185,11 @@ async def websocket_actions_get(
             [cv.entity_id],
             vol.Length(min=1, max=_MAX_SENSOR_ENTITY_IDS),
         ),
+        # Empty alarm_entity_ids is allowed: notification-only actions fire the
+        # event without arming any switch.
         vol.Required("alarm_entity_ids"): vol.All(
             [cv.entity_id],
-            vol.Length(min=1, max=_MAX_ALARM_ENTITY_IDS),
+            vol.Length(min=0, max=_MAX_ALARM_ENTITY_IDS),
         ),
         vol.Optional("delay_seconds", default=0): vol.All(
             _non_bool_int, vol.Range(min=0, max=MAX_DELAY_SECONDS)
@@ -241,7 +243,7 @@ async def websocket_actions_create(
         ),
         vol.Optional("alarm_entity_ids"): vol.All(
             [cv.entity_id],
-            vol.Length(min=1, max=_MAX_ALARM_ENTITY_IDS),
+            vol.Length(min=0, max=_MAX_ALARM_ENTITY_IDS),
         ),
         vol.Optional("delay_seconds"): vol.All(
             _non_bool_int, vol.Range(min=0, max=MAX_DELAY_SECONDS)
