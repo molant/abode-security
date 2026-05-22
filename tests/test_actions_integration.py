@@ -8,9 +8,15 @@ These tests verify the full action system including:
 These tests require the mock Abode server to be running.
 """
 
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.abode_security.action_manager import ActionManager
 from custom_components.abode_security.action_trigger import ActionTriggerCoordinator
@@ -626,10 +632,10 @@ class TestActionTriggerIntegration:
         assert updated1.trigger_count == 1
         assert updated2.trigger_count == 1
 
-    async def test_enriched_event_payload_all_13_keys(
+    async def test_enriched_event_payload_all_16_keys(
         self, hass: HomeAssistant, integration_setup
     ) -> None:
-        """Fired event includes all 7 original keys plus 6 new context keys."""
+        """Fired event includes all 7 original keys plus 6 context keys plus 3 snapshot keys."""
         action_manager = integration_setup["action_manager"]
         events_fired = []
 
@@ -665,7 +671,7 @@ class TestActionTriggerIntegration:
         assert len(events_fired) == 1
         event_data = events_fired[0].data
 
-        # All 13 keys must be present
+        # All 16 keys must be present (7 original + 6 Phase 1 context + 3 Phase 2 snapshot)
         expected_keys = {
             "action_id",
             "action_name",
@@ -680,6 +686,9 @@ class TestActionTriggerIntegration:
             "new_state",
             "sensor_area_id",
             "sensor_area_name",
+            "camera_entity_id",
+            "snapshot_path",
+            "snapshot_error",
         }
         assert set(event_data.keys()) == expected_keys
 
@@ -692,10 +701,137 @@ class TestActionTriggerIntegration:
         assert isinstance(event_data["alarms_failed"], list)
         assert isinstance(event_data["timestamp"], str)
 
-        # 6 new context keys
+        # 6 Phase 1 context keys
         assert event_data["sensor_friendly_name"] == "Enriched Door"
         assert event_data["sensor_device_class"] == "door"
         assert event_data["previous_state"] == "off"
         assert event_data["new_state"] == "on"
         assert event_data["sensor_area_id"] is None  # no area assigned
         assert event_data["sensor_area_name"] is None
+
+        # 3 Phase 2 snapshot keys — sensor not in device registry, so no camera
+        assert event_data["camera_entity_id"] is None
+        assert event_data["snapshot_path"] is None
+        assert event_data["snapshot_error"] is None
+
+    async def test_snapshot_capture_with_co_located_camera_all_16_keys(
+        self, hass: HomeAssistant, integration_setup, tmp_path: Path
+    ) -> None:
+        """Snapshot is captured and all 16 event payload keys are present with expected types.
+
+        Registers a camera on the same device as the triggering sensor, patches
+        camera.snapshot to write a tiny JPEG, triggers in home mode, and asserts:
+        - snapshot_path points at an existing file
+        - all 16 keys are present with correct types
+        - the 7 original backwards-compat keys are unchanged
+        """
+        action_manager = integration_setup["action_manager"]
+        events_fired = []
+
+        def event_listener(event):
+            events_fired.append(event)
+
+        hass.bus.async_listen("abode_security.action_triggered", event_listener)
+
+        # Register binary_sensor and camera on the same device
+        config_entry = MockConfigEntry(domain="test_snap_integ")
+        config_entry.add_to_hass(hass)
+        device_reg = dr.async_get(hass)
+        device = device_reg.async_get_or_create(
+            config_entry_id=config_entry.entry_id,
+            identifiers={("test_snap_integ", "snap_integ_dev")},
+        )
+        entity_reg = er.async_get(hass)
+        sensor_entry = entity_reg.async_get_or_create(
+            "binary_sensor", "test_snap_integ", "integ_door", device_id=device.id
+        )
+        camera_entry = entity_reg.async_get_or_create(
+            "camera", "test_snap_integ", "integ_cam", device_id=device.id
+        )
+        sensor_entity_id = sensor_entry.entity_id
+        camera_entity_id = camera_entry.entity_id
+
+        # Patch hass.config.path so snapshot writes under tmp_path
+        orig_config_path = hass.config.path
+
+        def patched_config_path(arg: str) -> str:
+            if arg == "www":
+                return str(tmp_path)
+            return orig_config_path(arg)
+
+        action = await action_manager.async_create(
+            name="Snapshot Integ Test",
+            modes=["home"],
+            sensor_entity_ids=[sensor_entity_id],
+            alarm_entity_ids=["switch.abode_panic_alarm"],
+            delay_seconds=0,
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        hass.states.async_set(sensor_entity_id, STATE_OFF)
+        await hass.async_block_till_done()
+
+        # Patch camera.snapshot service to write a minimal JPEG payload
+        async def fake_snapshot_service(service_call):
+            filename = service_call.data["filename"]
+
+            def _write():
+                dest = Path(filename)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                # Minimal valid JPEG: SOI + EOI markers
+                dest.write_bytes(b"\xff\xd8\xff\xd9")
+
+            await hass.async_add_executor_job(_write)
+
+        hass.services.async_register("camera", "snapshot", fake_snapshot_service)
+
+        with patch.object(hass.config, "path", side_effect=patched_config_path):
+            hass.states.async_set(sensor_entity_id, STATE_ON)
+            await hass.async_block_till_done()
+
+        assert len(events_fired) == 1
+        event_data = events_fired[0].data
+
+        # All 16 keys must be present
+        expected_keys = {
+            "action_id",
+            "action_name",
+            "triggered_by",
+            "mode",
+            "alarms_triggered",
+            "alarms_failed",
+            "timestamp",
+            "sensor_friendly_name",
+            "sensor_device_class",
+            "previous_state",
+            "new_state",
+            "sensor_area_id",
+            "sensor_area_name",
+            "camera_entity_id",
+            "snapshot_path",
+            "snapshot_error",
+        }
+        assert set(event_data.keys()) == expected_keys
+
+        # Original 7 keys — types unchanged for backwards-compat
+        assert event_data["action_id"] == action.id
+        assert event_data["action_name"] == "Snapshot Integ Test"
+        assert event_data["triggered_by"] == sensor_entity_id
+        assert event_data["mode"] == "home"
+        assert isinstance(event_data["alarms_triggered"], list)
+        assert isinstance(event_data["alarms_failed"], list)
+        assert isinstance(event_data["timestamp"], str)
+
+        # Phase 2 snapshot keys
+        assert event_data["camera_entity_id"] == camera_entity_id
+        assert event_data["snapshot_path"] is not None
+        assert event_data["snapshot_path"].startswith(
+            "/local/abode_security_snapshots/"
+        )
+        assert event_data["snapshot_error"] is None
+
+        # File exists on disk under tmp_path
+        relative = event_data["snapshot_path"].removeprefix("/local/")
+        snapshot_file = tmp_path / relative
+        assert snapshot_file.exists(), f"Snapshot file not found: {snapshot_file}"
+        assert snapshot_file.read_bytes()[:2] == b"\xff\xd8"  # JPEG SOI marker
