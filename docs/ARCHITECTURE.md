@@ -127,7 +127,9 @@ User-defined mappings from **sensor activation → alarm trigger**, gated by ala
 - `ActionTriggerCoordinator` — listens to `EVENT_STATE_CHANGED`, matches binary-sensor `off→on` transitions against enabled actions, applies per-sensor debounce (default 1.0 s) and per-action delay (0–60 s via `async_call_later`), then calls `switch.turn_on` on the configured alarm entities and fires `abode_security.action_triggered`.
 - Trigger state (pending delays, debounce timestamps) is memory-only; lost on restart by design.
 
-The `abode_security.action_triggered` event payload carries 13 keys: the original 7 (`action_id`, `action_name`, `triggered_by`, `mode`, `alarms_triggered`, `alarms_failed`, `timestamp`) plus 6 sensor-context keys added in Phase 1 of the notifications feature (`sensor_friendly_name`, `sensor_device_class`, `previous_state`, `new_state`, `sensor_area_id`, `sensor_area_name`). Context is captured at the moment of the `off→on` transition — not re-read at execute time — so delayed actions carry the state that caused the trigger rather than the current state.
+The `abode_security.action_triggered` event payload carries 16 keys: the original 7 (`action_id`, `action_name`, `triggered_by`, `mode`, `alarms_triggered`, `alarms_failed`, `timestamp`) plus 6 sensor-context keys added in Phase 1 of the notifications feature (`sensor_friendly_name`, `sensor_device_class`, `previous_state`, `new_state`, `sensor_area_id`, `sensor_area_name`), plus 3 snapshot keys added in Phase 2 (`camera_entity_id`, `snapshot_path`, `snapshot_error`). Context is captured at the moment of the `off→on` transition — not re-read at execute time — so delayed actions carry the state that caused the trigger rather than the current state.
+
+When an action fires in `home` or `away` mode and the triggering binary_sensor shares an HA device (`device_id`) with a `camera.*` entity, `snapshot.py` captures a JPEG via the built-in `camera.snapshot` service and saves it under `/config/www/abode_security_snapshots/`. The `/local/abode_security_snapshots/<filename>` URL is exposed on the event as `snapshot_path`, making it directly usable as `data.image` in a mobile notification. Capture is bounded by a 3-second timeout; on failure the event still fires with `snapshot_path: null` and a short `snapshot_error` reason string. In `standby` mode, `camera_entity_id` is still resolved (so users can see the wiring) but no snapshot is taken.
 
 ```mermaid
 flowchart LR
@@ -273,6 +275,10 @@ abode-security/
 ├── tests/                       # Unit + integration + e2e + mock server
 └── docs/                        # This doc, async patterns, past reviews
 ```
+
+## Daily Snapshot Purge
+
+`__init__.py` registers a `async_track_time_interval` callback (interval 24 h, `cancel_on_shutdown=True`) that calls `snapshot.async_purge_old` to delete JPEG files in `/config/www/abode_security_snapshots/` older than the configured retention window. The retention is user-configurable via the integration's options flow (`snapshot_retention_days`, default 30, range 1–365). A startup call ensures the purge runs immediately on integration load without waiting 24 h.
 
 ## Related Docs
 

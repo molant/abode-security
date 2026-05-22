@@ -104,7 +104,7 @@ Deployable on its own: the daily task runs; the options flow exposes the knob; d
 
 #### Code changes — `const.py`
 
-- [ ] Add:
+- [x] Add:
   ```python
   CONF_SNAPSHOT_RETENTION_DAYS = "snapshot_retention_days"
   DEFAULT_SNAPSHOT_RETENTION_DAYS = 30
@@ -112,8 +112,8 @@ Deployable on its own: the daily task runs; the options flow exposes the knob; d
 
 #### Code changes — `config_flow.py` (extend `AbodeOptionsFlowHandler.async_step_init`)
 
-- [ ] Read the current value from `self.config_entry.options.get(CONF_SNAPSHOT_RETENTION_DAYS, DEFAULT_SNAPSHOT_RETENTION_DAYS)`.
-- [ ] Add to the `options_schema`:
+- [x] Read the current value from `self.config_entry.options.get(CONF_SNAPSHOT_RETENTION_DAYS, DEFAULT_SNAPSHOT_RETENTION_DAYS)`.
+- [x] Add to the `options_schema`:
   ```python
   vol.Optional(
       CONF_SNAPSHOT_RETENTION_DAYS, default=snapshot_retention_days
@@ -123,12 +123,12 @@ Deployable on its own: the daily task runs; the options flow exposes the knob; d
       ),
   ),
   ```
-- [ ] Field ordering: place after `CONF_RETRY_COUNT` and before `CONF_DEBUG_LOGGING` — groups the snapshot/data-retention knobs separate from logging.
-- [ ] Add the label/description for this field in `custom_components/abode_security/strings.json` under `options.step.init.data` and `options.step.init.data_description` (the file already exists with entries for `polling_interval`, `enable_events`, `retry_count`, `debug_logging` — add `snapshot_retention_days` alongside them). Use label `"Snapshot Retention (days)"` and description `"How many days to keep camera snapshots in /config/www/abode_security_snapshots/ before the daily purge deletes them."`.
+- [x] Field ordering: place after `CONF_RETRY_COUNT` and before `CONF_DEBUG_LOGGING` — groups the snapshot/data-retention knobs separate from logging.
+- [x] Add the label/description for this field in `custom_components/abode_security/strings.json` under `options.step.init.data` and `options.step.init.data_description` (the file already exists with entries for `polling_interval`, `enable_events`, `retry_count`, `debug_logging` — add `snapshot_retention_days` alongside them). Use label `"Snapshot Retention (days)"` and description `"How many days to keep camera snapshots in /config/www/abode_security_snapshots/ before the daily purge deletes them."`.
 
 #### Code changes — `__init__.py` (register / unregister the daily task)
 
-- [ ] Add module-level imports at the top of `__init__.py` (with the existing imports, not inside `async_setup_entry`):
+- [x] Add module-level imports at the top of `__init__.py` (with the existing imports, not inside `async_setup_entry`):
   ```python
   from datetime import datetime, timedelta
   from homeassistant.helpers.event import async_track_time_interval
@@ -136,7 +136,7 @@ Deployable on its own: the daily task runs; the options flow exposes the knob; d
   from . import snapshot
   from .const import CONF_SNAPSHOT_RETENTION_DAYS, DEFAULT_SNAPSHOT_RETENTION_DAYS
   ```
-- [ ] In `async_setup_entry`, after the existing setup, register:
+- [x] In `async_setup_entry`, after the existing setup, register:
   ```python
   async def _purge_callback(now: datetime) -> None:
       retention = entry.options.get(
@@ -156,21 +156,21 @@ Deployable on its own: the daily task runs; the options flow exposes the knob; d
   hass.async_create_task(_purge_callback(dt_util.utcnow()))
   ```
   (Use the existing `LOGGER` import from `.const`, not a module-local `_LOGGER` — match the current `__init__.py` convention.)
-- [ ] Note: `async_track_time_interval` fires its first callback after the interval elapses (not immediately). The startup `hass.async_create_task(_purge_callback(...))` line above is **required** so a long-offline instance does not wait 24h for the first purge. Do not omit it.
+- [x] Note: `async_track_time_interval` fires its first callback after the interval elapses (not immediately). The startup `hass.async_create_task(_purge_callback(...))` line above is **required** so a long-offline instance does not wait 24h for the first purge. Do not omit it.
 
 #### Tests — `tests/test_config_flow.py` (extend the existing options-flow test)
 
-- [ ] Add an assertion that the schema returned by `AbodeOptionsFlowHandler.async_step_init` includes a `CONF_SNAPSHOT_RETENTION_DAYS` field with default `30`, min `1`, max `365`.
-- [ ] Add a test that submitting the form with `snapshot_retention_days=60` persists to `entry.options`.
+- [x] Add an assertion that the schema returned by `AbodeOptionsFlowHandler.async_step_init` includes a `CONF_SNAPSHOT_RETENTION_DAYS` field with default `30`, min `1`, max `365`.
+- [x] Add a test that submitting the form with `snapshot_retention_days=60` persists to `entry.options`.
 
 #### Tests — integration / `__init__.py`
 
-- [ ] Add a unit test that advances the HA clock past the daily interval and asserts `snapshot.async_purge_old` was called with the configured retention. Use `mock.patch("custom_components.abode_security.snapshot.async_purge_old")` to intercept. For the clock advance, use `pytest_homeassistant_custom_component.common.async_fire_time_changed` (this project's existing tests under `tests/` already use this helper — grep `async_fire_time_changed` for the canonical import path before adding a new one). Pass `dt_util.utcnow() + timedelta(hours=25)` and `await hass.async_block_till_done()` afterwards. Remember the startup-purge call also invokes `async_purge_old` — assert call_count >= 2, or `reset_mock()` after setup before advancing the clock.
-- [ ] Add a test that integration unload calls the registered unsub (i.e. no zombie timer after unload). The `entry.async_on_unload` pattern handles this; the test just confirms it.
+- [x] Add a unit test that advances the HA clock past the daily interval and asserts `snapshot.async_purge_old` was called with the configured retention. Use `mock.patch("custom_components.abode_security.snapshot.async_purge_old")` to intercept. For the clock advance, use `pytest_homeassistant_custom_component.common.async_fire_time_changed` (this project's existing tests under `tests/` already use this helper — grep `async_fire_time_changed` for the canonical import path before adding a new one). Pass `dt_util.utcnow() + timedelta(hours=25)` and `await hass.async_block_till_done()` afterwards. Remember the startup-purge call also invokes `async_purge_old` — assert call_count >= 2, or `reset_mock()` after setup before advancing the clock.
+- [x] Add a test that integration unload calls the registered unsub (i.e. no zombie timer after unload). The `entry.async_on_unload` pattern handles this; the test just confirms it.
 
 #### Documentation (End of Sub-Phase B)
 
-- [ ] `docs/ARCHITECTURE.md`: append a 1–2 sentence note that the integration registers a daily snapshot purge task with retention controlled by the options flow. Reference `snapshot.py`.
+- [x] `docs/ARCHITECTURE.md`: append a 1–2 sentence note that the integration registers a daily snapshot purge task with retention controlled by the options flow. Reference `snapshot.py`.
 
 ### Sub-Phase C: User-facing docs and blueprint
 
