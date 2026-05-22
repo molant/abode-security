@@ -195,13 +195,21 @@ describe('ActionEditor', () => {
         el.shadowRoot?.querySelectorAll<HTMLLabelElement>('.alarm-list label') ?? [],
       ).map((l) => l.textContent?.trim().replace(/\s+/g, ' ') ?? '');
 
+      // The first row is the synthetic "None (notification only)" option.
+      const alarmLabels = labels.slice(1);
+
       // Prefix stripped from every visible label.
-      expect(labels.every((l) => !/Abode Alarm/i.test(l))).to.equal(
+      expect(alarmLabels.every((l) => !/Abode Alarm/i.test(l))).to.equal(
         true,
-        `expected no "Abode Alarm" prefix in labels, got: ${JSON.stringify(labels)}`,
+        `expected no "Abode Alarm" prefix in labels, got: ${JSON.stringify(alarmLabels)}`,
       );
       // Sorted alphabetically by the stripped label.
-      expect(labels).to.deep.equal(['Burglar Alarm', 'CO Alarm', 'Smoke Alarm', 'Smoke CO Alarm']);
+      expect(alarmLabels).to.deep.equal([
+        'Burglar Alarm',
+        'CO Alarm',
+        'Smoke Alarm',
+        'Smoke CO Alarm',
+      ]);
     });
 
     it('renders the sensor area hint next to the name when present (#120)', async () => {
@@ -306,7 +314,8 @@ describe('ActionEditor', () => {
         el.shadowRoot?.querySelectorAll<HTMLLabelElement>('.alarm-list label') ?? [],
       ).map((l) => l.textContent?.trim().replace(/\s+/g, ' ') ?? '');
 
-      expect(labels).to.deep.equal(['Fire Alarm', 'Panic Alarm']);
+      // Drop the synthetic "None (notification only)" row.
+      expect(labels.slice(1)).to.deep.equal(['Fire Alarm', 'Panic Alarm']);
     });
 
     it('shows all three mode checkboxes', async () => {
@@ -750,7 +759,7 @@ describe('ActionEditor', () => {
       expect(el._errors.sensors).to.equal('Select at least one sensor');
     });
 
-    it('flags missing alarms', async () => {
+    it('allows saving with no alarm selected (notification-only)', async () => {
       const hass = createMockHass();
       const el = await fixture<ActionEditor>(html`
         <abode-action-editor .hass=${hass}></abode-action-editor>
@@ -763,9 +772,10 @@ describe('ActionEditor', () => {
       } as Partial<ActionEditor>);
 
       // @ts-expect-error - calling private method for testing
-      el._validate();
+      const ok = el._validate();
+      expect(ok).to.equal(true);
       // @ts-expect-error - accessing private property for testing
-      expect(el._errors.alarms).to.equal('Select an alarm');
+      expect(el._errors.alarms).to.equal(undefined);
     });
 
     it('clears a field error via _clearError', async () => {
@@ -1887,6 +1897,29 @@ describe('ActionEditor', () => {
         1,
         `all alarm radios must share a name attribute to get native single-select; got ${[...names]}`,
       );
+    });
+
+    it('clicking "None (notification only)" clears the alarm selection', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await setState(el, {
+        _sensors: createMockSensors(),
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _selectedAlarms: ['switch.abode_panic_alarm'],
+      } as Partial<ActionEditor>);
+
+      const noneRadio = Array.from(
+        el.shadowRoot?.querySelectorAll<HTMLInputElement>('.alarm-list input[type=radio]') ?? [],
+      ).find((r) => r.value === '');
+      expect(noneRadio, 'expected a notification-only radio').to.exist;
+      noneRadio!.click();
+      await elementUpdated(el);
+
+      // @ts-expect-error - accessing private property for testing
+      expect(el._selectedAlarms).to.deep.equal([]);
     });
 
     it('selecting one alarm replaces a prior selection (no multi-select)', async () => {

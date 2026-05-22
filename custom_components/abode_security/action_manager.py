@@ -109,13 +109,11 @@ class AbodeAction:
         ):
             raise ValueError("sensor_entity_ids must be a non-empty list of strings")
 
+        # Empty alarm_entity_ids is allowed: notification-only actions fire the
+        # `abode_security.action_triggered` event without arming any switch.
         alarms = data.get("alarm_entity_ids")
-        if (
-            not isinstance(alarms, list)
-            or not alarms
-            or not all(isinstance(a, str) for a in alarms)
-        ):
-            raise ValueError("alarm_entity_ids must be a non-empty list of strings")
+        if not isinstance(alarms, list) or not all(isinstance(a, str) for a in alarms):
+            raise ValueError("alarm_entity_ids must be a list of strings")
 
         enabled = data.get("enabled", True)
         if not isinstance(enabled, bool):
@@ -340,7 +338,6 @@ class ActionManager:
         name: str,
         modes: list[str],
         sensor_entity_ids: list[str],
-        alarm_entity_ids: list[str],
         delay_seconds: int,
     ) -> None:
         """Validate action fields. Raises ValueError if invalid."""
@@ -359,11 +356,11 @@ class ActionManager:
                     f"Invalid mode '{mode}'. Valid modes: {', '.join(VALID_MODES)}"
                 )
 
-        # Validate entity IDs
+        # Validate entity IDs. alarm_entity_ids may be empty: a notification-only
+        # action fires the event without arming any switch (useful for testing
+        # end-to-end, or for sensors that should only notify).
         if not sensor_entity_ids:
             raise ValueError("At least one sensor entity ID must be specified")
-        if not alarm_entity_ids:
-            raise ValueError("At least one alarm entity ID must be specified")
 
         # Validate delay
         if delay_seconds < 0 or delay_seconds > MAX_DELAY_SECONDS:
@@ -414,9 +411,7 @@ class ActionManager:
         Raises:
             ValueError: If validation fails
         """
-        self._validate_action(
-            name, modes, sensor_entity_ids, alarm_entity_ids, delay_seconds
-        )
+        self._validate_action(name, modes, sensor_entity_ids, delay_seconds)
         self._warn_missing_entities(sensor_entity_ids, alarm_entity_ids)
 
         action = AbodeAction(
@@ -466,9 +461,7 @@ class ActionManager:
         enabled = kwargs.get("enabled", action.enabled)
 
         # Validate the updated values
-        self._validate_action(
-            name, modes, sensor_entity_ids, alarm_entity_ids, delay_seconds
-        )
+        self._validate_action(name, modes, sensor_entity_ids, delay_seconds)
         self._warn_missing_entities(sensor_entity_ids, alarm_entity_ids)
 
         # Create updated action

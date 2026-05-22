@@ -382,18 +382,20 @@ class TestActionManager:
                 alarm_entity_ids=["switch.panic_alarm"],
             )
 
-    async def test_manager_create_empty_alarms(self, hass) -> None:
-        """Test creating action with empty alarms raises ValueError."""
+    async def test_manager_create_empty_alarms_is_allowed(self, hass) -> None:
+        """Empty alarm_entity_ids creates a notification-only action."""
         manager = ActionManager(hass)
         await manager.async_setup()
 
-        with pytest.raises(ValueError, match="alarm"):
-            await manager.async_create(
-                name="Test",
-                modes=["home"],
-                sensor_entity_ids=["binary_sensor.door"],
-                alarm_entity_ids=[],
-            )
+        action = await manager.async_create(
+            name="Notify Only",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=[],
+        )
+
+        assert action.alarm_entity_ids == []
+        assert action.name == "Notify Only"
 
     async def test_manager_create_invalid_delay(self, hass) -> None:
         """Test creating action with delay > 60 raises ValueError."""
