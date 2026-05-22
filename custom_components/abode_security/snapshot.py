@@ -116,11 +116,27 @@ async def async_capture(
 
 
 def _purge_old_sync(snapshot_dir: Path, retention_days: int, now: datetime) -> int:
-    """Synchronous core of the purge — runs in an executor thread."""
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    """Synchronous core of the purge — runs in an executor thread.
+
+    Best-effort: any OSError (mkdir, glob, stat, unlink) is logged and
+    swallowed so the scheduled purge task can never crash on filesystem
+    errors.
+    """
+    try:
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        _LOGGER.warning("Failed to ensure snapshot dir %s: %s", snapshot_dir, exc)
+        return 0
+
     cutoff = now - timedelta(days=retention_days)
     deleted = 0
-    for path in snapshot_dir.glob("*.jpg"):
+    try:
+        paths = list(snapshot_dir.glob("*.jpg"))
+    except OSError as exc:
+        _LOGGER.warning("Failed to list snapshot dir %s: %s", snapshot_dir, exc)
+        return 0
+
+    for path in paths:
         try:
             mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
             if mtime < cutoff:
@@ -140,7 +156,8 @@ async def async_purge_old(
     """Delete snapshot JPEG files older than retention_days. Returns count deleted.
 
     Fails closed for unsafe paths (relative or containing '..').
-    Individual unlink failures log a warning and continue — never raises.
+    Best-effort: any filesystem error (mkdir/glob/stat/unlink) logs a warning
+    and returns the count purged so far — never raises.
     Blocking I/O runs in a thread-pool executor so the event loop is not stalled.
     """
     if not snapshot_dir.is_absolute() or any(

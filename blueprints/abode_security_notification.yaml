@@ -54,65 +54,69 @@ condition:
          trigger.event.data.action_id == (action_filter | trim) }}
 
 action:
+  - variables:
+      title_text: "{{ trigger.event.data.action_name }}"
+      message_text: >-
+        {{ trigger.event.data.sensor_friendly_name or trigger.event.data.triggered_by }}
+        {{ 'opened' if trigger.event.data.sensor_device_class in ['door', 'window']
+           else 'detected motion' if trigger.event.data.sensor_device_class == 'motion'
+           else 'triggered' }}
+        ({{ trigger.event.data.mode }})
+      has_snapshot: "{{ trigger.event.data.snapshot_path is not none }}"
   - choose:
+      # snapshot + critical
       - conditions:
           - condition: template
-            value_template: "{{ trigger.event.data.snapshot_path is not none }}"
+            value_template: "{{ has_snapshot and critical }}"
         sequence:
           - service: !input notify_target
             data:
-              title: "{{ trigger.event.data.action_name }}"
-              message: >-
-                {{ trigger.event.data.sensor_friendly_name or trigger.event.data.triggered_by }}
-                {{ 'opened' if trigger.event.data.sensor_device_class in ['door', 'window']
-                   else 'detected motion' if trigger.event.data.sensor_device_class == 'motion'
-                   else 'triggered' }}
-                ({{ trigger.event.data.mode }})
-              data: >
-                {% set base = {
-                  "image": trigger.event.data.snapshot_path
-                } %}
-                {% if critical %}
-                  {% set base = dict(base, **{
-                    "push": {
-                      "interruption-level": "critical",
-                      "sound": {
-                        "name": "default",
-                        "critical": 1,
-                        "volume": 1.0
-                      }
-                    },
-                    "channel": "critical",
-                    "priority": "high",
-                    "ttl": 0
-                  }) %}
-                {% endif %}
-                {{ base }}
+              title: "{{ title_text }}"
+              message: "{{ message_text }}"
+              data:
+                image: "{{ trigger.event.data.snapshot_path }}"
+                push:
+                  interruption-level: critical
+                  sound:
+                    name: default
+                    critical: 1
+                    volume: 1.0
+                channel: critical
+                priority: high
+                ttl: 0
+      # snapshot + non-critical
+      - conditions:
+          - condition: template
+            value_template: "{{ has_snapshot and not critical }}"
+        sequence:
+          - service: !input notify_target
+            data:
+              title: "{{ title_text }}"
+              message: "{{ message_text }}"
+              data:
+                image: "{{ trigger.event.data.snapshot_path }}"
+      # no snapshot + critical
+      - conditions:
+          - condition: template
+            value_template: "{{ not has_snapshot and critical }}"
+        sequence:
+          - service: !input notify_target
+            data:
+              title: "{{ title_text }}"
+              message: "{{ message_text }}"
+              data:
+                push:
+                  interruption-level: critical
+                  sound:
+                    name: default
+                    critical: 1
+                    volume: 1.0
+                channel: critical
+                priority: high
+                ttl: 0
     default:
+      # no snapshot + non-critical
       - service: !input notify_target
         data:
-          title: "{{ trigger.event.data.action_name }}"
-          message: >-
-            {{ trigger.event.data.sensor_friendly_name or trigger.event.data.triggered_by }}
-            {{ 'opened' if trigger.event.data.sensor_device_class in ['door', 'window']
-               else 'detected motion' if trigger.event.data.sensor_device_class == 'motion'
-               else 'triggered' }}
-            ({{ trigger.event.data.mode }})
-          data: >
-            {% set base = {} %}
-            {% if critical %}
-              {% set base = {
-                "push": {
-                  "interruption-level": "critical",
-                  "sound": {
-                    "name": "default",
-                    "critical": 1,
-                    "volume": 1.0
-                  }
-                },
-                "channel": "critical",
-                "priority": "high",
-                "ttl": 0
-              } %}
-            {% endif %}
-            {{ base }}
+          title: "{{ title_text }}"
+          message: "{{ message_text }}"

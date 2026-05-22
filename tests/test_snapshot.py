@@ -426,3 +426,54 @@ class TestAsyncPurgeOld:
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert len(warnings) >= 2
         assert not (tmp_path / "foo" / ".." / "snapshots").exists()
+
+    async def test_returns_zero_when_mkdir_fails(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        snap_dir = tmp_path / "snapshots"
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+
+        original_mkdir = Path.mkdir
+
+        def failing_mkdir(
+            self: Path, mode: int = 0o777, parents: bool = False, exist_ok: bool = False
+        ) -> None:
+            if self == snap_dir:
+                raise PermissionError("permission denied")
+            original_mkdir(self, mode=mode, parents=parents, exist_ok=exist_ok)
+
+        with (
+            patch.object(Path, "mkdir", failing_mkdir),
+            caplog.at_level(logging.WARNING),
+        ):
+            result = await async_purge_old(snap_dir, retention_days=30, now=now)
+
+        assert result == 0
+        assert any(
+            "ensure snapshot dir" in record.message
+            and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
+
+    async def test_returns_zero_when_glob_fails(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        snap_dir = tmp_path / "snapshots"
+        snap_dir.mkdir()
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+
+        def failing_glob(self: Path, pattern: str) -> list[Path]:
+            del self, pattern
+            raise OSError("disk error")
+
+        with (
+            patch.object(Path, "glob", failing_glob),
+            caplog.at_level(logging.WARNING),
+        ):
+            result = await async_purge_old(snap_dir, retention_days=30, now=now)
+
+        assert result == 0
+        assert any(
+            "list snapshot dir" in record.message and record.levelno == logging.WARNING
+            for record in caplog.records
+        )
