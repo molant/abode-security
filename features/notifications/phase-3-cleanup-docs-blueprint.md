@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in_progress
 phase: 3
 feature: notifications
 title: Cleanup, docs, and blueprint
@@ -77,7 +77,7 @@ Deployable on its own: a new pure function exists with full test coverage. The d
 
 #### Code changes — `snapshot.py`
 
-- [ ] Add `async def async_purge_old(snapshot_dir: Path, *, retention_days: int, now: datetime) -> int`:
+- [x] Add `async def async_purge_old(snapshot_dir: Path, *, retention_days: int, now: datetime) -> int`:
   - Before creating or scanning the directory, reject unsafe purge roots: if `snapshot_dir.is_absolute()` is false or any path part is `".."`, log a `WARNING` and return `0`. This makes accidental caller bugs fail closed instead of deleting from an unexpected relative path.
   - Lists `snapshot_dir.glob("*.jpg")`.
   - For each, checks `datetime.fromtimestamp(path.stat().st_mtime, tz=UTC) < now - timedelta(days=retention_days)`. If true, `path.unlink()`.
@@ -85,18 +85,18 @@ Deployable on its own: a new pure function exists with full test coverage. The d
   - On other `OSError`, log at `WARNING` with the path and continue. Do not raise — a partial purge is better than no purge.
   - Returns the count of files actually deleted (useful for logging).
   - Accepts `now` as a parameter so tests can use a fixed clock.
-- [ ] Add the `Path.mkdir(parents=True, exist_ok=True)` call on `snapshot_dir` before the glob (so a fresh install without any captures yet doesn't error).
+- [x] Add the `Path.mkdir(parents=True, exist_ok=True)` call on `snapshot_dir` before the glob (so a fresh install without any captures yet doesn't error).
 
 #### Tests — `tests/test_snapshot.py`
 
-- [ ] `test_async_purge_old_deletes_files_older_than_retention`: write 5 files to `tmp_path` with `os.utime` setting mtime to 31, 29, 1, 0 days ago and "now". `retention_days=30`. Assert only the 31-day-old file is deleted; assert return value is `1`.
-- [ ] `test_async_purge_old_returns_zero_when_directory_empty`: assert no error, returns `0`.
-- [ ] `test_async_purge_old_creates_directory_if_missing`: point at a non-existent path under `tmp_path`; call; assert returns `0` and directory exists.
-- [ ] `test_async_purge_old_ignores_non_jpg_files`: write `foo.txt` aged 100 days; assert it survives.
-- [ ] `test_async_purge_old_continues_on_oserror`: monkeypatch `Path.unlink` for one specific file to raise `OSError("permission denied")`. The other stale files must still be deleted; the call must not raise; `caplog` records a WARNING for the failing file.
-- [ ] `test_async_purge_old_handles_file_disappearing_between_glob_and_unlink`: monkeypatch `Path.unlink` for one file to raise `FileNotFoundError`. Call must not raise. Count of "actually deleted" matches reality.
-- [ ] `test_async_purge_old_only_touches_snapshot_dir`: create a sibling `tmp_path / "other_dir" / "old.jpg"` with mtime 100 days ago; run the purge against `tmp_path / "snapshots"` only; assert the sibling file still exists. This enforces the "no deletion outside the snapshot directory" constraint from the Constraints section.
-- [ ] `test_async_purge_old_rejects_relative_or_parent_paths`: call with `Path("abode_security_snapshots")` and with an absolute path containing a `".."` segment; assert both return `0`, log a WARNING, and do not create or delete anything.
+- [x] `test_async_purge_old_deletes_files_older_than_retention`: write 5 files to `tmp_path` with `os.utime` setting mtime to 31, 29, 1, 0 days ago and "now". `retention_days=30`. Assert only the 31-day-old file is deleted; assert return value is `1`.
+- [x] `test_async_purge_old_returns_zero_when_directory_empty`: assert no error, returns `0`.
+- [x] `test_async_purge_old_creates_directory_if_missing`: point at a non-existent path under `tmp_path`; call; assert returns `0` and directory exists.
+- [x] `test_async_purge_old_ignores_non_jpg_files`: write `foo.txt` aged 100 days; assert it survives.
+- [x] `test_async_purge_old_continues_on_oserror`: monkeypatch `Path.unlink` for one specific file to raise `OSError("permission denied")`. The other stale files must still be deleted; the call must not raise; `caplog` records a WARNING for the failing file.
+- [x] `test_async_purge_old_handles_file_disappearing_between_glob_and_unlink`: monkeypatch `Path.unlink` for one file to raise `FileNotFoundError`. Call must not raise. Count of "actually deleted" matches reality.
+- [x] `test_async_purge_old_only_touches_snapshot_dir`: create a sibling `tmp_path / "other_dir" / "old.jpg"` with mtime 100 days ago; run the purge against `tmp_path / "snapshots"` only; assert the sibling file still exists. This enforces the "no deletion outside the snapshot directory" constraint from the Constraints section.
+- [x] `test_async_purge_old_rejects_relative_or_parent_paths`: call with `Path("abode_security_snapshots")` and with an absolute path containing a `".."` segment; assert both return `0`, log a WARNING, and do not create or delete anything.
 
 ### Sub-Phase B: Wire the daily purge into integration setup; add retention to options flow
 

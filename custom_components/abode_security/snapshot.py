@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from homeassistant.core import HomeAssistant
@@ -113,3 +113,45 @@ async def async_capture(
             "Unexpected error capturing snapshot for %s", camera_entity_id
         )
         return reason
+
+
+def _purge_old_sync(snapshot_dir: Path, retention_days: int, now: datetime) -> int:
+    """Synchronous core of the purge — runs in an executor thread."""
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    cutoff = now - timedelta(days=retention_days)
+    deleted = 0
+    for path in snapshot_dir.glob("*.jpg"):
+        try:
+            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+            if mtime < cutoff:
+                path.unlink()
+                deleted += 1
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            _LOGGER.warning("Failed to remove snapshot %s: %s", path, exc)
+            continue
+    return deleted
+
+
+async def async_purge_old(
+    snapshot_dir: Path, *, retention_days: int, now: datetime
+) -> int:
+    """Delete snapshot JPEG files older than retention_days. Returns count deleted.
+
+    Fails closed for unsafe paths (relative or containing '..').
+    Individual unlink failures log a warning and continue — never raises.
+    Blocking I/O runs in a thread-pool executor so the event loop is not stalled.
+    """
+    if not snapshot_dir.is_absolute() or any(
+        part == ".." for part in snapshot_dir.parts
+    ):
+        _LOGGER.warning(
+            "async_purge_old: rejecting unsafe snapshot_dir %s", snapshot_dir
+        )
+        return 0
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, _purge_old_sync, snapshot_dir, retention_days, now
+    )
