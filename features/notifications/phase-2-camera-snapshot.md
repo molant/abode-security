@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: done
 phase: 2
 feature: notifications
 title: Camera snapshot capture
@@ -127,8 +127,8 @@ Deployable on its own: the integration now snapshots co-located cameras in `home
 
 #### Code changes — `action_trigger.py`
 
-- [ ] Import the new module: `from . import snapshot`.
-- [ ] In `_execute_action`, **after** the alarm-switch loop completes but **before** `event_data` is built:
+- [x] Import the new module: `from . import snapshot`.
+- [x] In `_execute_action`, **after** the alarm-switch loop completes but **before** `event_data` is built:
   - Resolve the camera: `camera_entity_id = snapshot.resolve_co_located_camera(hass, context.entity_id)`.
   - Initialize: `snapshot_path: str | None = None`, `snapshot_error: str | None = None`.
   - If `camera_entity_id is not None` **and** `current_mode in ("home", "away")`:
@@ -136,41 +136,41 @@ Deployable on its own: the integration now snapshots co-located cameras in `home
     - Capture: `err = await snapshot.async_capture(hass, camera_entity_id=camera_entity_id, filesystem_path=fs_path)`.
     - On success (`err is None`): `snapshot_path = url`.
     - On failure: `snapshot_error = err`. Leave `snapshot_path = None`.
-- [ ] Extend `event_data` with the three new keys (appended after the Phase 1 additions):
+- [x] Extend `event_data` with the three new keys (appended after the Phase 1 additions):
   ```python
   "camera_entity_id": camera_entity_id,
   "snapshot_path": snapshot_path,
   "snapshot_error": snapshot_error,
   ```
-- [ ] The event still fires unconditionally — capture failures do not abort the event.
+- [x] The event still fires unconditionally — capture failures do not abort the event.
 
 #### Tests — extend `tests/test_action_trigger.py`
 
-- [ ] `test_event_payload_includes_snapshot_in_home_mode`: configure action with a sensor whose device has a camera entity; trigger in `home` mode; mock `snapshot.async_capture` to succeed; assert `snapshot_path` matches the URL pattern and `snapshot_error is None`.
-- [ ] `test_event_payload_includes_snapshot_in_away_mode`: same setup as the home-mode test, but with `current_mode == "away"`; assert snapshot capture runs and the event payload matches the home-mode behavior.
-- [ ] `test_event_payload_no_snapshot_in_standby_mode`: same setup, but `current_mode == "standby"`; assert `camera_entity_id` is the resolved camera (still populated), `snapshot_path is None`, `snapshot_error is None`, and **`snapshot.async_capture` was not called**.
-- [ ] `test_event_payload_camera_entity_null_when_no_co_located_camera`: sensor with no co-located camera; assert all three new keys are `None`; assert `snapshot.async_capture` was not called.
-- [ ] `test_event_payload_snapshot_error_on_timeout`: mock `snapshot.async_capture` to return `"timeout"`; assert `snapshot_path is None`, `snapshot_error == "timeout"`, **the event still fires**, and the alarms were still triggered (so `alarms_triggered` matches expectations).
-- [ ] `test_snapshot_does_not_block_alarms`: mock `async_capture` to `await asyncio.sleep(2.5)` then return `None`; assert the event fires at most ~3s after the trigger, alarms list is populated, and the test does not flake (i.e. wrap with `pytest.mark.timeout(5)` or equivalent).
+- [x] `test_event_payload_includes_snapshot_in_home_mode`: configure action with a sensor whose device has a camera entity; trigger in `home` mode; mock `snapshot.async_capture` to succeed; assert `snapshot_path` matches the URL pattern and `snapshot_error is None`.
+- [x] `test_event_payload_includes_snapshot_in_away_mode`: same setup as the home-mode test, but with `current_mode == "away"`; assert snapshot capture runs and the event payload matches the home-mode behavior.
+- [x] `test_event_payload_no_snapshot_in_standby_mode`: same setup, but `current_mode == "standby"`; assert `camera_entity_id` is the resolved camera (still populated), `snapshot_path is None`, `snapshot_error is None`, and **`snapshot.async_capture` was not called**.
+- [x] `test_event_payload_camera_entity_null_when_no_co_located_camera`: sensor with no co-located camera; assert all three new keys are `None`; assert `snapshot.async_capture` was not called.
+- [x] `test_event_payload_snapshot_error_on_timeout`: mock `snapshot.async_capture` to return `"timeout"`; assert `snapshot_path is None`, `snapshot_error == "timeout"`, **the event still fires**, and the alarms were still triggered (so `alarms_triggered` matches expectations).
+- [x] `test_snapshot_does_not_block_alarms`: mock `async_capture` to `await asyncio.sleep(2.5)` then return `None`; assert the event fires at most ~3s after the trigger, alarms list is populated, and the test does not flake (i.e. wrap with `pytest.mark.timeout(5)` or equivalent).
 
 #### Tests — extend `tests/test_actions_integration.py`
 
-- [ ] One integration test that registers a fake camera entity on the same device as the triggering sensor (use HA's `MockEntity`/`MockPlatform` helpers or the existing test scaffolding from `dashboard-configuration` integration tests), patches the `camera.snapshot` service to write a tiny valid JPEG to the configured `.jpg` path, triggers the action in `home` mode, and asserts the listener received an event with `snapshot_path` pointing at the file, the file exists on disk, **and all 16 keys (7 original + 6 Phase 1 + 3 Phase 2) are present** with their expected types — this protects the backwards-compatibility contract for the original 7 keys.
+- [x] One integration test that registers a fake camera entity on the same device as the triggering sensor (use HA's `MockEntity`/`MockPlatform` helpers or the existing test scaffolding from `dashboard-configuration` integration tests), patches the `camera.snapshot` service to write a tiny valid JPEG to the configured `.jpg` path, triggers the action in `home` mode, and asserts the listener received an event with `snapshot_path` pointing at the file, the file exists on disk, **and all 16 keys (7 original + 6 Phase 1 + 3 Phase 2) are present** with their expected types — this protects the backwards-compatibility contract for the original 7 keys.
 
 #### Documentation (End of Sub-Phase B)
 
-- [ ] `docs/ARCHITECTURE.md` (lines 127–145, after the Phase 1 paragraph): add a short note that triggered actions in `home`/`away` mode capture a snapshot of the triggering sensor's co-located camera (when one exists), saved under `/config/www/abode_security_snapshots/`. One paragraph; do not duplicate the user-facing reference that will land in Phase 3.
-- [ ] No `README.md` update yet (Phase 3 owns that).
-- [ ] `CLAUDE.md` — no update needed.
+- [x] `docs/ARCHITECTURE.md` (lines 127–145, after the Phase 1 paragraph): add a short note that triggered actions in `home`/`away` mode capture a snapshot of the triggering sensor's co-located camera (when one exists), saved under `/config/www/abode_security_snapshots/`. One paragraph; do not duplicate the user-facing reference that will land in Phase 3.
+- [x] No `README.md` update yet (Phase 3 owns that).
+- [x] `CLAUDE.md` — no update needed.
 
 ### Build Verification (required before marking phase complete)
 
-- [ ] `./scripts/check.sh` — exits zero.
-- [ ] `uv run pytest -m ""` — full suite passes.
-- [ ] Scan pytest stdout for unraisable exception warnings and never-awaited-coroutine warnings (see [Logging & Diagnostics](./README.md#logging--diagnostics)).
-- [ ] Confirm the new `snapshot.py` is exercised at line-coverage parity with the rest of the integration (no untested branches).
-- [ ] Run `uv run mypy custom_components/abode_security/snapshot.py` and `uv run pyright custom_components/abode_security/snapshot.py` — clean.
-- [ ] Mark `status: done` in this file's frontmatter only after all the above pass.
+- [x] `./scripts/check.sh` — exits zero.
+- [x] `uv run pytest -m ""` — full suite passes.
+- [x] Scan pytest stdout for unraisable exception warnings and never-awaited-coroutine warnings (see [Logging & Diagnostics](./README.md#logging--diagnostics)).
+- [x] Confirm the new `snapshot.py` is exercised at line-coverage parity with the rest of the integration (no untested branches).
+- [x] Run `uv run mypy custom_components/abode_security/snapshot.py` and `uv run pyright custom_components/abode_security/snapshot.py` — clean.
+- [x] Mark `status: done` in this file's frontmatter only after all the above pass.
 
 ### Manual Verification with MCP Tools
 
