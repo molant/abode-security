@@ -68,3 +68,8 @@ ssh <user>@<host> 'ha core logs'
 - `.github/workflows/tests.yaml` — Python + frontend (every push/PR)
 - `.github/workflows/e2e-tests.yaml` — E2E (manual trigger, currently disabled)
 - `.github/workflows/validate.yaml` — HACS validation
+
+## Notifications
+
+- User-facing notification docs live at `docs/notifications.md`; the bundled blueprint is at `blueprints/abode_security_notification.yaml`.
+- The integration only fires `abode_security.action_triggered` events — it never calls `notify.*` services.

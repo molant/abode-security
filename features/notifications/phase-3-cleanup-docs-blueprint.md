@@ -180,12 +180,12 @@ Deployable on its own: pure docs and YAML. No Python changes.
 
 Required sections (in order):
 
-- [ ] **Title + one-paragraph intro** explaining the feature: action triggers fire `abode_security.action_triggered` enriched with sensor context and (when applicable) a snapshot URL; users wire notifications via their own HA automations or the bundled blueprint.
+- [x] **Title + one-paragraph intro** explaining the feature: action triggers fire `abode_security.action_triggered` enriched with sensor context and (when applicable) a snapshot URL; users wire notifications via their own HA automations or the bundled blueprint.
 
-- [ ] **Security note** (a callout / `> ⚠️` block):
+- [x] **Security note** (a callout / `> ⚠️` block):
   > Snapshots are written under `/config/www/` and served at `/local/abode_security_snapshots/...` without authentication. Anyone with the URL can view the image. If your HA instance is internet-exposed or shared, factor this into your retention setting and the URLs you share.
 
-- [ ] **Event reference table** with one row per payload key:
+- [x] **Event reference table** with one row per payload key:
 
   | Key | Type | When `null` | Example |
   |---|---|---|---|
@@ -206,7 +206,7 @@ Required sections (in order):
   | `snapshot_path` | str (URL) | `standby` mode, no co-located camera, OR snapshot failed | `"/local/abode_security_snapshots/20260521T184201_123_7f3b6a2c_binary_sensor_front_door.jpg"` |
   | `snapshot_error` | str | snapshot succeeded or was not attempted | `"timeout"`, `"service_error: ..."` |
 
-- [ ] **Minimal automation example** — copy-pasteable YAML for `notify.mobile_app_*`. Use a `choose` action so `data.image` is omitted when `snapshot_path` is `null`; do not send `image: null` in the minimal example because some notify integrations reject it:
+- [x] **Minimal automation example** — copy-pasteable YAML for `notify.mobile_app_*`. Use a `choose` action so `data.image` is omitted when `snapshot_path` is `null`; do not send `image: null` in the minimal example because some notify integrations reject it:
   ```yaml
   alias: Abode action notification
   trigger:
@@ -239,11 +239,11 @@ Required sections (in order):
               ({{ trigger.event.data.mode }})
   ```
 
-- [ ] **Critical-alert variant** (iOS / Android) — show how to set iOS critical-alert payload fields under `data.push` (including `interruption-level: critical` and a critical `sound` block) and the equivalent `channel: "critical"` on Android.
+- [x] **Critical-alert variant** (iOS / Android) — show how to set iOS critical-alert payload fields under `data.push` (including `interruption-level: critical` and a critical `sound` block) and the equivalent `channel: "critical"` on Android.
 
-- [ ] **Filtering by action** example — automation that only fires for one specific `action_id`.
+- [x] **Filtering by action** example — automation that only fires for one specific `action_id`.
 
-- [ ] **Troubleshooting** with a checklist:
+- [x] **Troubleshooting** with a checklist:
   - "I'm not getting `snapshot_path` — why?"
     - Is `mode` `standby`? (No snapshot in standby by design.)
     - Does the triggering sensor's HA device also expose a `camera.*` entity? (Check Settings → Devices → the device → Entities.)
@@ -255,11 +255,11 @@ Required sections (in order):
   - "Snapshots are filling my disk."
     - Lower `snapshot_retention_days` in the integration options.
 
-- [ ] **Link to the blueprint** at `blueprints/abode_security_notification.yaml` with a one-line "Import this if you just want mobile notifications with snapshots and don't want to write YAML." Because `hacs.json` does not declare blueprint distribution, include manual import instructions using `https://raw.githubusercontent.com/molant/abode-security/main/blueprints/abode_security_notification.yaml`.
+- [x] **Link to the blueprint** at `blueprints/abode_security_notification.yaml` with a one-line "Import this if you just want mobile notifications with snapshots and don't want to write YAML." Because `hacs.json` does not declare blueprint distribution, include manual import instructions using `https://raw.githubusercontent.com/molant/abode-security/main/blueprints/abode_security_notification.yaml`.
 
 #### Create `blueprints/abode_security_notification.yaml`
 
-- [ ] HA blueprint with:
+- [x] HA blueprint with:
   - `domain: automation`
   - `name: "Abode Security — Action notification"`
   - `description`: one paragraph explaining what it does.
@@ -298,11 +298,11 @@ Required sections (in order):
         ```
         HA passes through platform-specific keys safely; unsupported keys are ignored by the target mobile app.
 
-- [ ] After creating the file, render it in the HA UI by importing it (Settings → Automations → Blueprints → Import). Confirm the inputs render correctly and the YAML preview validates.
+- [x] After creating the file, render it in the HA UI by importing it (Settings → Automations → Blueprints → Import). Confirm the inputs render correctly and the YAML preview validates.
 
 #### Modify `README.md`
 
-- [ ] Add a "Notifications" section (after the existing services section, before "Known Limitations" if that section exists):
+- [x] Add a "Notifications" section (after the existing services section, before "Known Limitations" if that section exists):
   ```markdown
   ## Notifications
 
@@ -314,8 +314,8 @@ Required sections (in order):
 
 #### Documentation (End of Sub-Phase C)
 
-- [ ] All `docs/` changes are the deliverables of this sub-phase — already done above.
-- [ ] `CLAUDE.md` — add one short bullet to the project conventions: "User-facing notification docs live at `docs/notifications.md`; the bundled blueprint is at `blueprints/abode_security_notification.yaml`. The integration only fires events — it never calls `notify.*` services."
+- [x] All `docs/` changes are the deliverables of this sub-phase — already done above.
+- [x] `CLAUDE.md` — add one short bullet to the project conventions: "User-facing notification docs live at `docs/notifications.md`; the bundled blueprint is at `blueprints/abode_security_notification.yaml`. The integration only fires events — it never calls `notify.*` services."
 
 ### Build Verification (required before marking phase complete)
 
