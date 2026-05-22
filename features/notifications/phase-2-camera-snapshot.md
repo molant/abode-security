@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in_progress
 phase: 2
 feature: notifications
 title: Camera snapshot capture
@@ -55,9 +55,9 @@ tests/
 
 ### Baseline Test Verification (before starting implementation)
 
-- [ ] Confirm Phase 1 is merged and `status: done`.
-- [ ] `./scripts/check.sh` exits zero.
-- [ ] `uv run pytest -m ""` passes — including the new Phase 1 tests.
+- [x] Confirm Phase 1 is merged and `status: done`.
+- [x] `./scripts/check.sh` exits zero.
+- [x] `uv run pytest -m ""` passes — including the new Phase 1 tests.
 
 ### Sub-Phase A: Snapshot module — pure functions and helpers
 
@@ -65,7 +65,7 @@ Deployable on its own: `snapshot.py` exists, has full unit coverage, but is not 
 
 #### Create `custom_components/abode_security/snapshot.py`
 
-- [ ] Required imports (top of file):
+- [x] Required imports (top of file):
   ```python
   from __future__ import annotations
 
@@ -80,7 +80,7 @@ Deployable on its own: `snapshot.py` exists, has full unit coverage, but is not 
 
   _LOGGER = logging.getLogger(__name__)
   ```
-- [ ] Public functions:
+- [x] Public functions:
   - `def resolve_co_located_camera(hass: HomeAssistant, sensor_entity_id: str) -> str | None`
     - Look up the sensor's `entity_registry` entry. If it has no `device_id`, return `None`.
     - Call `er.async_entries_for_device(registry, device_id, include_disabled_entities=False)`.
@@ -109,17 +109,17 @@ Deployable on its own: `snapshot.py` exists, has full unit coverage, but is not 
 
 #### Tests — `tests/test_snapshot.py`
 
-- [ ] `test_resolve_co_located_camera_returns_camera_on_same_device`: register a `binary_sensor` and a `camera` on the same device via the mock entity_registry; assert returned `entity_id` matches the camera.
-- [ ] `test_resolve_co_located_camera_picks_first_alphabetically_when_multiple`: register two cameras on the same device (`camera.b_cam`, `camera.a_cam`); assert `camera.a_cam` is returned. Capture `caplog` and assert a `DEBUG` line lists both candidates.
-- [ ] `test_resolve_co_located_camera_none_when_sensor_not_in_registry`: pass an `entity_id` that was never registered; assert `None`, no exception.
-- [ ] `test_resolve_co_located_camera_none_when_no_device`: register a sensor with no `device_id`; assert `None`.
-- [ ] `test_resolve_co_located_camera_none_when_no_camera_on_device`: register only the sensor on a device; assert `None`.
-- [ ] `test_build_snapshot_path_filename_format`: pass a fixed datetime, action_id `"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"`, sensor `"binary_sensor.front_door"`, and `www_dir=tmp_path`; assert the filename matches `r"^\d{8}T\d{6}_\d{3}_aaaaaaaa_binary_sensor_front_door\.jpg$"`, the filesystem path is `tmp_path / "abode_security_snapshots" / <filename>`, and URL is `"/local/abode_security_snapshots/<that filename>"`.
-- [ ] `test_async_capture_success_calls_service_with_correct_args`: mock `hass.services.async_call`, assert call args match expected service/data, assert return value is `None`.
-- [ ] `test_async_capture_creates_parent_directory_if_missing`: point at a path under a fresh `tmp_path`; assert the directory exists after the call.
-- [ ] `test_async_capture_timeout_returns_reason`: fake the service to `await asyncio.sleep(5)`, set `timeout=0.5`; assert return value is exactly `"timeout"`.
-- [ ] `test_async_capture_service_error_returns_truncated_reason`: fake the service to raise `HomeAssistantError("camera not found")`; assert return matches `r"^service_error: camera not found.{0,160}$"`.
-- [ ] `test_async_capture_unexpected_exception_logged_at_exception_level`: fake the service to raise `RuntimeError("boom")`; assert return string starts with `"unexpected: RuntimeError"` and `caplog` captured an `ERROR`-level record with traceback.
+- [x] `test_resolve_co_located_camera_returns_camera_on_same_device`: register a `binary_sensor` and a `camera` on the same device via the mock entity_registry; assert returned `entity_id` matches the camera.
+- [x] `test_resolve_co_located_camera_picks_first_alphabetically_when_multiple`: register two cameras on the same device (`camera.b_cam`, `camera.a_cam`); assert `camera.a_cam` is returned. Capture `caplog` and assert a `DEBUG` line lists both candidates.
+- [x] `test_resolve_co_located_camera_none_when_sensor_not_in_registry`: pass an `entity_id` that was never registered; assert `None`, no exception.
+- [x] `test_resolve_co_located_camera_none_when_no_device`: register a sensor with no `device_id`; assert `None`.
+- [x] `test_resolve_co_located_camera_none_when_no_camera_on_device`: register only the sensor on a device; assert `None`.
+- [x] `test_build_snapshot_path_filename_format`: pass a fixed datetime, action_id `"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"`, sensor `"binary_sensor.front_door"`, and `www_dir=tmp_path`; assert the filename matches `r"^\d{8}T\d{6}_\d{3}_aaaaaaaa_binary_sensor_front_door\.jpg$"`, the filesystem path is `tmp_path / "abode_security_snapshots" / <filename>`, and URL is `"/local/abode_security_snapshots/<that filename>"`.
+- [x] `test_async_capture_success_calls_service_with_correct_args`: mock `hass.services.async_call`, assert call args match expected service/data, assert return value is `None`.
+- [x] `test_async_capture_creates_parent_directory_if_missing`: point at a path under a fresh `tmp_path`; assert the directory exists after the call.
+- [x] `test_async_capture_timeout_returns_reason`: fake the service to `await asyncio.sleep(5)`, set `timeout=0.5`; assert return value is exactly `"timeout"`.
+- [x] `test_async_capture_service_error_returns_truncated_reason`: fake the service to raise `HomeAssistantError("camera not found")`; assert return matches `r"^service_error: camera not found.{0,160}$"`.
+- [x] `test_async_capture_unexpected_exception_logged_at_exception_level`: fake the service to raise `RuntimeError("boom")`; assert return string starts with `"unexpected: RuntimeError"` and `caplog` captured an `ERROR`-level record with traceback.
 
 ### Sub-Phase B: Wire snapshot capture into `_execute_action`
 
