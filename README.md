@@ -87,13 +87,15 @@ After setup, configure advanced options in Home Assistant:
 
 See [CONFIGURATION.md](CONFIGURATION.md) for detailed configuration options and tuning guides.
 
-## Available Services
+## Available Actions
+
+> Home Assistant renamed "services" to "actions" in the UI; the YAML key is still accepted as either `service:` or `action:`. The snippets below use the newer `action:` form. Call them from **Developer Tools → Actions** (called "Services" in older HA versions).
 
 ### Trigger Alarm
 Trigger a manual alarm with optional event tracking.
 
 ```yaml
-service: abode_security.trigger_alarm
+action: abode_security.trigger_alarm
 data:
   alarm_type: "panic"  # or "fire", "police"
 ```
@@ -102,7 +104,7 @@ data:
 Acknowledge a security event in the timeline.
 
 ```yaml
-service: abode_security.acknowledge_timeline_event
+action: abode_security.acknowledge_timeline_event
 data:
   event_id: "event_123456"
 ```
@@ -111,7 +113,7 @@ data:
 Dismiss a security event.
 
 ```yaml
-service: abode_security.dismiss_timeline_event
+action: abode_security.dismiss_timeline_event
 data:
   event_id: "event_123456"
 ```
@@ -120,7 +122,7 @@ data:
 Trigger an Abode automation.
 
 ```yaml
-service: abode_security.trigger_automation
+action: abode_security.trigger_automation
 data:
   automation_id: "automation_123"
 ```
@@ -129,15 +131,28 @@ data:
 Prevent dispatch notifications during system testing.
 
 ```yaml
-service: abode_security.enable_test_mode
+action: abode_security.enable_test_mode
 ```
 
 ### Disable Test Mode
 Re-enable dispatch notifications.
 
 ```yaml
-service: abode_security.disable_test_mode
+action: abode_security.disable_test_mode
 ```
+
+### Fire Test Notification (debug)
+Run the snapshot-capture + `abode_security.action_triggered` event-fire path for a chosen Abode action without arming the panel. Requires **Debug logging** to be enabled in the integration options.
+
+```yaml
+action: abode_security.fire_test_notification
+data:
+  action_id: <paste your Abode action's UUID>
+  sensor_entity_id: binary_sensor.front_door
+  mode: home  # optional — standby/home/away, default home
+```
+
+See [`docs/notifications.md`](./docs/notifications.md) for full usage and how to find your action's UUID.
 
 ## Troubleshooting
 
@@ -244,7 +259,9 @@ For detailed information on async patterns, see [ASYNC_AWAIT_PATTERNS.md](docs/A
 
 When an action triggers, the integration fires `abode_security.action_triggered` with the triggering sensor's friendly name, area, prior/new state, and (when the sensor's device exposes a camera) a snapshot URL. The integration does not send notifications itself — wire your own via an HA automation or import the bundled blueprint.
 
-See [`docs/notifications.md`](./docs/notifications.md) for the event reference and automation examples, or import the bundled blueprint manually from Settings → Automations → Blueprints → Import from URL:
+Actions can also be **notification-only** — set the action's alarm field to "None (notification only)" and the event fires (with snapshot) without arming any switch. Useful for sensors that should notify without escalating and for end-to-end testing.
+
+See [`docs/notifications.md`](./docs/notifications.md) for the event reference, automation examples, and the `fire_test_notification` debug service, or import the bundled blueprint manually from Settings → Automations → Blueprints → Import from URL:
 `https://raw.githubusercontent.com/molant/abode-security/main/blueprints/abode_security_notification.yaml`
 
 ## Known Limitations

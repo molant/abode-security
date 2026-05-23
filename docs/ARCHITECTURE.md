@@ -121,11 +121,12 @@ Dispatcher-signal handlers are intentionally sync (see `ASYNC_AWAIT_PATTERNS.md`
 
 ### Actions system (`action_manager.py`, `action_trigger.py`)
 
-User-defined mappings from **sensor activation → alarm trigger**, gated by alarm mode.
+User-defined mappings from **sensor activation → event fire (and optionally an alarm trigger)**, gated by alarm mode.
 
 - `ActionManager` — CRUD + persistence. Actions live in HA's `Store` API at `.storage/abode_security_actions.json`, keyed by UUID. In-memory cache during runtime.
-- `ActionTriggerCoordinator` — listens to `EVENT_STATE_CHANGED`, matches binary-sensor `off→on` transitions against enabled actions, applies per-sensor debounce (default 1.0 s) and per-action delay (0–60 s via `async_call_later`), then calls `switch.turn_on` on the configured alarm entities and fires `abode_security.action_triggered`.
+- `ActionTriggerCoordinator` — listens to `EVENT_STATE_CHANGED`, matches binary-sensor `off→on` transitions against enabled actions, applies per-sensor debounce (default 1.0 s) and per-action delay (0–60 s via `async_call_later`), then calls `switch.turn_on` on each configured alarm entity (zero or more — an empty `alarm_entity_ids` list makes the action notification-only) and fires `abode_security.action_triggered`.
 - Trigger state (pending delays, debounce timestamps) is memory-only; lost on restart by design.
+- A debug-only `abode_security.fire_test_notification` service (gated by the `debug_logging` option) runs the snapshot + event-fire path for a chosen action and sensor without arming the panel — see [`docs/notifications.md`](./notifications.md).
 
 The `abode_security.action_triggered` event payload carries 16 keys: the original 7 (`action_id`, `action_name`, `triggered_by`, `mode`, `alarms_triggered`, `alarms_failed`, `timestamp`) plus 6 sensor-context keys added in Phase 1 of the notifications feature (`sensor_friendly_name`, `sensor_device_class`, `previous_state`, `new_state`, `sensor_area_id`, `sensor_area_name`), plus 3 snapshot keys added in Phase 2 (`camera_entity_id`, `snapshot_path`, `snapshot_error`). Context is captured at the moment of the `off→on` transition — not re-read at execute time — so delayed actions carry the state that caused the trigger rather than the current state.
 

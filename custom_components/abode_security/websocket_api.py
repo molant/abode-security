@@ -24,7 +24,7 @@ from .action_manager import (
     MAX_NAME_LENGTH,
     VALID_MODES,
 )
-from .const import DOMAIN
+from .const import CONF_DEBUG_LOGGING, DOMAIN
 from .helpers import find_abode_alarm_panel
 
 # Defense-in-depth upper bounds for websocket action payloads. The frontend is
@@ -697,7 +697,18 @@ async def websocket_config_get(
         connection.send_error(msg["id"], "not_ready", "Config store not initialized")
         return
 
-    connection.send_result(msg["id"], config_store.get_config())
+    # Merge in `debug_logging` from the HA ConfigEntry options. It lives there
+    # (set via the integration's options flow) rather than in config_store, but
+    # the frontend benefits from one fetch — used to gate UI affordances like
+    # the "copy action ID" button. Read-only over WS: changes go through HA's
+    # options flow, not config/set.
+    debug_logging = any(
+        entry.options.get(CONF_DEBUG_LOGGING, False)
+        for entry in hass.config_entries.async_entries(DOMAIN)
+    )
+    config = config_store.get_config()
+    config["debug_logging"] = debug_logging
+    connection.send_result(msg["id"], config)
 
 
 @websocket_command(

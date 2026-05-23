@@ -14,7 +14,7 @@ All keys are always present in the payload; values are `null` when they cannot b
 
 | Key | Type | When `null` | Example |
 |---|---|---|---|
-| `action_id` | str (UUID) | never | `"7f3b6a2c-1234-5678-abcd-ef0123456789"` |
+| `action_id` | str (UUID) | never | `"<uuid-of-your-abode-action>"` — see [Finding your Abode action's UUID](#finding-your-abode-actions-uuid) |
 | `action_name` | str | never | `"Front Door Motion"` |
 | `triggered_by` | str (entity_id) | never | `"binary_sensor.front_door_motion"` |
 | `mode` | str | never | `"home"`, `"away"`, or `"standby"` |
@@ -108,7 +108,7 @@ HA passes these through to the Companion app; unsupported keys on the other plat
 
 ## Filtering by Action
 
-To notify only for a specific action (e.g. the front door action with ID `7f3b6a2c-...`):
+To notify only for a specific action, restrict on its `action_id`. See [Finding your Abode action's UUID](#finding-your-abode-actions-uuid) below for how to get the value.
 
 ```yaml
 alias: Abode — front door only
@@ -117,7 +117,7 @@ trigger:
     event_type: abode_security.action_triggered
 condition:
   - condition: template
-    value_template: "{{ trigger.event.data.action_id == '7f3b6a2c-1234-5678-abcd-ef0123456789' }}"
+    value_template: "{{ trigger.event.data.action_id == '<paste-your-action-uuid>' }}"
 action:
   - service: notify.mobile_app_<your_device>
     data:
@@ -158,21 +158,38 @@ In the event payload, `alarms_triggered` and `alarms_failed` are both empty list
 
 ## Testing without arming the panel
 
-The `abode_security.fire_test_notification` service runs the full event-fire and snapshot-capture path for a chosen action — but skips the alarm `switch.turn_on` calls, the mode gate, and the debounce. It writes a real JPEG under `/config/www/abode_security_snapshots/` (when the sensor has a co-located camera) and fires a real `abode_security.action_triggered` event, so your blueprint or automation reacts exactly as it would for a real trigger.
+The `abode_security.fire_test_notification` action runs the full event-fire and snapshot-capture path for a chosen Abode action — but skips the alarm `switch.turn_on` calls, the mode gate, and the debounce. It writes a real JPEG under `/config/www/abode_security_snapshots/` (when the sensor has a co-located camera) and fires a real `abode_security.action_triggered` event, so your blueprint or automation reacts exactly as it would for a real trigger.
 
-**Opt-in:** the service refuses to run unless **debug logging** is enabled in the integration options (**Settings → Devices & Services → Abode Security → Configure → Debug logging**).
+> **Don't add a second trigger to your automation.** Calling this action fires the same `abode_security.action_triggered` event your existing automation already listens for — it's a "1-click fake trigger," not a separate code path.
 
-Call it from **Developer Tools → Services**:
+**Opt-in:** the action refuses to run unless **debug logging** is enabled in the integration options (**Settings → Devices & Services → Abode Security → Configure → Debug logging**).
+
+Call it from **Developer Tools → Actions** (called "Services" in older HA versions):
 
 ```yaml
-service: abode_security.fire_test_notification
+action: abode_security.fire_test_notification
 data:
-  action_id: "7f3b6a2c-1234-5678-abcd-ef0123456789"
+  action_id: <paste your Abode action's UUID here — see below>
   sensor_entity_id: binary_sensor.front_door
   mode: home  # optional — defaults to "home"; snapshot is forced regardless
 ```
 
 The event payload mirrors a real trigger except `alarms_triggered` / `alarms_failed` are empty lists. Use it to verify your notification target, critical-alert configuration, and image rendering without arming the system or walking past a sensor.
+
+### Finding your Abode action's UUID
+
+The action `id` field is a UUID generated when you create the action in the Abode Security panel.
+
+**Easiest:** with **Debug logging** enabled in the integration options, every row in the Abode Security panel's Actions tab gets a **copy** icon (next to the test/edit/delete buttons). Click it to copy the action's UUID to your clipboard. The button is intentionally hidden when debug logging is off so it doesn't clutter the panel for everyday use.
+
+**Fallback** (if you can't enable debug logging for some reason):
+
+1. Open **Developer Tools → Events**.
+2. In the **Listen to events** box, type `abode_security.action_triggered` and click **Start listening**.
+3. Trigger the action once for real (walk past the sensor, or toggle a `binary_sensor` to `on` from Developer Tools → States).
+4. The event appears in the listener with the full payload — copy the `action_id` value.
+
+Keep that UUID handy; you'll need it for the action filter in your automation or blueprint, and for the `fire_test_notification` action above.
 
 ---
 

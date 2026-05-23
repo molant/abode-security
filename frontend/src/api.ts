@@ -109,3 +109,19 @@ export async function testAction(hass: HomeAssistant, id: string): Promise<void>
     action_id: id,
   });
 }
+
+/**
+ * Fetch the integration's runtime config. Includes `debug_logging` (read-only,
+ * mirrored from the config entry options) so the UI can gate power-user
+ * affordances like the per-action "copy ID" button.
+ */
+export interface AbodeIntegrationConfig {
+  debounce_seconds: number;
+  debug_logging: boolean;
+}
+
+export async function fetchIntegrationConfig(hass: HomeAssistant): Promise<AbodeIntegrationConfig> {
+  return hass.callWS<AbodeIntegrationConfig>({
+    type: 'abode_security/config/get',
+  });
+}
