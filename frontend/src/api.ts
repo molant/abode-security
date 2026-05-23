@@ -64,7 +64,9 @@ export async function fetchAlarms(hass: HomeAssistant): Promise<AlarmEntity[]> {
 }
 
 /**
- * Fetch camera entities co-located with Abode-managed devices.
+ * Fetch every camera entity in Home Assistant (the integration is
+ * camera-source-agnostic — any HA camera is a valid notification
+ * deep-link target).
  */
 export async function fetchCameras(hass: HomeAssistant): Promise<AbodeCamera[]> {
   const response = await hass.callWS<{ cameras: AbodeCamera[] }>({

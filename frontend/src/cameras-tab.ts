@@ -4,11 +4,18 @@ import type { HomeAssistant, AbodeCamera } from './types';
 import { fetchCameras } from './api';
 
 /**
- * Cameras tab — lists every camera entity sharing a device with an
- * Abode-managed sensor. Auto-discovers on tab activation; refreshes
- * still images every 5 s while visible. Tapping a notification deep-link
- * with `?tab=cameras&camera=<entity_id>` scrolls and highlights the
- * matching card.
+ * Cameras tab — lists every camera entity in Home Assistant. The integration
+ * is camera-source-agnostic so any HA camera (Abode, Unifi Protect, generic,
+ * …) is a valid deep-link target.
+ *
+ * Each card renders HA's native <ha-camera-stream> (the same element the
+ * picture-entity Lovelace card uses with `camera_view: auto`) so auth and
+ * stream lifecycle are handled by HA. Tapping a card fires `hass-more-info`,
+ * matching `tap_action: more-info` on picture-entity. On deep-link arrival
+ * (`?camera=<entity_id>`), the matching camera's more-info dialog auto-opens
+ * once so the user lands directly on the stream; the underlying grid is
+ * still rendered so closing the dialog leaves the user on the scrolled and
+ * highlighted card.
  *
  * @prop {HomeAssistant} hass - Required. Provided by the panel.
  * @prop {string | null} selectedCameraEntityId - Set by the panel from
@@ -22,12 +29,10 @@ export class CamerasTab extends LitElement {
   @state() private _cameras: AbodeCamera[] = [];
   @state() private _loading = true;
   @state() private _error: string | null = null;
-  @state() private _refreshToken: number = Date.now();
-  @state() private _imageErrors: Set<string> = new Set();
 
   private _abort: AbortController | null = null;
-  private _refreshInterval: ReturnType<typeof setInterval> | null = null;
   private _highlightTimeout: ReturnType<typeof setTimeout> | null = null;
+  private _autoOpenedFor: string | null = null;
 
   static styles = css`
     :host {
@@ -68,7 +73,12 @@ export class CamerasTab extends LitElement {
       border-radius: 8px;
       overflow: hidden;
       background: var(--card-background-color, #fff);
+      cursor: pointer;
       transition: box-shadow 0.2s;
+    }
+
+    .camera-card:hover {
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     }
 
     .camera-card.highlight {
@@ -88,7 +98,7 @@ export class CamerasTab extends LitElement {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 12px 16px 8px;
+      padding: 12px 16px;
     }
 
     .camera-name {
@@ -104,41 +114,22 @@ export class CamerasTab extends LitElement {
       color: var(--secondary-text-color, #757575);
     }
 
-    .camera-image {
-      width: 100%;
+    .camera-stream {
       display: block;
+      width: 100%;
+      min-height: 160px;
       background: #000;
-      min-height: 160px;
-      object-fit: cover;
-    }
-
-    .camera-image-error {
-      min-height: 160px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #1a1a1a;
-      color: #666;
-      font-size: 12px;
-    }
-
-    .paired-sensors {
-      padding: 8px 16px 12px;
-      font-size: 12px;
-      color: var(--secondary-text-color, #757575);
     }
   `;
 
   connectedCallback() {
     super.connectedCallback();
     void this._loadCameras();
-    this._startRefresh();
   }
 
   disconnectedCallback() {
     this._abort?.abort();
     this._abort = null;
-    this._stopRefresh();
     if (this._highlightTimeout !== null) {
       clearTimeout(this._highlightTimeout);
       this._highlightTimeout = null;
@@ -147,8 +138,19 @@ export class CamerasTab extends LitElement {
   }
 
   updated(changedProps: Map<string, unknown>) {
-    if (changedProps.has('selectedCameraEntityId') && this.selectedCameraEntityId) {
+    // Reset the auto-open guard when the deep-link target itself changes
+    // (Lit only puts the prop in changedProps when it actually differs).
+    if (changedProps.has('selectedCameraEntityId')) {
+      this._autoOpenedFor = null;
+    }
+    // Only react to the deep-link on selection change or when the cameras
+    // list arrives — without this guard every `hass` rebind would re-call
+    // scrollIntoView and re-arm the highlight pulse.
+    const deepLinkChanged =
+      changedProps.has('selectedCameraEntityId') || changedProps.has('_cameras');
+    if (deepLinkChanged && this.selectedCameraEntityId) {
       this._scrollToSelected();
+      this._maybeAutoOpenMoreInfo();
     }
   }
 
@@ -173,22 +175,6 @@ export class CamerasTab extends LitElement {
     }
   }
 
-  private _startRefresh() {
-    this._stopRefresh();
-    this._refreshInterval = setInterval(() => {
-      if (document.visibilityState !== 'hidden') {
-        this._refreshToken = Date.now();
-      }
-    }, 5000);
-  }
-
-  private _stopRefresh() {
-    if (this._refreshInterval !== null) {
-      clearInterval(this._refreshInterval);
-      this._refreshInterval = null;
-    }
-  }
-
   private _scrollToSelected() {
     // Wait for the next paint so the card exists in the DOM.
     requestAnimationFrame(() => {
@@ -207,8 +193,23 @@ export class CamerasTab extends LitElement {
     });
   }
 
-  private _stillUrl(camera: AbodeCamera): string {
-    return `/api/camera_proxy/${camera.entity_id}?_=${this._refreshToken}`;
+  private _maybeAutoOpenMoreInfo() {
+    const target = this.selectedCameraEntityId;
+    if (!target) return;
+    if (this._autoOpenedFor === target) return;
+    if (!this._cameras.some((c) => c.entity_id === target)) return;
+    this._autoOpenedFor = target;
+    this._openMoreInfo(target);
+  }
+
+  private _openMoreInfo(entityId: string) {
+    this.dispatchEvent(
+      new CustomEvent('hass-more-info', {
+        detail: { entityId },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   render() {
@@ -226,12 +227,7 @@ export class CamerasTab extends LitElement {
       `;
     }
     if (this._cameras.length === 0) {
-      return html`
-        <div class="empty-state">
-          No Abode cameras found. Pair a camera with one of your Abode sensors via Settings →
-          Devices.
-        </div>
-      `;
+      return html`<div class="empty-state">No cameras found in Home Assistant.</div>`;
     }
     return html`
       <div class="camera-list">${this._cameras.map((camera) => this._renderCard(camera))}</div>
@@ -239,44 +235,34 @@ export class CamerasTab extends LitElement {
   }
 
   private _renderCard(camera: AbodeCamera) {
-    const hasError = this._imageErrors.has(camera.entity_id);
+    const stateObj = this.hass.states?.[camera.entity_id];
     return html`
-      <div class="camera-card" data-entity-id=${camera.entity_id}>
+      <div
+        class="camera-card"
+        data-entity-id=${camera.entity_id}
+        role="button"
+        tabindex="0"
+        @click=${() => this._openMoreInfo(camera.entity_id)}
+        @keydown=${(ev: KeyboardEvent) => {
+          if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            this._openMoreInfo(camera.entity_id);
+          }
+        }}
+      >
         <div class="camera-card-header">
           <span class="camera-name">${camera.name}</span>
           ${camera.area ? html`<span class="area-chip">${camera.area}</span>` : ''}
         </div>
-        ${hasError
-          ? html`<div class="camera-image-error">Failed to load image</div>`
-          : html`<img
-              class="camera-image"
-              src=${this._stillUrl(camera)}
-              alt=${camera.name}
-              loading="lazy"
-              @error=${() => this._handleImageError(camera.entity_id)}
-            />`}
-        ${camera.paired_sensor_entity_ids.length > 0
-          ? html`
-              <div class="paired-sensors">
-                Paired with: ${this._pairedSensorNames(camera.paired_sensor_entity_ids)}
-              </div>
-            `
-          : ''}
+        <ha-camera-stream
+          class="camera-stream"
+          allow-exoplayer
+          muted
+          .hass=${this.hass}
+          .stateObj=${stateObj}
+        ></ha-camera-stream>
       </div>
     `;
-  }
-
-  private _pairedSensorNames(entityIds: string[]): string {
-    return entityIds
-      .map((id) => {
-        const state = this.hass.states[id];
-        return state?.attributes?.['friendly_name'] ?? id;
-      })
-      .join(', ');
-  }
-
-  private _handleImageError(entityId: string) {
-    this._imageErrors = new Set([...this._imageErrors, entityId]);
   }
 }
 

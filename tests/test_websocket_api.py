@@ -1637,7 +1637,7 @@ class TestWebSocketCamerasAPI:
         return entity_reg.async_get_or_create(domain, platform, unique_id, **kwargs)
 
     async def test_ws_entities_cameras_empty(self, hass, hass_ws_client) -> None:
-        """No Abode config entry → empty list."""
+        """No camera entities registered → empty list."""
         client = await hass_ws_client(hass)
         await client.send_json({"id": 1, "type": "abode_security/entities/cameras"})
         response = await client.receive_json()
@@ -1648,19 +1648,10 @@ class TestWebSocketCamerasAPI:
     async def test_ws_entities_cameras_lists_abode_motion_cameras(
         self, hass, hass_ws_client
     ) -> None:
-        """Camera sharing a device with an Abode binary_sensor is returned with paired sensors."""
+        """Camera registered under abode_security is returned with friendly name."""
         abode_entry = self._make_abode_entry(hass)
         device = self._make_device(hass, abode_entry, "motion-cam-device")
 
-        self._make_entity(
-            hass,
-            "binary_sensor",
-            "abode_security",
-            "front_motion_unique",
-            entry=abode_entry,
-            device_id=device.id,
-            suggested_object_id="front_motion",
-        )
         self._make_entity(
             hass,
             "camera",
@@ -1684,13 +1675,11 @@ class TestWebSocketCamerasAPI:
         cam = cameras[0]
         assert cam["entity_id"] == "camera.front_cam"
         assert cam["name"] == "Front Camera"
-        assert cam["device_id"] == device.id
-        assert "binary_sensor.front_motion" in cam["paired_sensor_entity_ids"]
 
-    async def test_ws_entities_cameras_excludes_unrelated_cameras(
+    async def test_ws_entities_cameras_lists_unrelated_cameras(
         self, hass, hass_ws_client
     ) -> None:
-        """Camera on a device with no Abode entities is not returned."""
+        """Camera on a device with no Abode entities is still returned (source-agnostic)."""
         from homeassistant.helpers import device_registry as dr
         from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -1710,21 +1699,47 @@ class TestWebSocketCamerasAPI:
             device_id=other_device.id,
             suggested_object_id="unrelated_cam",
         )
-
-        # Abode config entry exists but has no devices
-        self._make_abode_entry(hass)
+        hass.states.async_set(
+            "camera.unrelated_cam", "idle", {"friendly_name": "Unrelated Cam"}
+        )
 
         client = await hass_ws_client(hass)
         await client.send_json({"id": 1, "type": "abode_security/entities/cameras"})
         response = await client.receive_json()
 
         assert response["success"]
-        assert response["result"]["cameras"] == []
+        cameras = response["result"]["cameras"]
+        assert len(cameras) == 1
+        assert cameras[0]["entity_id"] == "camera.unrelated_cam"
+
+    async def test_ws_entities_cameras_lists_camera_with_no_device(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Camera without a device_id is returned."""
+        self._make_entity(
+            hass,
+            "camera",
+            "generic",
+            "no_device_cam_unique",
+            suggested_object_id="no_device_cam",
+        )
+        hass.states.async_set(
+            "camera.no_device_cam", "idle", {"friendly_name": "No Device Cam"}
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/cameras"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        cameras = response["result"]["cameras"]
+        assert len(cameras) == 1
+        assert cameras[0]["entity_id"] == "camera.no_device_cam"
 
     async def test_ws_entities_cameras_includes_third_party_camera_co_located_with_abode_sensor(
         self, hass, hass_ws_client
     ) -> None:
-        """Third-party camera on an Abode device is returned; only Abode sensors in paired list."""
+        """Third-party camera on a device with an Abode sensor is returned."""
         from pytest_homeassistant_custom_component.common import MockConfigEntry
 
         abode_entry = self._make_abode_entry(hass)
@@ -1762,7 +1777,6 @@ class TestWebSocketCamerasAPI:
         cameras = response["result"]["cameras"]
         assert len(cameras) == 1
         assert cameras[0]["entity_id"] == "camera.third_party_cam"
-        assert cameras[0]["paired_sensor_entity_ids"] == ["binary_sensor.mixed_sensor"]
 
     async def test_ws_entities_cameras_excludes_hidden_and_disabled(
         self, hass, hass_ws_client

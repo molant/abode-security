@@ -15,8 +15,6 @@ function createMockCamera(overrides: Partial<AbodeCamera> = {}): AbodeCamera {
     entity_id: 'camera.front',
     name: 'Front Camera',
     area: null,
-    device_id: 'device-1',
-    paired_sensor_entity_ids: [],
     ...overrides,
   };
 }
@@ -31,11 +29,11 @@ describe('CamerasTab', () => {
 
       await setState(el, { _cameras: [], _loading: false } as Partial<CamerasTab>);
 
-      expect(el.shadowRoot?.textContent).to.include('No Abode cameras found');
+      expect(el.shadowRoot?.textContent).to.include('No cameras found in Home Assistant');
     });
   });
 
-  describe('renders a card per camera with name, area chip, and paired-sensors text', () => {
+  describe('renders a card per camera with name and area chip', () => {
     it('renders camera card with name', async () => {
       const hass = createMockHass();
       const el = await fixture<CamerasTab>(html`
@@ -80,31 +78,18 @@ describe('CamerasTab', () => {
       expect(el.shadowRoot?.querySelector('.area-chip')).to.not.exist;
     });
 
-    it('renders paired sensors text using hass.states friendly_name', async () => {
-      const hass = createMockHass({
-        states: {
-          'binary_sensor.front_motion': {
-            entity_id: 'binary_sensor.front_motion',
-            state: 'off',
-            attributes: { friendly_name: 'Front Motion' },
-          },
-        },
-      });
+    it('renders an ha-camera-stream element per camera', async () => {
+      const hass = createMockHass();
       const el = await fixture<CamerasTab>(html`
         <abode-cameras-tab .hass=${hass}></abode-cameras-tab>
       `);
 
       await setState(el, {
-        _cameras: [
-          createMockCamera({
-            paired_sensor_entity_ids: ['binary_sensor.front_motion'],
-          }),
-        ],
+        _cameras: [createMockCamera()],
         _loading: false,
       } as Partial<CamerasTab>);
 
-      expect(el.shadowRoot?.textContent).to.include('Paired with:');
-      expect(el.shadowRoot?.textContent).to.include('Front Motion');
+      expect(el.shadowRoot?.querySelector('ha-camera-stream')).to.exist;
     });
   });
 
@@ -173,84 +158,77 @@ describe('CamerasTab', () => {
     });
   });
 
-  describe('does not error when paired_sensor_entity_ids is empty', () => {
-    it('renders without paired sensors section when list is empty', async () => {
+  describe('tap on a card opens the more-info dialog', () => {
+    it('dispatches a bubbling, composed hass-more-info event with the entity_id', async () => {
       const hass = createMockHass();
       const el = await fixture<CamerasTab>(html`
         <abode-cameras-tab .hass=${hass}></abode-cameras-tab>
       `);
 
       await setState(el, {
-        _cameras: [createMockCamera({ paired_sensor_entity_ids: [] })],
+        _cameras: [createMockCamera({ entity_id: 'camera.front' })],
         _loading: false,
       } as Partial<CamerasTab>);
 
-      expect(el.shadowRoot?.querySelector('.paired-sensors')).to.not.exist;
-      expect(el.shadowRoot?.querySelector('.camera-card')).to.exist;
+      const events: CustomEvent[] = [];
+      el.addEventListener('hass-more-info', (ev) => events.push(ev as CustomEvent));
+
+      const card = el.shadowRoot?.querySelector<HTMLElement>('[data-entity-id="camera.front"]');
+      expect(card).to.exist;
+      card!.click();
+
+      expect(events).to.have.lengthOf(1);
+      expect(events[0].detail).to.deep.equal({ entityId: 'camera.front' });
+      expect(events[0].bubbles).to.be.true;
+      expect(events[0].composed).to.be.true;
     });
   });
 
-  describe('refresh interval bumps the still URL cache buster', () => {
-    it('advances _refreshToken when interval fires', async () => {
-      const clock = sinon.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
-      try {
-        const hass = createMockHass();
-        const el = await fixture<CamerasTab>(html`
-          <abode-cameras-tab .hass=${hass}></abode-cameras-tab>
-        `);
-        await setState(el, {
-          _cameras: [createMockCamera()],
-          _loading: false,
-        } as Partial<CamerasTab>);
+  describe('deep-link arrival auto-opens more-info', () => {
+    it('fires hass-more-info once when the selected camera is present in the list', async () => {
+      const hass = createMockHass();
+      const el = await fixture<CamerasTab>(html`
+        <abode-cameras-tab .hass=${hass}></abode-cameras-tab>
+      `);
 
-        // @ts-expect-error accessing private for testing
-        const tokenBefore: number = el._refreshToken;
+      const events: CustomEvent[] = [];
+      el.addEventListener('hass-more-info', (ev) => events.push(ev as CustomEvent));
 
-        clock.tick(5001);
-        await elementUpdated(el);
+      await setState(el, {
+        _cameras: [createMockCamera({ entity_id: 'camera.front' })],
+        _loading: false,
+      } as Partial<CamerasTab>);
 
-        // @ts-expect-error accessing private for testing
-        const tokenAfter: number = el._refreshToken;
-        expect(tokenAfter).to.be.greaterThan(tokenBefore);
-      } finally {
-        clock.restore();
-      }
+      el.selectedCameraEntityId = 'camera.front';
+      await elementUpdated(el);
+
+      expect(events).to.have.lengthOf(1);
+      expect(events[0].detail).to.deep.equal({ entityId: 'camera.front' });
+
+      // Triggering another update for the same selection should not re-fire.
+      el.requestUpdate();
+      await elementUpdated(el);
+      expect(events).to.have.lengthOf(1);
     });
-  });
 
-  describe('pauses refresh when document.visibilityState is hidden', () => {
-    it('does not bump _refreshToken when tab is hidden', async () => {
-      const clock = sinon.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
-      Object.defineProperty(document, 'visibilityState', {
-        configurable: true,
-        value: 'hidden',
-      });
-      try {
-        const hass = createMockHass();
-        const el = await fixture<CamerasTab>(html`
-          <abode-cameras-tab .hass=${hass}></abode-cameras-tab>
-        `);
-        await setState(el, {
-          _cameras: [createMockCamera()],
-          _loading: false,
-        } as Partial<CamerasTab>);
+    it('does not fire when the selected camera is missing from the list', async () => {
+      const hass = createMockHass();
+      const el = await fixture<CamerasTab>(html`
+        <abode-cameras-tab .hass=${hass}></abode-cameras-tab>
+      `);
 
-        // @ts-expect-error accessing private for testing
-        const tokenBefore: number = el._refreshToken;
+      const events: CustomEvent[] = [];
+      el.addEventListener('hass-more-info', (ev) => events.push(ev as CustomEvent));
 
-        clock.tick(5001);
-        await elementUpdated(el);
+      await setState(el, {
+        _cameras: [createMockCamera({ entity_id: 'camera.other' })],
+        _loading: false,
+      } as Partial<CamerasTab>);
 
-        // @ts-expect-error accessing private for testing
-        const tokenAfter: number = el._refreshToken;
-        expect(tokenAfter).to.equal(tokenBefore);
-      } finally {
-        clock.restore();
-        Object.defineProperty(document, 'visibilityState', {
-          configurable: true,
-          value: 'visible',
-        });
-      }
+      el.selectedCameraEntityId = 'camera.deleted';
+      await elementUpdated(el);
+
+      expect(events).to.have.lengthOf(0);
     });
   });
 });
