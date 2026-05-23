@@ -5,6 +5,7 @@
 import type {
   HomeAssistant,
   AbodeAction,
+  AbodeCamera,
   AbodeMode,
   Mode,
   SensorsByCategory,
@@ -60,6 +61,16 @@ export async function fetchAlarms(hass: HomeAssistant): Promise<AlarmEntity[]> {
     type: 'abode_security/entities/alarms',
   });
   return response.alarms;
+}
+
+/**
+ * Fetch camera entities co-located with Abode-managed devices.
+ */
+export async function fetchCameras(hass: HomeAssistant): Promise<AbodeCamera[]> {
+  const response = await hass.callWS<{ cameras: AbodeCamera[] }>({
+    type: 'abode_security/entities/cameras',
+  });
+  return response.cameras;
 }
 
 /**

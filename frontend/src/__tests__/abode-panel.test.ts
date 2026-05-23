@@ -14,7 +14,7 @@ import { createMockHass, elementUpdated } from './test-helpers.js';
 
 describe('AbodeConfigurationPanel', () => {
   describe('tab bar (#120)', () => {
-    it('renders the Modes tab first, then Actions', async () => {
+    it('renders the Modes tab first, then Actions, then Cameras', async () => {
       const hass = createMockHass();
       const el = await fixture<AbodeConfigurationPanel>(html`
         <abode-configuration-panel .hass=${hass}></abode-configuration-panel>
@@ -25,7 +25,7 @@ describe('AbodeConfigurationPanel', () => {
         el.shadowRoot?.querySelectorAll<HTMLButtonElement>('.tab-bar button[role="tab"]') ?? [],
       );
       const labels = buttons.map((b) => b.textContent?.trim() ?? '');
-      expect(labels).to.deep.equal(['Modes', 'Actions']);
+      expect(labels).to.deep.equal(['Modes', 'Actions', 'Cameras']);
     });
 
     it('defaults to the Modes tab being active', async () => {
@@ -56,6 +56,22 @@ describe('AbodeConfigurationPanel', () => {
 
       expect(actionsBtn?.getAttribute('aria-selected')).to.equal('true');
       expect(el.shadowRoot?.querySelector('abode-actions-tab')).to.exist;
+      expect(el.shadowRoot?.querySelector('abode-modes-tab')).to.not.exist;
+    });
+
+    it('switches to the Cameras tab on click', async () => {
+      const hass = createMockHass();
+      const el = await fixture<AbodeConfigurationPanel>(html`
+        <abode-configuration-panel .hass=${hass}></abode-configuration-panel>
+      `);
+      await elementUpdated(el);
+
+      const camerasBtn = el.shadowRoot?.querySelector<HTMLButtonElement>('#cameras-tab');
+      camerasBtn?.click();
+      await elementUpdated(el);
+
+      expect(camerasBtn?.getAttribute('aria-selected')).to.equal('true');
+      expect(el.shadowRoot?.querySelector('abode-cameras-tab')).to.exist;
       expect(el.shadowRoot?.querySelector('abode-modes-tab')).to.not.exist;
     });
   });

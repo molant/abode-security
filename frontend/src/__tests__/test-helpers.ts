@@ -49,6 +49,9 @@ export function createMockHass(
     if (params.type === 'abode_security/config/get') {
       return { debounce_seconds: 1.0, debug_logging: false };
     }
+    if (params.type === 'abode_security/entities/cameras') {
+      return { cameras: [] };
+    }
     if (strict) {
       throw new Error(`Unmocked WS call: ${params.type}`);
     }

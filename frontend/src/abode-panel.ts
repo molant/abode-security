@@ -3,18 +3,40 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type { HomeAssistant } from './types';
 import './modes-tab';
 import './actions-tab';
+import './cameras-tab';
 
 /**
  * Top-level Abode panel. Renders a tab bar that switches between the
- * Actions and Modes tabs. Mounted by HA via `panel_custom`; HA injects
- * the `hass` property at construction.
+ * Actions, Modes, and Cameras tabs. Mounted by HA via `panel_custom`;
+ * HA injects the `hass` property at construction.
+ *
+ * Supports deep-link URL params:
+ *   ?tab=cameras&camera=<entity_id>  — opens Cameras tab, scrolls to camera
+ *   ?tab=actions                     — opens Actions tab
  *
  * @prop {HomeAssistant} hass - Required. Provided by HA at panel mount.
  */
 @customElement('abode-configuration-panel')
 export class AbodeConfigurationPanel extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;
-  @state() private _activeTab: 'modes' | 'actions' = 'modes';
+
+  // Parsed at field-init time (not connectedCallback) so the panel mounts
+  // directly on the target tab — avoids a visible Modes→Cameras flash on
+  // deep-link arrival.
+  @state() private _activeTab: 'modes' | 'actions' | 'cameras' =
+    AbodeConfigurationPanel._initialTabFromUrl();
+
+  @state() private _initialCameraSelection: string | null =
+    AbodeConfigurationPanel._initialCameraFromUrl();
+
+  private static _initialTabFromUrl(): 'modes' | 'actions' | 'cameras' {
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    return tab === 'cameras' || tab === 'actions' ? tab : 'modes';
+  }
+
+  private static _initialCameraFromUrl(): string | null {
+    return new URLSearchParams(window.location.search).get('camera');
+  }
 
   static styles = css`
     :host {
@@ -89,8 +111,29 @@ export class AbodeConfigurationPanel extends LitElement {
     }
   `;
 
+  private _switchTab(tab: 'modes' | 'actions' | 'cameras') {
+    // When navigating away from Cameras, clear the deep-link selection so a
+    // later return doesn't re-scroll to yesterday's notification target.
+    if (this._activeTab === 'cameras' && tab !== 'cameras') {
+      this._initialCameraSelection = null;
+    }
+    this._activeTab = tab;
+  }
+
   render() {
-    const activeTabId = this._activeTab === 'modes' ? 'modes-panel' : 'actions-panel';
+    const activePanelId =
+      this._activeTab === 'modes'
+        ? 'modes-panel'
+        : this._activeTab === 'actions'
+          ? 'actions-panel'
+          : 'cameras-panel';
+    const activeLabelId =
+      this._activeTab === 'modes'
+        ? 'modes-tab'
+        : this._activeTab === 'actions'
+          ? 'actions-tab'
+          : 'cameras-tab';
+
     return html`
       <div class="panel-content">
         <div class="header">
@@ -104,7 +147,7 @@ export class AbodeConfigurationPanel extends LitElement {
             aria-selected=${this._activeTab === 'modes'}
             aria-controls="modes-panel"
             class=${this._activeTab === 'modes' ? 'active' : ''}
-            @click=${() => (this._activeTab = 'modes')}
+            @click=${() => this._switchTab('modes')}
           >
             Modes
           </button>
@@ -114,21 +157,36 @@ export class AbodeConfigurationPanel extends LitElement {
             aria-selected=${this._activeTab === 'actions'}
             aria-controls="actions-panel"
             class=${this._activeTab === 'actions' ? 'active' : ''}
-            @click=${() => (this._activeTab = 'actions')}
+            @click=${() => this._switchTab('actions')}
           >
             Actions
+          </button>
+          <button
+            role="tab"
+            id="cameras-tab"
+            aria-selected=${this._activeTab === 'cameras'}
+            aria-controls="cameras-panel"
+            class=${this._activeTab === 'cameras' ? 'active' : ''}
+            @click=${() => this._switchTab('cameras')}
+          >
+            Cameras
           </button>
         </div>
 
         <div
           class="tab-content"
           role="tabpanel"
-          id=${activeTabId}
-          aria-labelledby=${this._activeTab === 'modes' ? 'modes-tab' : 'actions-tab'}
+          id=${activePanelId}
+          aria-labelledby=${activeLabelId}
         >
           ${this._activeTab === 'modes'
             ? html`<abode-modes-tab .hass=${this.hass}></abode-modes-tab>`
-            : html`<abode-actions-tab .hass=${this.hass}></abode-actions-tab>`}
+            : this._activeTab === 'actions'
+              ? html`<abode-actions-tab .hass=${this.hass}></abode-actions-tab>`
+              : html`<abode-cameras-tab
+                  .hass=${this.hass}
+                  .selectedCameraEntityId=${this._initialCameraSelection}
+                ></abode-cameras-tab>`}
         </div>
       </div>
     `;
