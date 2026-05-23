@@ -122,3 +122,11 @@ export interface AlarmEntity {
   name: string;
   type: string;
 }
+
+export interface AbodeCamera {
+  entity_id: string;
+  name: string;
+  area: string | null;
+  device_id: string;
+  paired_sensor_entity_ids: string[];
+}

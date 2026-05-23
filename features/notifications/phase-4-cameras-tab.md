@@ -133,7 +133,7 @@ Deployable on its own: the tab exists in the panel and renders the camera list. 
 
 #### Code changes — `frontend/src/`
 
-- [ ] `frontend/src/types.ts`: add
+- [x] `frontend/src/types.ts`: add
   ```ts
   export interface AbodeCamera {
     entity_id: string;
@@ -143,7 +143,7 @@ Deployable on its own: the tab exists in the panel and renders the camera list. 
     paired_sensor_entity_ids: string[];
   }
   ```
-- [ ] `frontend/src/api.ts`: add
+- [x] `frontend/src/api.ts`: add
   ```ts
   export async function fetchCameras(hass: HomeAssistant): Promise<AbodeCamera[]> {
     const response = await hass.callWS<{ cameras: AbodeCamera[] }>({
@@ -152,7 +152,7 @@ Deployable on its own: the tab exists in the panel and renders the camera list. 
     return response.cameras;
   }
   ```
-- [ ] `frontend/src/cameras-tab.ts` (new component, mirror the structure of `actions-tab.ts`):
+- [x] `frontend/src/cameras-tab.ts` (new component, mirror the structure of `actions-tab.ts`):
   - `@property({ attribute: false }) hass!: HomeAssistant;`
   - `@property({ attribute: false }) selectedCameraEntityId: string | null = null;` — set by `abode-panel` from the URL query.
   - `@state() private _cameras: AbodeCamera[] = [];`
@@ -174,7 +174,7 @@ Deployable on its own: the tab exists in the panel and renders the camera list. 
     - `_stillUrl(camera)`: `/api/camera_proxy/${camera.entity_id}?_=${this._refreshToken}` — `_refreshToken` is a `@state` epoch-ms number bumped by the interval to bust browser cache. The `/api/camera_proxy/` endpoint is auth-gated by HA's frontend session, which the panel already has.
   - Highlight CSS: `.camera-card.highlight { animation: highlight-pulse 1.5s ease-out; } @keyframes highlight-pulse { 0% { box-shadow: 0 0 0 4px var(--primary-color); } 100% { box-shadow: 0 0 0 0 transparent; } }`.
 
-- [ ] `frontend/src/abode-panel.ts`:
+- [x] `frontend/src/abode-panel.ts`:
   - Extend `_activeTab` type: `'modes' | 'actions' | 'cameras'`.
   - Add a third `<button>` to the tab bar: "Cameras".
   - Parse `window.location.search` **at field-init time** (not in `connectedCallback`) so the panel mounts directly on the target tab — avoids a visible Modes → Cameras flash on deep-link arrival. Pattern:
@@ -198,29 +198,29 @@ Deployable on its own: the tab exists in the panel and renders the camera list. 
 
 Mirror the pattern in `actions-tab.test.ts`. Use the existing `createMockHass` helper.
 
-- [ ] `renders empty state when no cameras returned`.
-- [ ] `renders a card per camera with name, area chip, and paired-sensors text`.
-- [ ] `shows an error and retry button when fetchCameras rejects`.
-- [ ] `scrolls and highlights the selected camera when selectedCameraEntityId matches an entry` (use `scrollIntoView` spy and assert the class toggles on then off).
-- [ ] `does not scroll or error when selectedCameraEntityId points to a missing/deleted camera` — locks in the resilience contract from Technical Details ("Selected-camera highlight should not require an exact entity_id match").
-- [ ] `does not error when paired_sensor_entity_ids is empty`.
-- [ ] `refresh interval bumps the still URL cache buster` (advance fake timers, assert `<img>` src query param changed). Use `@sinonjs/fake-timers` if no existing fake-timer pattern is in the test suite — confirm by `grep -r "fakeTimers\|useFakeTimers" frontend/src/__tests__` first; reuse the existing helper if present, install otherwise.
-- [ ] `pauses refresh when document.visibilityState is hidden` (set `Object.defineProperty(document, 'visibilityState', {value: 'hidden', configurable: true})`, advance timer, assert no new `_refreshToken`).
+- [x] `renders empty state when no cameras returned`.
+- [x] `renders a card per camera with name, area chip, and paired-sensors text`.
+- [x] `shows an error and retry button when fetchCameras rejects`.
+- [x] `scrolls and highlights the selected camera when selectedCameraEntityId matches an entry` (use `scrollIntoView` spy and assert the class toggles on then off).
+- [x] `does not scroll or error when selectedCameraEntityId points to a missing/deleted camera` — locks in the resilience contract from Technical Details ("Selected-camera highlight should not require an exact entity_id match").
+- [x] `does not error when paired_sensor_entity_ids is empty`.
+- [x] `refresh interval bumps the still URL cache buster` (advance fake timers, assert `<img>` src query param changed). Use `@sinonjs/fake-timers` if no existing fake-timer pattern is in the test suite — confirm by `grep -r "fakeTimers\|useFakeTimers" frontend/src/__tests__` first; reuse the existing helper if present, install otherwise.
+- [x] `pauses refresh when document.visibilityState is hidden` (set `Object.defineProperty(document, 'visibilityState', {value: 'hidden', configurable: true})`, advance timer, assert no new `_refreshToken`).
 
 #### Tests — extend `frontend/src/__tests__/test-helpers.ts`
 
-- [ ] Default `createMockHass` mock for `abode_security/entities/cameras`: return `{ cameras: [] }` so existing tests don't surface the new tab unintentionally.
+- [x] Default `createMockHass` mock for `abode_security/entities/cameras`: return `{ cameras: [] }` so existing tests don't surface the new tab unintentionally.
 
 #### Tests — extend `actions-tab.test.ts` / `modes-tab.test.ts` if they assert on the panel tab list
 
-- [ ] Search for any test that asserts a specific number of tabs in `abode-panel`; bump from 2 to 3 (likely just one place if any).
+- [x] Search for any test that asserts a specific number of tabs in `abode-panel`; bump from 2 to 3 (likely just one place if any).
 
 #### Build verification (Sub-Phase B local gate)
 
-- [ ] `npm --prefix frontend run lint && npm --prefix frontend run format && npm --prefix frontend run typecheck` — clean.
-- [ ] `npm --prefix frontend run test` — all existing tests pass; new cameras-tab tests pass.
-- [ ] `npm --prefix frontend run build` — bundle rebuilt; `grep -c "abode-cameras-tab" custom_components/abode_security/www/abode-security-panel.js` returns ≥1.
-- [ ] Stage the rebuilt bundle for commit (this is the same pattern the prior commits used; the JS bundle is tracked).
+- [x] `npm --prefix frontend run lint && npm --prefix frontend run format && npm --prefix frontend run typecheck` — clean.
+- [x] `npm --prefix frontend run test` — all existing tests pass; new cameras-tab tests pass.
+- [x] `npm --prefix frontend run build` — bundle rebuilt; `grep -c "abode-cameras-tab" custom_components/abode_security/www/abode-security-panel.js` returns ≥1.
+- [x] Stage the rebuilt bundle for commit (this is the same pattern the prior commits used; the JS bundle is tracked).
 
 > A phase-wide Build Verification gate runs again after Sub-Phase C — see below.
 
