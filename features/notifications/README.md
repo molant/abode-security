@@ -2,7 +2,7 @@
 status: pending
 feature: notifications
 title: Action-Triggered Notifications
-phases: 3
+phases: 4
 ---
 
 # Action-Triggered Notifications
@@ -66,12 +66,14 @@ Snapshots accumulate on disk. A daily background task deletes JPEGs older than `
 | 1 | [Enrich event payload](./phase-1-enrich-event-payload.md) | Thread sensor context through the trigger chain and add 6 new keys to the event payload. No camera work, no breaking change. |
 | 2 | [Camera snapshot capture](./phase-2-camera-snapshot.md) | Detect co-located cameras, snapshot under `/config/www/abode_security_snapshots/` with a 3s timeout, expose `/local/...` URL on the event. Mode-gated to `home`/`away`. |
 | 3 | [Cleanup, docs, and blueprint](./phase-3-cleanup-docs-blueprint.md) | Daily retention purge + configurable retention in the options flow + `docs/notifications.md` + HA blueprint + README pointer. |
+| 4 | [Cameras tab + notification deep-link](./phase-4-cameras-tab.md) | New "Cameras" tab in the existing Abode Security custom panel, auto-discovering every camera co-located with an Abode sensor. Replace the broken `entityId:` deep-link in the blueprint with `/abode_security?tab=cameras&camera=<entity_id>`. |
 
 ## Related Documentation
 
 - [Phase 1: Enrich event payload](./phase-1-enrich-event-payload.md)
 - [Phase 2: Camera snapshot capture](./phase-2-camera-snapshot.md)
 - [Phase 3: Cleanup, docs, and blueprint](./phase-3-cleanup-docs-blueprint.md)
+- [Phase 4: Cameras tab + notification deep-link](./phase-4-cameras-tab.md)
 - [Architecture overview](../../docs/ARCHITECTURE.md) — see action-trigger flow at lines 127–145
 - [Async patterns reference](../../docs/ASYNC_AWAIT_PATTERNS.md)
 - Dashboard-configuration spec (related, completed): `features/dashboard-configuration/` — defines `AbodeAction`, the trigger coordinator, and the existing event.
