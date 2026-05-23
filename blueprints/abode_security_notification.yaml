@@ -75,6 +75,9 @@ action:
               message: "{{ message_text }}"
               data:
                 image: "{{ trigger.event.data.snapshot_path }}"
+                # Tap deep-links to the camera's more-info dialog (live
+                # stream). Long-press still shows the snapshot preview.
+                clickAction: "entityId:{{ trigger.event.data.camera_entity_id }}"
                 push:
                   interruption-level: critical
                   sound:
@@ -95,6 +98,9 @@ action:
               message: "{{ message_text }}"
               data:
                 image: "{{ trigger.event.data.snapshot_path }}"
+                # Tap deep-links to the camera's more-info dialog (live
+                # stream). Long-press still shows the snapshot preview.
+                clickAction: "entityId:{{ trigger.event.data.camera_entity_id }}"
       # no snapshot + critical
       - conditions:
           - condition: template

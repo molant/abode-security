@@ -57,6 +57,9 @@ action:
                 ({{ trigger.event.data.mode }})
               data:
                 image: "{{ trigger.event.data.snapshot_path }}"
+                # Tap → camera's more-info dialog (live stream).
+                # Long-press still shows the snapshot preview.
+                clickAction: "entityId:{{ trigger.event.data.camera_entity_id }}"
     default:
       - service: notify.mobile_app_<your_device>
         data:
@@ -69,7 +72,7 @@ action:
             ({{ trigger.event.data.mode }})
 ```
 
-The `choose` block intentionally omits `data.image` when `snapshot_path` is `null` — some notify integrations reject `image: null`.
+The `choose` block intentionally omits `data.image` when `snapshot_path` is `null` — some notify integrations reject `image: null`. The `clickAction` key is honored by the HA Companion mobile app (both iOS and Android) and is silently ignored by other notify integrations (Telegram, Pushover, `notify.html5`, etc.), so the same automation works for everyone.
 
 ---
 
