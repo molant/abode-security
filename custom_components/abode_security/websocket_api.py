@@ -685,32 +685,22 @@ async def websocket_entities_cameras(
     connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Handle listing camera entities co-located with Abode-managed devices."""
+    """List every camera entity in HA for the deep-link Cameras panel.
+
+    The integration is camera-source-agnostic — any HA camera is a valid
+    notification deep-link target. The tab renders each camera with HA's
+    native <ha-camera-stream> element and opens the standard more-info
+    dialog on tap (the same flow as picture-entity card with
+    `camera_view: auto` and `tap_action: more-info`), so the response
+    only needs identity + display metadata.
+    """
     entity_reg = er.async_get(hass)
     device_reg = dr.async_get(hass)
     area_reg = ar.async_get(hass)
 
-    # The integration is single_config_entry: true, so exactly one entry exists
-    # when this handler is reachable.
-    abode_entry = next((e for e in hass.config_entries.async_entries(DOMAIN)), None)
-    if abode_entry is None:
-        connection.send_result(msg["id"], {"cameras": []})
-        return
-
-    # Build the set of device IDs that have at least one Abode-managed entity.
-    abode_device_ids: set[str] = set()
-    for entry in entity_reg.entities.values():
-        if (
-            entry.config_entry_id == abode_entry.entry_id
-            and entry.device_id is not None
-        ):
-            abode_device_ids.add(entry.device_id)
-
     cameras = []
     for entry in entity_reg.entities.values():
         if entry.domain != "camera":
-            continue
-        if entry.device_id not in abode_device_ids:
             continue
         if entry.hidden_by is not None:
             continue
@@ -735,24 +725,11 @@ async def websocket_entities_cameras(
             if area is not None:
                 area_name = area.name
 
-        # Paired Abode binary sensors on the same device.
-        paired_sensor_entity_ids: list[str] = sorted(
-            pe.entity_id
-            for pe in entity_reg.entities.values()
-            if pe.domain == "binary_sensor"
-            and pe.device_id == entry.device_id
-            and pe.config_entry_id == abode_entry.entry_id
-            and pe.hidden_by is None
-            and pe.disabled_by is None
-        )
-
         cameras.append(
             {
                 "entity_id": entry.entity_id,
                 "name": name,
                 "area": area_name,
-                "device_id": entry.device_id,
-                "paired_sensor_entity_ids": paired_sensor_entity_ids,
             }
         )
 

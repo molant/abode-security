@@ -261,7 +261,7 @@ When an action triggers, the integration fires `abode_security.action_triggered`
 
 Actions can also be **notification-only** — set the action's alarm field to "None (notification only)" and the event fires (with snapshot) without arming any switch. Useful for sensors that should notify without escalating and for end-to-end testing.
 
-The integration ships a **Cameras tab** in its custom panel (`/abode_security`) that auto-discovers every camera co-located with an Abode sensor. Tapping a snapshot notification opens the panel directly on the triggering camera — no configuration required.
+The integration ships a **Cameras tab** in its custom panel (`/abode_security`) that lists every camera entity in Home Assistant — Abode, Unifi Protect, generic, anything — so notifications can deep-link to the right camera regardless of source integration. Tapping a snapshot notification opens the panel directly on the triggering camera — no configuration required.
 
 See [`docs/notifications.md`](./docs/notifications.md) for the event reference, automation examples, and the `fire_test_notification` debug service, or import the bundled blueprint manually from Settings → Automations → Blueprints → Import from URL:
 `https://raw.githubusercontent.com/molant/abode-security/main/blueprints/abode_security_notification.yaml`
