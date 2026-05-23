@@ -77,6 +77,9 @@ action:
                 image: "{{ trigger.event.data.snapshot_path }}"
                 # Tap deep-links to the camera's more-info dialog (live
                 # stream). Long-press still shows the snapshot preview.
+                # iOS Companion reads `url`, Android reads `clickAction`;
+                # set both so the same blueprint works cross-platform.
+                url: "entityId:{{ trigger.event.data.camera_entity_id }}"
                 clickAction: "entityId:{{ trigger.event.data.camera_entity_id }}"
                 push:
                   interruption-level: critical
@@ -100,6 +103,9 @@ action:
                 image: "{{ trigger.event.data.snapshot_path }}"
                 # Tap deep-links to the camera's more-info dialog (live
                 # stream). Long-press still shows the snapshot preview.
+                # iOS Companion reads `url`, Android reads `clickAction`;
+                # set both so the same blueprint works cross-platform.
+                url: "entityId:{{ trigger.event.data.camera_entity_id }}"
                 clickAction: "entityId:{{ trigger.event.data.camera_entity_id }}"
       # no snapshot + critical
       - conditions:
