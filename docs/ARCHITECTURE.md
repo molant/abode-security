@@ -180,10 +180,11 @@ Storage split:
 
 Lit component `abode-configuration-panel`, registered as HA panel at `/abode_security`, served from `custom_components/abode_security/www/`. Built from `frontend/` (TypeScript + Lit + esbuild).
 
-Two tabs:
+Three tabs:
 
 - **Actions** — list with enable/disable/edit/delete/test, plus a form editor that multi-selects sensors and alarm entities
 - **Modes** — Standby / Home / Away with active indicator and per-mode action counts
+- **Cameras** — auto-discovers every camera entity sharing an HA device with at least one Abode-managed entity (`entities/cameras` WS endpoint). Renders still images via `/api/camera_proxy/<entity_id>` refreshed every 5 s while visible (visibility-state-gated). Deep-link URL scheme: `?tab=cameras&camera=<entity_id>` — parsed at field-init time to mount directly on the target tab without a flash. Notification blueprint sets `url`/`clickAction` to this path so tapping a notification opens the matching camera card highlighted.
 
 Communication is **WebSocket-only** via `hass.callWS()`; no custom REST endpoints. Command schemas live in `frontend/src/api.ts`.
 
