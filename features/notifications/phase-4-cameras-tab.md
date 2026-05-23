@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in_progress
 phase: 4
 feature: notifications
 title: Cameras tab + notification deep-link
@@ -72,11 +72,11 @@ docs/
 
 ### Baseline Test Verification (before starting implementation)
 
-- [ ] Confirm Phases 1–3 are merged and `status: done`.
-- [ ] `./scripts/check.sh` exits zero.
-- [ ] `npm --prefix frontend run test` passes.
-- [ ] `grep -c "abode-cameras-tab" custom_components/abode_security/www/abode-security-panel.js` returns `0` — confirms the bundle is in its pre-Phase-4 state (no Cameras tab yet). This is a sanity check that the working tree's bundle matches what's deployed; if it returns ≥1 already, someone deployed a partial change and you need to reconcile before starting.
-- [ ] `grep -E "entityId:" blueprints/abode_security_notification.yaml` returns the two pre-fix matches in the snapshot branches — sanity check that the blueprint is in its pre-Phase-4 state and you're about to replace what you expect.
+- [x] Confirm Phases 1–3 are merged and `status: done`.
+- [x] `./scripts/check.sh` exits zero.
+- [x] `npm --prefix frontend run test` passes.
+- [x] `grep -c "abode-cameras-tab" custom_components/abode_security/www/abode-security-panel.js` returns `0` — confirms the bundle is in its pre-Phase-4 state (no Cameras tab yet). This is a sanity check that the working tree's bundle matches what's deployed; if it returns ≥1 already, someone deployed a partial change and you need to reconcile before starting.
+- [x] `grep -E "entityId:" blueprints/abode_security_notification.yaml` returns the two pre-fix matches in the snapshot branches — sanity check that the blueprint is in its pre-Phase-4 state and you're about to replace what you expect.
 
 ### Sub-Phase A: Backend — `abode_security/entities/cameras` WS endpoint
 
@@ -84,13 +84,13 @@ Deployable on its own: the endpoint exists and is admin-gated; no frontend calle
 
 #### Code changes — `custom_components/abode_security/websocket_api.py`
 
-- [ ] Add a new `@websocket_command` handler `websocket_entities_cameras` with the same `@require_admin + @async_response` decorators that `websocket_entities_sensors` (`websocket_api.py:545-619`) uses. WS type: `"abode_security/entities/cameras"`.
-- [ ] **Register the handler.** Add a call to `websocket_api.async_register_command(hass, websocket_entities_cameras)` inside `async_register_websocket_commands` next to the existing `websocket_entities_alarms` registration. Without this line the handler is defined but never wired into HA's WS dispatcher — `callWS({type: "abode_security/entities/cameras"})` returns `unknown_command` and Sub-Phase B silently fails against a live HA.
-- [ ] Discovery rule — **deviate from `entities/sensors` here** by iterating the entity registry rather than `hass.states.async_all(...)`. Reason: iterating the registry lets us deterministically filter on `hidden_by` / `disabled_by` rather than relying on `async_all` already-skipping disabled entities, and means a newly re-enabled camera appears on the next tab-activation refetch without an HA restart. Steps:
+- [x] Add a new `@websocket_command` handler `websocket_entities_cameras` with the same `@require_admin + @async_response` decorators that `websocket_entities_sensors` (`websocket_api.py:545-619`) uses. WS type: `"abode_security/entities/cameras"`.
+- [x] **Register the handler.** Add a call to `websocket_api.async_register_command(hass, websocket_entities_cameras)` inside `async_register_websocket_commands` next to the existing `websocket_entities_alarms` registration. Without this line the handler is defined but never wired into HA's WS dispatcher — `callWS({type: "abode_security/entities/cameras"})` returns `unknown_command` and Sub-Phase B silently fails against a live HA.
+- [x] Discovery rule — **deviate from `entities/sensors` here** by iterating the entity registry rather than `hass.states.async_all(...)`. Reason: iterating the registry lets us deterministically filter on `hidden_by` / `disabled_by` rather than relying on `async_all` already-skipping disabled entities, and means a newly re-enabled camera appears on the next tab-activation refetch without an HA restart. Steps:
   1. Resolve the abode_security config entry: `abode_entry = next(e for e in hass.config_entries.async_entries(DOMAIN))`. (The integration is `single_config_entry: true` per the existing manifest, so exactly one entry exists when this handler is reachable.) The remaining steps use `abode_entry.entry_id` to compare against `entry.config_entry_id` on entity-registry entries; the loop-local variable is `entry` (an entity-registry entry, not the config entry — distinct names avoid shadowing).
   2. Build the set of "Abode device IDs": iterate the entity registry once, collecting `entry.device_id` for every entity registry entry whose `config_entry_id == abode_entry.entry_id` and `device_id is not None`.
   3. Iterate the entity registry again, yielding entries where `entry.domain == "camera"` AND `entry.device_id` is in that set AND `entry.hidden_by is None` AND `entry.disabled_by is None`.
-- [ ] For each matched camera, return a flat dict with these fields (mirror the `entities/sensors` shape so the frontend can reuse rendering patterns):
+- [x] For each matched camera, return a flat dict with these fields (mirror the `entities/sensors` shape so the frontend can reuse rendering patterns):
   ```python
   {
       "entity_id": entry.entity_id,
@@ -100,32 +100,32 @@ Deployable on its own: the endpoint exists and is admin-gated; no frontend calle
       "paired_sensor_entity_ids": [<see below>],
   }
   ```
-- [ ] `paired_sensor_entity_ids` scope — entity_ids of entities on this camera's `device_id` matching ALL of:
+- [x] `paired_sensor_entity_ids` scope — entity_ids of entities on this camera's `device_id` matching ALL of:
   - `entry.domain == "binary_sensor"`
   - `entry.config_entry_id == abode_entry.entry_id` (only Abode-managed sensors)
   - `entry.hidden_by is None`
   - `entry.disabled_by is None`
   Sort by entity_id ascending. Empty list is valid (e.g. a camera-only device or a device whose paired sensors are all hidden). The frontend uses this to show "Paired with: Front Door Motion, Front Door Contact" beneath each card; empty list → render nothing.
   Note the deliberate asymmetry with the camera-discovery rule above: the camera is included when *any* co-located Abode entity exists, but `paired_sensor_entity_ids` lists *only* Abode-managed sensors. Third-party sensors paired with this camera under a device grouping aren't shown here — they're not eligible to drive an Abode action anyway, so the list reflects "which Abode sensors can trigger snapshots on this camera."
-- [ ] Sort the camera result list alphabetically by `name.lower()`, same convention as `entities/sensors`.
-- [ ] Return payload: `{"cameras": [...]}`.
+- [x] Sort the camera result list alphabetically by `name.lower()`, same convention as `entities/sensors`.
+- [x] Return payload: `{"cameras": [...]}`.
 
 Note: this handler iterates the registry while `entities/sensors` iterates the state machine. The asymmetry is intentional (rationale in the discovery-rule bullet above). Do not refactor `entities/sensors` in this phase to "match" — the duplicate-then-converge convention already established by Phase 2 (open-coded camera resolution in `snapshot.py`) is the project pattern. Either explicitly allow a tiny shared helper for the "Abode device IDs" set if it cleanly reduces duplication, or duplicate the area-resolution chain inline — both are acceptable.
 
 #### Tests — extend `tests/test_websocket_api.py`
 
-- [ ] `test_ws_entities_cameras_empty`: no Abode entries → `[]`.
-- [ ] `test_ws_entities_cameras_lists_abode_motion_cameras`: register a device with a `binary_sensor.*` and a `camera.*` both with `platform="abode_security"` (or matching `config_entry_id`); assert the camera is returned with `paired_sensor_entity_ids` containing the binary_sensor.
-- [ ] `test_ws_entities_cameras_excludes_unrelated_cameras`: register a `camera.*` on a device that has no Abode entities; assert it is **not** returned.
-- [ ] `test_ws_entities_cameras_includes_third_party_camera_co_located_with_abode_sensor`: device has an Abode `binary_sensor.*` plus a `camera.*` from a different integration. Assert the camera is returned. This locks in the discovery contract used by both this tab and the existing `resolve_co_located_camera`.
-- [ ] `test_ws_entities_cameras_excludes_hidden_and_disabled`: hide one camera and disable another; assert both are excluded.
-- [ ] `test_ws_entities_cameras_sorted_by_name`: register three cameras with names "Zeta", "Alpha", "Mu"; assert the response is alphabetical (case-insensitive).
-- [ ] `test_ws_entities_cameras_requires_admin`: non-admin call returns the standard `unauthorized` error (mirror the existing pattern in `TestWebSocketAdminGating` if present).
+- [x] `test_ws_entities_cameras_empty`: no Abode entries → `[]`.
+- [x] `test_ws_entities_cameras_lists_abode_motion_cameras`: register a device with a `binary_sensor.*` and a `camera.*` both with `platform="abode_security"` (or matching `config_entry_id`); assert the camera is returned with `paired_sensor_entity_ids` containing the binary_sensor.
+- [x] `test_ws_entities_cameras_excludes_unrelated_cameras`: register a `camera.*` on a device that has no Abode entities; assert it is **not** returned.
+- [x] `test_ws_entities_cameras_includes_third_party_camera_co_located_with_abode_sensor`: device has an Abode `binary_sensor.*` plus a `camera.*` from a different integration. Assert the camera is returned. This locks in the discovery contract used by both this tab and the existing `resolve_co_located_camera`.
+- [x] `test_ws_entities_cameras_excludes_hidden_and_disabled`: hide one camera and disable another; assert both are excluded.
+- [x] `test_ws_entities_cameras_sorted_by_name`: register three cameras with names "Zeta", "Alpha", "Mu"; assert the response is alphabetical (case-insensitive).
+- [x] `test_ws_entities_cameras_requires_admin`: non-admin call returns the standard `unauthorized` error (mirror the existing pattern in `TestWebSocketAdminGating` if present).
 
 #### Documentation (End of Sub-Phase A)
 
-- [ ] No user-facing docs yet (Phase 4 owns the user-facing piece in Sub-Phase C).
-- [ ] If `docs/ARCHITECTURE.md` has a "WebSocket API" section that enumerates endpoints, add the new one. Otherwise skip.
+- [x] No user-facing docs yet (Phase 4 owns the user-facing piece in Sub-Phase C).
+- [x] If `docs/ARCHITECTURE.md` has a "WebSocket API" section that enumerates endpoints, add the new one. Otherwise skip.
 
 ### Sub-Phase B: Frontend Cameras tab + deep-link routing
 

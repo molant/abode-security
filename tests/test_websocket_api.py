@@ -663,6 +663,7 @@ class TestWebSocketAdminGating:
             ("abode_security/actions/get", {"action_id": "any"}),
             ("abode_security/entities/sensors", {}),
             ("abode_security/entities/alarms", {}),
+            ("abode_security/entities/cameras", {}),
             # Mutating commands. Payloads are schema-valid so the request
             # reaches the @require_admin check rather than failing
             # earlier in @websocket_command's schema validator.
@@ -687,6 +688,7 @@ class TestWebSocketAdminGating:
             "actions/get",
             "entities/sensors",
             "entities/alarms",
+            "entities/cameras",
             "actions/create",
             "actions/update",
             "actions/delete",
@@ -1579,3 +1581,288 @@ class TestWebSocketConfigNotReady:
 
         assert not response["success"]
         assert response["error"]["code"] == "not_ready"
+
+
+# --- Phase 4: Cameras Endpoint ---
+
+
+@pytest.mark.usefixtures("mock_abode", "setup_websocket_api")
+class TestWebSocketCamerasAPI:
+    """Tests for the abode_security/entities/cameras WebSocket endpoint."""
+
+    def _make_abode_entry(self, hass):
+        """Create and register a MockConfigEntry for abode_security."""
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        entry = MockConfigEntry(domain="abode_security", data={})
+        entry.add_to_hass(hass)
+        return entry
+
+    def _make_device(self, hass, entry, identifier: str, name: str = "Test Device"):
+        """Register a device under the given config entry."""
+        from homeassistant.helpers import device_registry as dr
+
+        device_reg = dr.async_get(hass)
+        return device_reg.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={("abode_security", identifier)},
+            name=name,
+        )
+
+    def _make_entity(
+        self,
+        hass,
+        domain: str,
+        platform: str,
+        unique_id: str,
+        entry=None,
+        device_id=None,
+        suggested_object_id=None,
+        hidden_by=None,
+        disabled_by=None,
+    ):
+        """Register an entity in the entity registry."""
+        entity_reg = er.async_get(hass)
+        kwargs: dict = {}
+        if entry is not None:
+            kwargs["config_entry"] = entry
+        if device_id is not None:
+            kwargs["device_id"] = device_id
+        if suggested_object_id is not None:
+            kwargs["suggested_object_id"] = suggested_object_id
+        if hidden_by is not None:
+            kwargs["hidden_by"] = hidden_by
+        if disabled_by is not None:
+            kwargs["disabled_by"] = disabled_by
+        return entity_reg.async_get_or_create(domain, platform, unique_id, **kwargs)
+
+    async def test_ws_entities_cameras_empty(self, hass, hass_ws_client) -> None:
+        """No Abode config entry → empty list."""
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/cameras"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert response["result"]["cameras"] == []
+
+    async def test_ws_entities_cameras_lists_abode_motion_cameras(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Camera sharing a device with an Abode binary_sensor is returned with paired sensors."""
+        abode_entry = self._make_abode_entry(hass)
+        device = self._make_device(hass, abode_entry, "motion-cam-device")
+
+        self._make_entity(
+            hass,
+            "binary_sensor",
+            "abode_security",
+            "front_motion_unique",
+            entry=abode_entry,
+            device_id=device.id,
+            suggested_object_id="front_motion",
+        )
+        self._make_entity(
+            hass,
+            "camera",
+            "abode_security",
+            "front_cam_unique",
+            entry=abode_entry,
+            device_id=device.id,
+            suggested_object_id="front_cam",
+        )
+        hass.states.async_set(
+            "camera.front_cam", "idle", {"friendly_name": "Front Camera"}
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/cameras"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        cameras = response["result"]["cameras"]
+        assert len(cameras) == 1
+        cam = cameras[0]
+        assert cam["entity_id"] == "camera.front_cam"
+        assert cam["name"] == "Front Camera"
+        assert cam["device_id"] == device.id
+        assert "binary_sensor.front_motion" in cam["paired_sensor_entity_ids"]
+
+    async def test_ws_entities_cameras_excludes_unrelated_cameras(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Camera on a device with no Abode entities is not returned."""
+        from homeassistant.helpers import device_registry as dr
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        other_entry = MockConfigEntry(domain="generic", data={})
+        other_entry.add_to_hass(hass)
+        device_reg = dr.async_get(hass)
+        other_device = device_reg.async_get_or_create(
+            config_entry_id=other_entry.entry_id,
+            identifiers={("generic", "unrelated-cam-device")},
+        )
+        self._make_entity(
+            hass,
+            "camera",
+            "generic",
+            "unrelated_cam_unique",
+            entry=other_entry,
+            device_id=other_device.id,
+            suggested_object_id="unrelated_cam",
+        )
+
+        # Abode config entry exists but has no devices
+        self._make_abode_entry(hass)
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/cameras"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert response["result"]["cameras"] == []
+
+    async def test_ws_entities_cameras_includes_third_party_camera_co_located_with_abode_sensor(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Third-party camera on an Abode device is returned; only Abode sensors in paired list."""
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        abode_entry = self._make_abode_entry(hass)
+        device = self._make_device(hass, abode_entry, "mixed-device")
+
+        self._make_entity(
+            hass,
+            "binary_sensor",
+            "abode_security",
+            "mixed_sensor_unique",
+            entry=abode_entry,
+            device_id=device.id,
+            suggested_object_id="mixed_sensor",
+        )
+        other_entry = MockConfigEntry(domain="reolink", data={})
+        other_entry.add_to_hass(hass)
+        self._make_entity(
+            hass,
+            "camera",
+            "reolink",
+            "third_party_cam_unique",
+            entry=other_entry,
+            device_id=device.id,
+            suggested_object_id="third_party_cam",
+        )
+        hass.states.async_set(
+            "camera.third_party_cam", "idle", {"friendly_name": "Third Party Camera"}
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/cameras"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        cameras = response["result"]["cameras"]
+        assert len(cameras) == 1
+        assert cameras[0]["entity_id"] == "camera.third_party_cam"
+        assert cameras[0]["paired_sensor_entity_ids"] == ["binary_sensor.mixed_sensor"]
+
+    async def test_ws_entities_cameras_excludes_hidden_and_disabled(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Hidden and disabled cameras are excluded from the response."""
+        from homeassistant.helpers.entity_registry import (
+            RegistryEntryDisabler,
+            RegistryEntryHider,
+        )
+
+        abode_entry = self._make_abode_entry(hass)
+        device = self._make_device(hass, abode_entry, "hide-disable-device")
+
+        self._make_entity(
+            hass,
+            "binary_sensor",
+            "abode_security",
+            "hd_sensor_unique",
+            entry=abode_entry,
+            device_id=device.id,
+            suggested_object_id="hd_sensor",
+        )
+        self._make_entity(
+            hass,
+            "camera",
+            "abode_security",
+            "hidden_cam_unique",
+            entry=abode_entry,
+            device_id=device.id,
+            suggested_object_id="hidden_cam",
+            hidden_by=RegistryEntryHider.USER,
+        )
+        self._make_entity(
+            hass,
+            "camera",
+            "abode_security",
+            "disabled_cam_unique",
+            entry=abode_entry,
+            device_id=device.id,
+            suggested_object_id="disabled_cam",
+            disabled_by=RegistryEntryDisabler.USER,
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/cameras"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        # Both cameras are excluded, leaving an empty list.
+        assert response["result"]["cameras"] == []
+
+    async def test_ws_entities_cameras_sorted_by_name(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Cameras are returned in case-insensitive alphabetical order by name."""
+        abode_entry = self._make_abode_entry(hass)
+        device = self._make_device(hass, abode_entry, "sort-device")
+
+        self._make_entity(
+            hass,
+            "binary_sensor",
+            "abode_security",
+            "sort_sensor_unique",
+            entry=abode_entry,
+            device_id=device.id,
+            suggested_object_id="sort_sensor",
+        )
+        for uid, obj_id, friendly in (
+            ("zeta_cam_unique", "zeta_cam", "Zeta Camera"),
+            ("alpha_cam_unique", "alpha_cam", "alpha camera"),
+            ("mu_cam_unique", "mu_cam", "Mu Camera"),
+        ):
+            self._make_entity(
+                hass,
+                "camera",
+                "abode_security",
+                uid,
+                entry=abode_entry,
+                device_id=device.id,
+                suggested_object_id=obj_id,
+            )
+            hass.states.async_set(
+                f"camera.{obj_id}", "idle", {"friendly_name": friendly}
+            )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/cameras"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        names = [c["name"] for c in response["result"]["cameras"]]
+        assert names == ["alpha camera", "Mu Camera", "Zeta Camera"]
+
+    async def test_ws_entities_cameras_requires_admin(
+        self, hass, hass_ws_client, hass_read_only_access_token
+    ) -> None:
+        """Non-admin users are rejected with unauthorized."""
+        client = await hass_ws_client(hass, hass_read_only_access_token)
+        await client.send_json({"id": 1, "type": "abode_security/entities/cameras"})
+        response = await client.receive_json()
+
+        assert not response["success"]
+        assert response["error"]["code"] == "unauthorized"

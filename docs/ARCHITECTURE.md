@@ -154,7 +154,7 @@ flowchart LR
 Frontend-facing command registry. All commands namespaced `abode_security/*`:
 
 - **Actions CRUD**: `actions/{list,get,create,update,delete,toggle,test}`
-- **Entity queries**: `entities/sensors`, `entities/alarms`, `modes/list`
+- **Entity queries**: `entities/sensors`, `entities/alarms`, `entities/cameras`, `modes/list`
 - **Config**: `config/{get,set}` (debounce, etc.)
 
 Mutating commands (`create`, `update`, `delete`, `toggle`, `config/set`) require admin. `test` directly invokes an alarm trigger without persisting, for form validation.
