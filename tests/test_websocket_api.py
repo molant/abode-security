@@ -1405,6 +1405,39 @@ class TestWebSocketConfigAPI:
         assert "debounce_seconds" in response["result"]
         assert response["result"]["debounce_seconds"] == 1.0  # default
 
+    async def test_ws_config_get_debug_logging_false_by_default(
+        self, hass, hass_ws_client
+    ) -> None:
+        """debug_logging is False when no config entry has the option enabled."""
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/config/get"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert response["result"]["debug_logging"] is False
+
+    async def test_ws_config_get_debug_logging_true_when_option_enabled(
+        self, hass, hass_ws_client
+    ) -> None:
+        """debug_logging mirrors the config entry option, regardless of source key location."""
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        mock_entry = MockConfigEntry(
+            domain="abode_security",
+            data={},
+            options={"debug_logging": True},
+        )
+        mock_entry.add_to_hass(hass)
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/config/get"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert response["result"]["debug_logging"] is True
+        # The merge must not displace the existing config_store keys.
+        assert "debounce_seconds" in response["result"]
+
     async def test_ws_config_set(self, hass, hass_ws_client) -> None:
         """Test setting config value."""
         client = await hass_ws_client(hass)

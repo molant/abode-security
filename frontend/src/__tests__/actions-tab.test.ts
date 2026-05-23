@@ -1026,4 +1026,76 @@ describe('ActionsTab', () => {
       expect(el.shadowRoot?.querySelector('.stale-warning')).to.equal(null);
     });
   });
+
+  describe('copy action ID (debug-logging gated)', () => {
+    function hassWithDebug(debugLogging: boolean): HomeAssistant {
+      return createMockHass({
+        callWS: (async (params: { type: string }) => {
+          if (params.type === 'abode_security/actions/list') {
+            return { actions: [createMockAction({ id: 'uuid-1', name: 'Front Door' })] };
+          }
+          if (params.type === 'abode_security/config/get') {
+            return { debounce_seconds: 1.0, debug_logging: debugLogging };
+          }
+          if (params.type === 'abode_security/modes/list') return { modes: [] };
+          return { success: true };
+        }) as HomeAssistant['callWS'],
+      });
+    }
+
+    it('is hidden when debug_logging is false', async () => {
+      const el = await fixture<ActionsTab>(html`
+        <abode-actions-tab .hass=${hassWithDebug(false)}></abode-actions-tab>
+      `);
+      // Wait for the initial load + Promise.all to settle.
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      const copyButton = el.shadowRoot?.querySelector<HTMLButtonElement>(
+        'button[aria-label="Copy action ID"]',
+      );
+      expect(copyButton).to.equal(null);
+    });
+
+    it('is visible when debug_logging is true and copies on click', async () => {
+      // Stub the clipboard so we don't depend on browser permissions or
+      // the test runner's clipboard isolation.
+      const writeText = (() => {
+        const calls: string[] = [];
+        const fn = ((v: string) => {
+          calls.push(v);
+          return Promise.resolve();
+        }) as ((v: string) => Promise<void>) & { calls: string[] };
+        fn.calls = calls;
+        return fn;
+      })();
+      const originalClipboard = navigator.clipboard;
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      });
+
+      try {
+        const el = await fixture<ActionsTab>(html`
+          <abode-actions-tab .hass=${hassWithDebug(true)}></abode-actions-tab>
+        `);
+        await aTimeout(0);
+        await elementUpdated(el);
+
+        const copyButton = el.shadowRoot?.querySelector<HTMLButtonElement>(
+          'button[aria-label="Copy action ID"]',
+        );
+        expect(copyButton, 'copy button should render').to.exist;
+
+        copyButton!.click();
+        await aTimeout(0);
+        expect(writeText.calls).to.deep.equal(['uuid-1']);
+      } finally {
+        Object.defineProperty(navigator, 'clipboard', {
+          value: originalClipboard,
+          configurable: true,
+        });
+      }
+    });
+  });
 });

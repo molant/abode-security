@@ -3,7 +3,13 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import type { HomeAssistant, AbodeAction } from './types';
 import { getEntityState, isUnavailableState } from './types';
-import { fetchActions, updateAction, deleteAction, testAction } from './api';
+import {
+  fetchActions,
+  fetchIntegrationConfig,
+  updateAction,
+  deleteAction,
+  testAction,
+} from './api';
 import './action-editor';
 import './abode-modal';
 
@@ -26,6 +32,14 @@ export class ActionsTab extends LitElement {
   @state() private _confirm: { kind: 'delete' | 'test'; action: AbodeAction } | null = null;
   @state() private _togglingIds: Set<string> = new Set();
   @state() private _operationError: string | null = null;
+  // Mirrors the `debug_logging` integration option (read-only). When true, the
+  // actions list shows a per-row "copy action ID" button so power users can
+  // grab a UUID for use with `abode_security.fire_test_notification` or for
+  // filtering automations on `action_id`. We fail closed: any fetch error or
+  // missing field hides the affordance, since this is purely a power-user
+  // shortcut and false-true would surface a feature the user didn't opt into.
+  @state() private _debugLogging = false;
+  @state() private _copiedId: string | null = null;
 
   // Aborted on disconnect so a late-resolving fetch can't write state to a
   // detached element (panel tab switches destroy the inactive tab — closes #29).
@@ -394,11 +408,38 @@ export class ActionsTab extends LitElement {
       const actions = await fetchActions(this.hass);
       if (signal.aborted) return;
       this._actions = actions;
+      // Config fetch is best-effort and fire-and-forget: a failure here
+      // (or its later arrival) must not block the actions list from
+      // rendering. Default `_debugLogging = false` keeps the copy-ID
+      // affordance hidden until the fetch confirms opt-in. Kept off the
+      // main await chain so existing tests' microtask ordering — which
+      // sets `_actions` after `await fixture(...)` — still wins.
+      void fetchIntegrationConfig(this.hass)
+        .then((config) => {
+          if (signal.aborted) return;
+          this._debugLogging = config.debug_logging === true;
+        })
+        .catch(() => {
+          /* leave _debugLogging at its safe default */
+        });
     } catch (err) {
       if (signal.aborted) return;
       this._error = err instanceof Error ? err.message : 'Failed to load actions';
     } finally {
       if (!signal.aborted) this._loading = false;
+    }
+  }
+
+  private async _copyActionId(action: AbodeAction) {
+    try {
+      await navigator.clipboard.writeText(action.id);
+      this._copiedId = action.id;
+      setTimeout(() => {
+        if (this._copiedId === action.id) this._copiedId = null;
+      }, 1500);
+    } catch (err) {
+      console.error('Failed to copy action ID:', err);
+      this._operationError = 'Failed to copy action ID';
     }
   }
 
@@ -633,6 +674,22 @@ export class ActionsTab extends LitElement {
             />
             <span class="toggle-slider"></span>
           </label>
+          ${this._debugLogging
+            ? html`
+                <button
+                  class="icon-button"
+                  @click=${() => this._copyActionId(action)}
+                  title=${this._copiedId === action.id
+                    ? 'Copied!'
+                    : `Copy action ID (${action.id})`}
+                  aria-label="Copy action ID"
+                >
+                  <ha-icon
+                    icon=${this._copiedId === action.id ? 'mdi:check' : 'mdi:content-copy'}
+                  ></ha-icon>
+                </button>
+              `
+            : ''}
           <button
             class="icon-button"
             @click=${() => this._requestTest(action)}
