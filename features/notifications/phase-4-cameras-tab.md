@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: done
 phase: 4
 feature: notifications
 title: Cameras tab + notification deep-link
@@ -232,7 +232,7 @@ Now the URL `/abode_security?tab=cameras&camera=<entity_id>` opens to the right 
 
 #### Code changes
 
-- [ ] `blueprints/abode_security_notification.yaml`: in both snapshot branches (snapshot+critical, snapshot+non-critical), replace the existing `url:` and `clickAction:` lines (currently set to `"entityId:{{ trigger.event.data.camera_entity_id }}"`) with:
+- [x] `blueprints/abode_security_notification.yaml`: in both snapshot branches (snapshot+critical, snapshot+non-critical), replace the existing `url:` and `clickAction:` lines (currently set to `"entityId:{{ trigger.event.data.camera_entity_id }}"`) with:
   ```yaml
   # Tap → Abode Security panel's Cameras tab, scrolled/highlighted on
   # the triggering camera. The URL works the same on iOS Companion
@@ -242,7 +242,7 @@ Now the URL `/abode_security?tab=cameras&camera=<entity_id>` opens to the right 
   clickAction: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
   ```
   Same edit in both snapshot branches; keep them lockstep.
-- [ ] `docs/notifications.md`:
+- [x] `docs/notifications.md`:
   - In the "Minimal Automation" example, replace the `entityId:` line with the new path-based URL (matching the blueprint).
   - Update the post-snippet caveat sentence to drop the `url`/`clickAction` platform asymmetry note (the path form is uniform across both platforms — only the key name differs, and we still set both for explicitness).
   - In the "Filtering by Action" section: no change needed.
@@ -250,21 +250,21 @@ Now the URL `/abode_security?tab=cameras&camera=<entity_id>` opens to the right 
 
 #### Live user automation update via MCP
 
-- [ ] Patch `automation.abode_action_notification` (the user's current automation) so the next notification picks up the new path-based URL. Conceptual operation: replace the `url` and `clickAction` values in the snapshot-branch `data.data` with `"/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"`. The home-assistant MCP server exposes tools for this — call `ha_list_resources` first to enumerate them and verify the tool name (the README at line 87 explicitly warns against assuming tool names). The previously-observed names `ha_config_get_automation` and `ha_config_set_automation` (with `python_transform` argument) were in use as of 2026-05-23 but are external to this repo and may have changed; verify before depending on them. If MCP tools are unavailable, fall back to editing the automation YAML via the HA UI manually — same end state.
+- [x] Patch `automation.abode_action_notification` (the user's current automation) so the next notification picks up the new path-based URL. Conceptual operation: replace the `url` and `clickAction` values in the snapshot-branch `data.data` with `"/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"`. The home-assistant MCP server exposes tools for this — call `ha_list_resources` first to enumerate them and verify the tool name (the README at line 87 explicitly warns against assuming tool names). The previously-observed names `ha_config_get_automation` and `ha_config_set_automation` (with `python_transform` argument) were in use as of 2026-05-23 but are external to this repo and may have changed; verify before depending on them. If MCP tools are unavailable, fall back to editing the automation YAML via the HA UI manually — same end state.
 
 #### Documentation (End of Sub-Phase C)
 
-- [ ] `docs/ARCHITECTURE.md`: add a one-paragraph note under the existing "Custom panel" section (or under the action-trigger section if no panel section exists) describing the Cameras tab — discovery rule, refresh cadence, deep-link query schema. One paragraph; do not duplicate the `notifications.md` user-facing content.
-- [ ] `README.md` "Notifications" section: tiny one-sentence addition mentioning the Cameras tab is the destination for snapshot notifications.
+- [x] `docs/ARCHITECTURE.md`: add a one-paragraph note under the existing "Custom panel" section (or under the action-trigger section if no panel section exists) describing the Cameras tab — discovery rule, refresh cadence, deep-link query schema. One paragraph; do not duplicate the `notifications.md` user-facing content.
+- [x] `README.md` "Notifications" section: tiny one-sentence addition mentioning the Cameras tab is the destination for snapshot notifications.
 
 ### Build Verification (required before marking phase complete)
 
-- [ ] `./scripts/check.sh` — exits zero (covers ruff, mypy, pyright, pytest including the new cameras endpoint tests).
-- [ ] `npm --prefix frontend run lint && npm --prefix frontend run format && npm --prefix frontend run typecheck && npm --prefix frontend run test` — all clean.
-- [ ] `npm --prefix frontend run build` — re-run after any final docs/blueprint tweaks, then `git status` shows the bundle is up to date. Confirm `grep -c "abode-cameras-tab" custom_components/abode_security/www/abode-security-panel.js` ≥ 1 and `grep -c "Cameras" custom_components/abode_security/www/abode-security-panel.js` ≥ 1.
-- [ ] `uv run python -c "import yaml; yaml.SafeLoader.add_constructor('!input', lambda l, n: f'!input {n.value}'); yaml.safe_load(open('blueprints/abode_security_notification.yaml'))"` exits zero — blueprint still parses after edits.
-- [ ] Scan pytest stdout for unraisable exception warnings and never-awaited-coroutine warnings.
-- [ ] Mark `status: done` in this file's frontmatter only after all the above pass.
+- [x] `./scripts/check.sh` — exits zero (covers ruff, mypy, pyright, pytest including the new cameras endpoint tests).
+- [x] `npm --prefix frontend run lint && npm --prefix frontend run format && npm --prefix frontend run typecheck && npm --prefix frontend run test` — all clean.
+- [x] `npm --prefix frontend run build` — re-run after any final docs/blueprint tweaks, then `git status` shows the bundle is up to date. Confirm `grep -c "abode-cameras-tab" custom_components/abode_security/www/abode-security-panel.js` ≥ 1 and `grep -c "Cameras" custom_components/abode_security/www/abode-security-panel.js` ≥ 1.
+- [x] `uv run python -c "import yaml; yaml.SafeLoader.add_constructor('!input', lambda l, n: f'!input {n.value}'); yaml.safe_load(open('blueprints/abode_security_notification.yaml'))"` exits zero — blueprint still parses after edits.
+- [x] Scan pytest stdout for unraisable exception warnings and never-awaited-coroutine warnings.
+- [x] Mark `status: done` in this file's frontmatter only after all the above pass.
 
 ### Manual Verification with MCP Tools
 
