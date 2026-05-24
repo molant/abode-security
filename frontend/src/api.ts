@@ -23,13 +23,24 @@ export async function fetchActions(hass: HomeAssistant): Promise<AbodeAction[]> 
 }
 
 /**
- * Fetch all modes with their action counts.
+ * Fetch all modes with their action counts, plus the alarm panel entity_id
+ * the frontend should watch for live state reactivity (#124).
+ *
+ * `panel_entity_id` is null when no abode alarm_control_panel is registered
+ * (e.g. accounts without an alarm device). It is also optional in the type
+ * so older backends (and test fixtures) that omit the field round-trip
+ * cleanly — consumers must fall back to the cached `active` flag in that
+ * case.
  */
-export async function fetchModes(hass: HomeAssistant): Promise<AbodeMode[]> {
-  const response = await hass.callWS<{ modes: AbodeMode[] }>({
+export interface ModesListResponse {
+  modes: AbodeMode[];
+  panel_entity_id?: string | null;
+}
+
+export async function fetchModes(hass: HomeAssistant): Promise<ModesListResponse> {
+  return hass.callWS<ModesListResponse>({
     type: 'abode_security/modes/list',
   });
-  return response.modes;
 }
 
 /**

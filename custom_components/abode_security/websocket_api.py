@@ -622,7 +622,18 @@ async def websocket_modes_list(
             }
         )
 
-    connection.send_result(msg["id"], {"modes": modes})
+    # Surface the panel entity_id so the frontend can derive the active
+    # mode from `hass.states[panel].state` at render time instead of the
+    # cached `active` flag (#124). The cached flag is read once at fetch
+    # time; SocketIO-driven panel transitions during the 30–60s entry/exit
+    # delay arrive later and never propagate to the snapshot.
+    connection.send_result(
+        msg["id"],
+        {
+            "modes": modes,
+            "panel_entity_id": panel_state.entity_id if panel_state else None,
+        },
+    )
 
 
 @websocket_command(

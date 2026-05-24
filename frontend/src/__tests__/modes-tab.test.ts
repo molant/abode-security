@@ -371,43 +371,38 @@ describe('ModesTab', () => {
       expect(el.shadowRoot?.querySelector('abode-modal')).to.equal(null);
     });
 
-    it('keeps the mode grid visible during the post-switch refresh (no loading flash)', async () => {
-      // The post-switch refresh must not flip _loading=true — that would
-      // replace the grid (and the "Switching…" pending label on the target
-      // card) with "Loading modes...". Achieved by passing `silent: true`
-      // to _loadData.
-      let modesListCalls = 0;
-      let resolveRefresh!: (v: { modes: ReturnType<typeof createMockModes> }) => void;
-      const refreshPromise = new Promise<{ modes: ReturnType<typeof createMockModes> }>(
-        (resolve) => {
-          resolveRefresh = resolve;
-        },
-      );
-
+    it('shows "Switching…" on the target card while live state has not caught up (#124)', async () => {
+      // After the WS `modes/set` returns, the alarm_control_panel state in
+      // hass.states still reflects the OLD mode until the Abode SocketIO
+      // event lands (which lags through the 30–60s entry/exit countdown).
+      // The target card must display a pending indicator until live state
+      // catches up so the arming is visible and the rest of the grid is
+      // usable for cancel.
       const hass = createMockHass({
         callWS: ((params: { type: string }) => {
           if (params.type === 'abode_security/modes/set') {
             return Promise.resolve({ success: true });
           }
           if (params.type === 'abode_security/modes/list') {
-            modesListCalls += 1;
-            // First call: initial connectedCallback load. Resolve immediately.
-            // Second call: post-switch refresh — keep pending so we can
-            // observe the mid-refresh DOM state.
-            if (modesListCalls === 1) {
-              return Promise.resolve({ modes: createMockModes() });
-            }
-            return refreshPromise;
+            return Promise.resolve({
+              modes: createMockModes(),
+              panel_entity_id: 'alarm_control_panel.abode_alarm',
+            });
           }
           if (params.type === 'abode_security/actions/list') {
             return Promise.resolve({ actions: [] });
           }
           return Promise.resolve({ success: true });
         }) as HomeAssistant['callWS'],
+        states: {
+          'alarm_control_panel.abode_alarm': {
+            entity_id: 'alarm_control_panel.abode_alarm',
+            state: 'disarmed',
+          },
+        },
       });
 
       const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
-      // Wait for initial load to settle.
       await aTimeout(0);
       await elementUpdated(el);
 
@@ -421,77 +416,14 @@ describe('ModesTab', () => {
         el.shadowRoot?.querySelectorAll('button[slot="footer"]') ?? [],
       ).find((b) => b.classList.contains('primary')) as HTMLButtonElement;
       confirmBtn.click();
-      // setMode resolves → _loadData fires (suspended on refreshPromise).
-      // Yield enough microtasks for the chain to suspend on the controlled
-      // promise.
       await aTimeout(0);
       await elementUpdated(el);
 
-      // Mid-refresh assertions: grid is still rendered and the "Loading
-      // modes..." spinner is NOT shown.
+      // Live state is still `disarmed` (Abode SocketIO event hasn't landed).
+      // The Away card must show the pending label.
       const cards = el.shadowRoot?.querySelectorAll('.mode-card');
-      expect(cards?.length, 'mode grid must stay visible').to.be.greaterThan(0);
-      expect(el.shadowRoot?.textContent ?? '').to.not.include('Loading modes...');
-      // The target card still shows the pending label.
       const awayCardMid = Array.from(cards ?? []).find((c) => c.textContent?.includes('Away'));
       expect(awayCardMid?.textContent).to.include('Switching');
-
-      // Resolve so the test runner exits cleanly.
-      resolveRefresh({ modes: createMockModes() });
-      await refreshPromise;
-      await aTimeout(0);
-    });
-
-    it('routes a post-switch _loadData failure to the banner, not the full-page error', async () => {
-      // setMode succeeds, but the immediate refresh fails. The previous
-      // implementation let _loadData write to `_error`, which would render
-      // a full-page error that wipes the just-confirmed switch.
-      let setSucceeded = false;
-      const hass = createMockHass({
-        callWS: ((params: { type: string }) => {
-          if (params.type === 'abode_security/modes/set') {
-            setSucceeded = true;
-            return Promise.resolve({ success: true });
-          }
-          if (params.type === 'abode_security/modes/list' && setSucceeded) {
-            return Promise.reject(new Error('refresh blip'));
-          }
-          if (params.type === 'abode_security/modes/list') {
-            return Promise.resolve({ modes: createMockModes() });
-          }
-          if (params.type === 'abode_security/actions/list') {
-            return Promise.resolve({ actions: [] });
-          }
-          return Promise.resolve({ success: true });
-        }) as HomeAssistant['callWS'],
-      });
-
-      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
-      // @ts-expect-error - accessing private property for testing
-      el._modes = createMockModes();
-      // @ts-expect-error - accessing private property for testing
-      el._loading = false;
-      await elementUpdated(el);
-
-      const awayCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
-        (card) => card.textContent?.includes('Away'),
-      ) as HTMLElement;
-      (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
-      await elementUpdated(el);
-      const confirmBtn = Array.from(
-        el.shadowRoot?.querySelectorAll('button[slot="footer"]') ?? [],
-      ).find((b) => b.classList.contains('primary')) as HTMLButtonElement;
-      confirmBtn.click();
-      await aTimeout(0);
-      await elementUpdated(el);
-
-      // Banner present, full-page error absent, mode grid still rendered.
-      const banner = el.shadowRoot?.querySelector('.operation-error');
-      expect(banner, 'refresh failure must surface as banner').to.exist;
-      expect(banner?.textContent).to.include('refresh failed');
-      const fullPageError = el.shadowRoot?.querySelector('.error');
-      expect(fullPageError, 'full-page error must NOT be rendered').to.equal(null);
-      expect(el.shadowRoot?.querySelectorAll('.mode-card')?.length).to.be.greaterThan(0);
     });
 
     it('shows an error banner when setMode rejects', async () => {
@@ -535,6 +467,286 @@ describe('ModesTab', () => {
       // backend internals out of the UI (mirrors actions-tab convention).
       expect(banner?.textContent).to.include('Failed to change mode');
       expect(banner?.getAttribute('role')).to.equal('alert');
+    });
+  });
+
+  describe('live panel state reactivity (#124)', () => {
+    // Background: pre-#124, `mode.active` came from the snapshot returned at
+    // `modes/list` fetch time. The Abode SocketIO update that follows an
+    // arm/disarm (which can lag 30–60s through the entry/exit countdown)
+    // never propagated to the snapshot, so the grid showed the stale mode
+    // and Standby had no Switch button (preventing cancel of an in-progress
+    // arming). The fix: derive `active` from `hass.states[panel].state` at
+    // render time.
+
+    function makeHass(panelState: string, callWS?: HomeAssistant['callWS']): HomeAssistant {
+      return createMockHass({
+        callWS:
+          callWS ??
+          (((params: { type: string }) => {
+            if (params.type === 'abode_security/modes/set') {
+              return Promise.resolve({ success: true });
+            }
+            if (params.type === 'abode_security/modes/list') {
+              // Return a stale `active` flag — the live derivation must
+              // ignore it in favor of hass.states.
+              const stale = createMockModes(); // home=active by default
+              return Promise.resolve({
+                modes: stale,
+                panel_entity_id: 'alarm_control_panel.abode_alarm',
+              });
+            }
+            if (params.type === 'abode_security/actions/list') {
+              return Promise.resolve({ actions: [] });
+            }
+            return Promise.resolve({ success: true });
+          }) as HomeAssistant['callWS']),
+        states: {
+          'alarm_control_panel.abode_alarm': {
+            entity_id: 'alarm_control_panel.abode_alarm',
+            state: panelState,
+          },
+        },
+      });
+    }
+
+    it('derives active card from hass.states, not the cached snapshot', async () => {
+      // Snapshot says home active; live state says armed_away. Away must
+      // be the active card.
+      const hass = makeHass('armed_away');
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      const activeCard = el.shadowRoot?.querySelector('.mode-card.active');
+      expect(activeCard, 'one card must be active').to.exist;
+      expect(activeCard?.textContent).to.include('Away');
+      expect(activeCard?.textContent).to.not.include('Home');
+    });
+
+    it('updates the active card when hass.states changes (live reactivity)', async () => {
+      const hass = makeHass('disarmed');
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      // Initially: standby is the live active mode.
+      let activeCard = el.shadowRoot?.querySelector('.mode-card.active');
+      expect(activeCard?.textContent).to.include('Standby');
+
+      // HA reassigns `hass` on every state change. Simulate the SocketIO
+      // event that flips the panel to armed_away.
+      el.hass = {
+        ...hass,
+        states: {
+          'alarm_control_panel.abode_alarm': {
+            entity_id: 'alarm_control_panel.abode_alarm',
+            state: 'armed_away',
+          },
+        },
+      };
+      await elementUpdated(el);
+
+      activeCard = el.shadowRoot?.querySelector('.mode-card.active');
+      expect(activeCard?.textContent).to.include('Away');
+    });
+
+    it('Standby card stays clickable while arming is pending (cancel)', async () => {
+      // While the system is mid-arming Away (target=away, live=disarmed),
+      // the Standby card must still expose a Switch button so the user can
+      // cancel by switching back to standby.
+      const hass = makeHass('disarmed');
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      // Initiate switch to Away.
+      const awayCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find((c) =>
+        c.textContent?.includes('Away'),
+      ) as HTMLElement;
+      (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
+      await elementUpdated(el);
+      const confirmBtn = Array.from(
+        el.shadowRoot?.querySelectorAll('button[slot="footer"]') ?? [],
+      ).find((b) => b.classList.contains('primary')) as HTMLButtonElement;
+      confirmBtn.click();
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      // Live state is still disarmed → standby is "active". But because a
+      // switch is pending, standby must still show a Switch button (cancel
+      // affordance), not the "Current mode" label.
+      const standbyCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (c) => c.textContent?.includes('Standby'),
+      ) as HTMLElement;
+      const standbyBtn = standbyCard.querySelector('.switch-button') as HTMLButtonElement;
+      expect(standbyBtn, 'standby must expose Switch button during pending arming').to.exist;
+      expect(standbyBtn.disabled, 'standby cancel button must be clickable').to.equal(false);
+    });
+
+    it('clears pending state when hass.states reaches the target mode', async () => {
+      // After live state catches up, the "Switching…" indicator goes away
+      // and the target card becomes the live-active "Current mode" card.
+      const hass = makeHass('disarmed');
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      // Switch to Away.
+      const awayCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find((c) =>
+        c.textContent?.includes('Away'),
+      ) as HTMLElement;
+      (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
+      await elementUpdated(el);
+      (
+        Array.from(el.shadowRoot?.querySelectorAll('button[slot="footer"]') ?? []).find((b) =>
+          b.classList.contains('primary'),
+        ) as HTMLButtonElement
+      ).click();
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      // SocketIO catches up.
+      el.hass = {
+        ...hass,
+        states: {
+          'alarm_control_panel.abode_alarm': {
+            entity_id: 'alarm_control_panel.abode_alarm',
+            state: 'armed_away',
+          },
+        },
+      };
+      await elementUpdated(el);
+
+      // Pending cleared → Away is now the "Current mode" card.
+      const updatedAwayCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (c) => c.textContent?.includes('Away'),
+      );
+      expect(updatedAwayCard?.textContent).to.not.include('Switching');
+      expect(updatedAwayCard?.textContent).to.include('Current mode');
+    });
+
+    it('does not clear pending or surface an error when a superseded switch rejects', async () => {
+      // Race scenario: live=armed_home. User clicks Switch to Away (setMode
+      // hangs), then clicks Switch to Standby to redirect before the first
+      // call completes. _targetMode is now 'standby' (live=armed_home, so
+      // the pending indicator sticks). If the original Away setMode then
+      // rejects, its catch block must not clobber the standby pending
+      // indicator or surface a misleading error for the stale request.
+      let rejectAway!: (e: Error) => void;
+      const awayPromise = new Promise<void>((_resolve, reject) => {
+        rejectAway = reject;
+      });
+      let awaySent = false;
+
+      const hass = createMockHass({
+        callWS: ((params: { type: string; mode_id?: string }) => {
+          if (params.type === 'abode_security/modes/set' && params.mode_id === 'away') {
+            awaySent = true;
+            return awayPromise;
+          }
+          if (params.type === 'abode_security/modes/set' && params.mode_id === 'standby') {
+            return Promise.resolve({ success: true });
+          }
+          if (params.type === 'abode_security/modes/list') {
+            return Promise.resolve({
+              modes: createMockModes(),
+              panel_entity_id: 'alarm_control_panel.abode_alarm',
+            });
+          }
+          if (params.type === 'abode_security/actions/list') {
+            return Promise.resolve({ actions: [] });
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+        states: {
+          'alarm_control_panel.abode_alarm': {
+            entity_id: 'alarm_control_panel.abode_alarm',
+            state: 'armed_home',
+          },
+        },
+      });
+
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      // First switch: Away. setMode hangs on awayPromise.
+      const awayCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find((c) =>
+        c.textContent?.includes('Away'),
+      ) as HTMLElement;
+      (awayCard.querySelector('.switch-button') as HTMLButtonElement).click();
+      await elementUpdated(el);
+      (
+        Array.from(el.shadowRoot?.querySelectorAll('button[slot="footer"]') ?? []).find((b) =>
+          b.classList.contains('primary'),
+        ) as HTMLButtonElement
+      ).click();
+      await aTimeout(0);
+      await elementUpdated(el);
+      expect(awaySent, 'first setMode(away) must be in-flight').to.equal(true);
+
+      // Second switch: Standby. This overwrites _targetMode = 'standby'.
+      const standbyCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (c) => c.textContent?.includes('Standby'),
+      ) as HTMLElement;
+      (standbyCard.querySelector('.switch-button') as HTMLButtonElement).click();
+      await elementUpdated(el);
+      (
+        Array.from(el.shadowRoot?.querySelectorAll('button[slot="footer"]') ?? []).find((b) =>
+          b.classList.contains('primary'),
+        ) as HTMLButtonElement
+      ).click();
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      // Standby setMode resolved. Live state is still armed_home, so
+      // _targetMode = 'standby' stays as the visible pending indicator.
+      const standbyCardMid = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (c) => c.textContent?.includes('Standby'),
+      );
+      expect(standbyCardMid?.textContent).to.include('Switching');
+
+      // Now reject the stale Away request.
+      rejectAway(new Error('away setMode failed'));
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      // Standby pending must still be visible — the stale-rejection guard
+      // kept _targetMode and skipped the error banner.
+      const standbyCardAfter = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (c) => c.textContent?.includes('Standby'),
+      );
+      expect(
+        standbyCardAfter?.textContent,
+        'standby pending must survive the stale rejection',
+      ).to.include('Switching');
+      const banner = el.shadowRoot?.querySelector('.operation-error');
+      expect(banner, 'stale rejection must not show an error banner').to.equal(null);
+    });
+
+    it('falls back to the cached active flag when panel_entity_id is null', async () => {
+      // Accounts without an Abode alarm device — backend returns
+      // panel_entity_id=null. We still render the snapshot's `active` flag
+      // so the rest of the panel works (matches pre-#124 behavior).
+      const hass = createMockHass({
+        callWS: ((params: { type: string }) => {
+          if (params.type === 'abode_security/modes/list') {
+            const modes = createMockModes(); // home is active in fixture
+            return Promise.resolve({ modes, panel_entity_id: null });
+          }
+          if (params.type === 'abode_security/actions/list') {
+            return Promise.resolve({ actions: [] });
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
+      await aTimeout(0);
+      await elementUpdated(el);
+
+      const activeCard = el.shadowRoot?.querySelector('.mode-card.active');
+      expect(activeCard?.textContent).to.include('Home');
     });
   });
 

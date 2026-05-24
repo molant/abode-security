@@ -1,8 +1,24 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import type { PropertyValues } from 'lit';
 import type { HomeAssistant, AbodeMode, AbodeAction, Mode } from './types';
 import { fetchModes, fetchActions, setMode } from './api';
 import './abode-modal';
+
+// Mirrors backend STATE_TO_MODE (websocket_api.py). Replicated here so the
+// frontend can derive the active mode from `hass.states[panel].state` at
+// render time and stay live-reactive — the cached snapshot lags 30–60s
+// behind the SocketIO update through the entry/exit countdown (#124).
+const STATE_TO_MODE: Record<string, Mode> = {
+  disarmed: 'standby',
+  armed_home: 'home',
+  armed_away: 'away',
+};
+
+// Safety bound on the pending indicator. The Abode panel's exit delay is
+// typically 30–60s; this covers the worst case plus headroom. Without it, a
+// stuck SocketIO subscription would freeze the "Switching…" UI indefinitely.
+const PENDING_TIMEOUT_MS = 90_000;
 
 /**
  * Modes tab — displays the three Abode arming modes (standby/home/away)
@@ -20,15 +36,23 @@ export class ModesTab extends LitElement {
   @state() private _actions: AbodeAction[] = [];
   @state() private _loading = true;
   @state() private _error: string | null = null;
+  // Entity to watch for live alarm state (#124). Null when no panel is
+  // registered — UI falls back to the cached `active` flag on each mode.
+  @state() private _panelEntityId: string | null = null;
 
-  // Mode-switching state (#1):
-  // - _confirmMode holds the target mode while the confirm dialog is open.
-  // - _settingModeId is set during the in-flight WS call so the UI can show
-  //   a busy state and prevent re-entry.
+  // Mode-switching state:
+  // - _confirmMode holds the target mode while the confirm dialog is open (#1).
+  // - _targetMode (#124) is the mode the user just confirmed switching to.
+  //   It persists past the WS round-trip until `hass.states[panel].state`
+  //   reaches the corresponding alarm_control_panel state, so the
+  //   "Switching…" indicator stays visible through the Abode entry/exit
+  //   countdown. Cleared in willUpdate when live state matches, on error,
+  //   or via PENDING_TIMEOUT_MS as a safety net.
   // - _setError surfaces a failed switch as a dismissible banner.
   @state() private _confirmMode: AbodeMode | null = null;
-  @state() private _settingModeId: Mode | null = null;
+  @state() private _targetMode: Mode | null = null;
   @state() private _setError: string | null = null;
+  private _pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Aborted on disconnect so a late-resolving fetch can't write state to a
   // detached element (panel tab switches destroy the inactive tab — closes #29).
@@ -278,32 +302,82 @@ export class ModesTab extends LitElement {
   disconnectedCallback() {
     this._abort?.abort();
     this._abort = null;
+    this._clearPendingTimer();
     super.disconnectedCallback();
   }
 
-  private async _loadData(options: { silent?: boolean } = {}) {
+  private async _loadData() {
     this._abort?.abort();
     const controller = new AbortController();
     this._abort = controller;
     const { signal } = controller;
 
-    // `silent` keeps `_loading` untouched so an in-place refresh doesn't
-    // flash the full-page "Loading modes..." spinner over the visible grid.
-    // The initial connectedCallback load is loud (default); post-switch
-    // refresh is silent.
-    if (!options.silent) this._loading = true;
+    this._loading = true;
     this._error = null;
 
     try {
-      const [modes, actions] = await Promise.all([fetchModes(this.hass), fetchActions(this.hass)]);
+      const [modesResponse, actions] = await Promise.all([
+        fetchModes(this.hass),
+        fetchActions(this.hass),
+      ]);
       if (signal.aborted) return;
-      this._modes = modes;
+      this._modes = modesResponse.modes;
+      // `?? null` normalizes older backends (and test fixtures) that omit
+      // the field, keeping the field's declared type accurate at runtime.
+      this._panelEntityId = modesResponse.panel_entity_id ?? null;
       this._actions = actions;
     } catch (err) {
       if (signal.aborted) return;
       this._error = err instanceof Error ? err.message : 'Failed to load data';
     } finally {
-      if (!signal.aborted && !options.silent) this._loading = false;
+      if (!signal.aborted) this._loading = false;
+    }
+  }
+
+  /**
+   * Live-derived active mode from `hass.states[panel].state` (#124). Returns
+   * null when the panel entity is unknown (older backend, no alarm device)
+   * or in an intermediate state (e.g. `arming`, `pending`, `triggered`) the
+   * mode mapping doesn't cover. Callers fall back to the cached `mode.active`
+   * flag in that case.
+   */
+  private _liveActiveMode(): Mode | null {
+    if (!this._panelEntityId) return null;
+    const state = this.hass.states?.[this._panelEntityId]?.state;
+    if (!state) return null;
+    return STATE_TO_MODE[state] ?? null;
+  }
+
+  private _activeMode(): Mode | null {
+    const live = this._liveActiveMode();
+    if (live !== null) return live;
+    // Fallback: no live source (panel_entity_id null or unknown state) →
+    // use the cached snapshot's `active` flag.
+    return this._modes.find((m) => m.active)?.id ?? null;
+  }
+
+  private _clearPendingTimer() {
+    if (this._pendingTimer !== null) {
+      clearTimeout(this._pendingTimer);
+      this._pendingTimer = null;
+    }
+  }
+
+  /** Drop the "Switching…" pending state. Called from the success path
+   * (live state caught up), the error path, and the safety-timeout path. */
+  private _resetPending() {
+    this._targetMode = null;
+    this._clearPendingTimer();
+  }
+
+  willUpdate(_changed: PropertyValues) {
+    // Drop the pending indicator once live state catches up. This is the
+    // success path through the Abode entry/exit countdown — the SocketIO
+    // event arrives, `hass` is reassigned by HA, willUpdate fires, and we
+    // clear `_targetMode` so the target card flips from "Switching…" to
+    // "Current mode".
+    if (this._targetMode !== null && this._liveActiveMode() === this._targetMode) {
+      this._resetPending();
     }
   }
 
@@ -329,9 +403,15 @@ export class ModesTab extends LitElement {
   }
 
   private _requestSwitch(mode: AbodeMode) {
-    // No-op for already-active mode (the UI suppresses the button anyway,
-    // this is a defense-in-depth check in case a programmatic caller fires).
-    if (mode.active || this._settingModeId !== null) return;
+    // No-op when this mode is already the live-active one (the UI
+    // suppresses the button anyway; this is defense-in-depth for
+    // programmatic callers).
+    //
+    // Note: we deliberately do NOT block on `_targetMode !== null` here.
+    // Allowing a second confirm during a pending switch is what makes
+    // "switch to standby = cancel arming" reachable when the first switch
+    // is still mid-flight or live state lags (#124).
+    if (this._activeMode() === mode.id && this._targetMode === null) return;
     // Clear any stale error from a prior failed attempt — opening a fresh
     // confirm dialog implies the user has acknowledged the previous one.
     this._setError = null;
@@ -342,33 +422,38 @@ export class ModesTab extends LitElement {
     if (!this._confirmMode) return;
     const target = this._confirmMode;
     this._confirmMode = null;
-    this._settingModeId = target.id;
+    this._targetMode = target.id;
     this._setError = null;
+    // Safety net: clear the pending indicator if live state never catches
+    // up (lost SocketIO subscription, network blip). Without this the
+    // target card would say "Switching…" forever.
+    this._clearPendingTimer();
+    this._pendingTimer = setTimeout(() => {
+      this._pendingTimer = null;
+      this._targetMode = null;
+    }, PENDING_TIMEOUT_MS);
     try {
       await setMode(this.hass, target.id);
     } catch (err) {
       // Match actions-tab convention: log the raw exception for diagnostics,
       // surface a fixed user-facing label so backend internals don't leak.
       console.error('Failed to set mode:', err);
-      this._setError = 'Failed to change mode';
-      this._settingModeId = null;
+      // Stale-rejection guard: a second _confirmSwitch (e.g. the user
+      // clicking Standby to cancel arming) can run while this one is still
+      // awaiting setMode. If our request was superseded, _targetMode now
+      // points at the newer target — don't clear it or show an error for
+      // this stale attempt.
+      if (this._targetMode === target.id) {
+        this._setError = 'Failed to change mode';
+        this._resetPending();
+      }
       return;
     }
-    // Switch succeeded — refresh so the active flag flips. Pass
-    // `silent: true` so the grid stays visible (with its "Switching…"
-    // pending label on the targeted card) instead of flashing
-    // "Loading modes..." over the full tab during the refresh.
-    //
-    // _loadData catches its own exception and writes to `this._error`,
-    // which would trigger the full-page error branch in render() and wipe
-    // the successful-switch UX. Detect that case and re-route the message
-    // through the dismissible banner instead.
-    await this._loadData({ silent: true });
-    if (this._error) {
-      this._setError = `Mode changed; refresh failed: ${this._error}`;
-      this._error = null;
-    }
-    this._settingModeId = null;
+    // Switch succeeded. Don't reload modes — the active flag is derived
+    // live from `hass.states[panel].state` (#124), and the SocketIO update
+    // that flips that state will re-render us via the @property hass
+    // reassignment HA performs on every state change. `_targetMode` keeps
+    // the "Switching…" indicator visible until then.
   }
 
   render() {
@@ -429,11 +514,17 @@ export class ModesTab extends LitElement {
 
   private _renderModeCard(mode: AbodeMode) {
     const actionsForMode = this._getActionsForMode(mode.id);
-    const isPending = this._settingModeId === mode.id;
-    const anySwitchPending = this._settingModeId !== null;
+    const activeMode = this._activeMode();
+    const isActive = activeMode === mode.id;
+    const isTarget = this._targetMode === mode.id;
+    // While a switch is pending, the target card shows "Switching…" and
+    // every other card (including the live-active one) shows a Switch
+    // button. That's what makes Standby clickable mid-arming so the user
+    // can cancel (#124).
+    const showCurrent = isActive && this._targetMode === null;
 
     return html`
-      <div class="mode-card ${mode.active ? 'active' : ''}">
+      <div class="mode-card ${isActive ? 'active' : ''}">
         <div class="mode-header">
           <div class="mode-icon">
             <ha-icon icon=${mode.icon}></ha-icon>
@@ -442,7 +533,7 @@ export class ModesTab extends LitElement {
             <h3>${mode.name}</h3>
             <div class="badges">
               ${this._renderActionCountBadge(mode)}
-              ${mode.active ? html`<span class="badge active">Active</span>` : ''}
+              ${isActive ? html`<span class="badge active">Active</span>` : ''}
             </div>
           </div>
         </div>
@@ -462,16 +553,16 @@ export class ModesTab extends LitElement {
               </ul>
             `
           : html`<div class="empty-actions">No actions configured</div>`}
-        ${mode.active
+        ${showCurrent
           ? html`<div class="current-mode-label">Current mode</div>`
           : html`
               <button
                 class="switch-button"
-                ?disabled=${anySwitchPending}
+                ?disabled=${isTarget}
                 aria-label=${`Switch to ${mode.name} mode`}
                 @click=${() => this._requestSwitch(mode)}
               >
-                ${isPending ? 'Switching…' : `Switch to ${mode.name}`}
+                ${isTarget ? `Switching to ${mode.name}…` : `Switch to ${mode.name}`}
               </button>
             `}
       </div>
