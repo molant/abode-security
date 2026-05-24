@@ -45,6 +45,7 @@ export class ActionsTab extends LitElement {
   // detached element (panel tab switches destroy the inactive tab — closes #29).
   // See action-editor.ts for full rationale; this version omits the Retry path.
   private _abort: AbortController | null = null;
+  private _copyResetTimeout: ReturnType<typeof setTimeout> | null = null;
 
   static styles = css`
     :host {
@@ -392,6 +393,10 @@ export class ActionsTab extends LitElement {
   disconnectedCallback() {
     this._abort?.abort();
     this._abort = null;
+    if (this._copyResetTimeout !== null) {
+      clearTimeout(this._copyResetTimeout);
+      this._copyResetTimeout = null;
+    }
     super.disconnectedCallback();
   }
 
@@ -434,7 +439,9 @@ export class ActionsTab extends LitElement {
     try {
       await navigator.clipboard.writeText(action.id);
       this._copiedId = action.id;
-      setTimeout(() => {
+      if (this._copyResetTimeout !== null) clearTimeout(this._copyResetTimeout);
+      this._copyResetTimeout = setTimeout(() => {
+        this._copyResetTimeout = null;
         if (this._copiedId === action.id) this._copiedId = null;
       }, 1500);
     } catch (err) {

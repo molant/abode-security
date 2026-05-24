@@ -110,6 +110,28 @@ describe('CamerasTab', () => {
     });
   });
 
+  describe('renders the admin-required empty state when fetchCameras rejects with unauthorized', () => {
+    it('shows the admin-required message and no retry button', async () => {
+      const hass = createMockHass();
+      const el = await fixture<CamerasTab>(html`
+        <abode-cameras-tab .hass=${hass}></abode-cameras-tab>
+      `);
+
+      await setState(el, {
+        _unauthorized: true,
+        _loading: false,
+      } as Partial<CamerasTab>);
+
+      expect(el.shadowRoot?.textContent).to.include(
+        'Admin permissions are required to view the Cameras tab',
+      );
+      // No retry button — retrying without admin would just re-fail.
+      expect(el.shadowRoot?.querySelector('.retry-button')).to.not.exist;
+      // And no generic error block either.
+      expect(el.shadowRoot?.querySelector('.error')).to.not.exist;
+    });
+  });
+
   describe('scrolls and highlights selected camera when selectedCameraEntityId matches', () => {
     it('calls scrollIntoView on the matching card', async () => {
       const hass = createMockHass();
