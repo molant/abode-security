@@ -901,6 +901,44 @@ class TestWebSocketModesAPI:
             assert "icon" in mode
             assert mode["icon"].startswith("mdi:")
 
+    async def test_ws_modes_list_includes_panel_entity_id(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Response includes `panel_entity_id` so the frontend can watch
+        `hass.states[panel].state` for live reactivity (#124).
+
+        Without this, the Modes tab reads the active mode from a stale
+        snapshot returned at `modes/list` time and never reflects the
+        SocketIO-driven state updates that follow an arm/disarm.
+        """
+        hass.states.async_set("alarm_control_panel.abode_alarm", "disarmed")
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/modes/list"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert (
+            response["result"]["panel_entity_id"] == "alarm_control_panel.abode_alarm"
+        )
+
+    async def test_ws_modes_list_panel_entity_id_none_when_no_panel(
+        self, hass, hass_ws_client
+    ) -> None:
+        """`panel_entity_id` is None when no abode alarm panel is registered.
+
+        The frontend treats None as "no live source" and falls back to the
+        cached `active` flag, so the regression mode (pre-#124) still works
+        for accounts without an alarm device.
+        """
+        # No alarm_control_panel state set — find_abode_alarm_panel returns None.
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/modes/list"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        assert response["result"]["panel_entity_id"] is None
+
     # --- Set mode (#1) ---
 
     async def test_ws_modes_set_home(self, hass, hass_ws_client) -> None:
