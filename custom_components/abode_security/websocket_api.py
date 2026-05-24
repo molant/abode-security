@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any, cast
 
 import voluptuous as vol
@@ -35,6 +36,130 @@ from .helpers import find_abode_alarm_panel
 # raise them if a real user genuinely hits the ceiling.
 _MAX_SENSOR_ENTITY_IDS = 64
 _MAX_ALARM_ENTITY_IDS = 16
+
+# Curated mapping from camera-style `translation_key`s (UniFi Protect, Reolink,
+# and similar) to a stable "semantic category" used by the picker. Entities in
+# HA with NO `device_class` would otherwise all collapse into the generic
+# "other" bucket; this gives person/vehicle/smoke-alarm/etc. their own group
+# so users can pick them as action triggers (#135).
+#
+# Keys are matched case-insensitively against `entity_registry.translation_key`.
+# When two integrations use different conventions for the same concept (e.g.
+# UniFi's `person_detected` vs Reolink's `person`), both map to the same
+# semantic key (`person`).
+_TRANSLATION_KEY_TO_CATEGORY: dict[str, str] = {
+    # Person
+    "person": "person",
+    "person_detected": "person",
+    "crossline_person": "person",
+    "intrusion_person": "person",
+    "linger_person": "person",
+    # Vehicle
+    "vehicle": "vehicle",
+    "vehicle_detected": "vehicle",
+    "non-motor_vehicle": "vehicle",
+    "crossline_vehicle": "vehicle",
+    "intrusion_vehicle": "vehicle",
+    "linger_vehicle": "vehicle",
+    # Animal / pet
+    "animal": "animal",
+    "animal_detected": "animal",
+    "pet": "animal",
+    # Object (generic camera smart-detect)
+    "object_detected": "object",
+    "audio_object_detected": "object",
+    # Package
+    "package": "package",
+    "package_detected": "package",
+    # Smoke / CO
+    "smoke_alarm_detected": "smoke_alarm",
+    "co_alarm_detected": "co_alarm",
+    # Audio
+    "speaking_detected": "speaking",
+    "barking_detected": "barking",
+    "baby_cry_detected": "baby_cry",
+    "cry": "baby_cry",
+    "glass_break_detected": "glass_break",
+    "siren_detected": "siren",
+    # Misc
+    "face": "face",
+    "visitor": "visitor",
+}
+
+# Fallback token match against the entity_id's object portion (e.g.
+# `binary_sensor.front_yard_person_detected` → object portion
+# `front_yard_person_detected`). Only consulted when `translation_key` produced
+# no hit, so integrations that DO use translation_key always win.
+#
+# Matching is *token-aware*: each entry matches when the token appears at a
+# `_` / start-of-string / end-of-string boundary, so `pet` lands `pet_detected`
+# and `front_yard_pet` but NOT `carpet` or `puppet`. This is the boundary fix
+# from PR #143 review — a previous bare-substring version both over-matched
+# (carpet → animal) and under-matched (pet_detected → other).
+#
+# Order matters: the first token that matches decides the category, so list
+# multi-word tokens (e.g. `smoke_alarm`) before single-word tokens that share
+# a prefix.
+_ENTITY_ID_KEYWORDS: tuple[tuple[str, str], ...] = (
+    ("smoke_alarm", "smoke_alarm"),
+    ("co_alarm", "co_alarm"),
+    ("glass_break", "glass_break"),
+    ("baby_cry", "baby_cry"),
+    ("siren_detected", "siren"),
+    ("face_detected", "face"),
+    ("speaking", "speaking"),
+    ("barking", "barking"),
+    ("visitor", "visitor"),
+    ("package", "package"),
+    ("person", "person"),
+    ("vehicle", "vehicle"),
+    ("animal", "animal"),
+    ("pet", "animal"),
+    ("object", "object"),
+)
+
+# Compiled once at module load — each entry matches the token at a `_` or
+# string boundary. The token itself is `re.escape`d so any future hyphen /
+# regex-meta token (e.g. `non-motor`) stays literal.
+_ENTITY_ID_KEYWORD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(rf"(?:^|_){re.escape(token)}(?:$|_)"), category)
+    for token, category in _ENTITY_ID_KEYWORDS
+)
+
+
+def _categorize_sensor(
+    entity_id: str,
+    device_class: str | None,
+    translation_key: str | None,
+) -> str:
+    """Pick a picker-category for a binary_sensor.
+
+    Priority:
+      1. A real `device_class` (door, motion, smoke, …) — never overridden.
+      2. `translation_key` (UniFi Protect / Reolink and similar HA-native
+         naming) mapped via `_TRANSLATION_KEY_TO_CATEGORY`.
+      3. A keyword in the entity_id's object portion (Frigate, templates that
+         don't bother with translation_key).
+      4. "other" — the existing catch-all.
+    """
+    if device_class:
+        return device_class
+
+    if translation_key:
+        category = _TRANSLATION_KEY_TO_CATEGORY.get(translation_key.lower())
+        if category is not None:
+            return category
+
+    # entity_id format is `<domain>.<object_id>` — match only against the
+    # object_id so a domain rename can't accidentally trigger a keyword.
+    object_id = (
+        entity_id.split(".", 1)[1].lower() if "." in entity_id else entity_id.lower()
+    )
+    for pattern, category in _ENTITY_ID_KEYWORD_PATTERNS:
+        if pattern.search(object_id):
+            return category
+
+    return "other"
 
 
 def _non_bool_int(value: object) -> int:
@@ -555,7 +680,15 @@ async def websocket_entities_sensors(
     connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Handle listing all binary sensors grouped by device_class."""
+    """Handle listing all binary sensors grouped by picker category.
+
+    The grouping key is a derived "picker category" rather than a raw HA
+    `device_class`: when an entity has a real `device_class`, that wins;
+    otherwise the entity is classified by `translation_key` (UniFi Protect /
+    Reolink smart-detect entities, see `_TRANSLATION_KEY_TO_CATEGORY`) or by
+    a boundary-aware entity_id keyword (see `_ENTITY_ID_KEYWORDS`), falling
+    back to `"other"`. See `_categorize_sensor` for the priority order.
+    """
     sensors_by_class: dict[str, list[dict[str, Any]]] = {}
 
     # The area hint surfaced next to each sensor in the panel (#120) prefers
@@ -567,10 +700,11 @@ async def websocket_entities_sensors(
     area_reg = ar.async_get(hass)
 
     for state in hass.states.async_all("binary_sensor"):
-        device_class = state.attributes.get("device_class", "other") or "other"
+        raw_device_class = state.attributes.get("device_class") or None
         friendly_name = state.attributes.get("friendly_name", state.entity_id)
 
         area_name: str | None = None
+        translation_key: str | None = None
         entry = entity_reg.async_get(state.entity_id)
         if entry is not None:
             # Respect entity-registry visibility: skip anything the user
@@ -584,6 +718,7 @@ async def websocket_entities_sensors(
             # firing.
             if entry.hidden_by is not None:
                 continue
+            translation_key = entry.translation_key
             area_id = entry.area_id
             if area_id is None and entry.device_id is not None:
                 device = device_reg.async_get(entry.device_id)
@@ -594,6 +729,14 @@ async def websocket_entities_sensors(
                 if area is not None:
                     area_name = area.name
 
+        # Camera smart-detect entities (UniFi Protect, Reolink, …) have no
+        # device_class — they identify themselves via translation_key. Bucket
+        # those into semantic categories instead of collapsing into "other"
+        # (#135).
+        category = _categorize_sensor(
+            state.entity_id, raw_device_class, translation_key
+        )
+
         sensor_info = {
             "entity_id": state.entity_id,
             "name": friendly_name,
@@ -601,11 +744,11 @@ async def websocket_entities_sensors(
             "area": area_name,
         }
 
-        if device_class not in sensors_by_class:
-            sensors_by_class[device_class] = []
-        sensors_by_class[device_class].append(sensor_info)
+        if category not in sensors_by_class:
+            sensors_by_class[category] = []
+        sensors_by_class[category].append(sensor_info)
 
-    # Stable alphabetical order by friendly_name within each device class.
+    # Stable alphabetical order by friendly_name within each picker category.
     # `hass.states.async_all()` returns entities in registration order — fine
     # while the integration is loaded once, but the order shifts on restart
     # or after a new entity registers. Sorting here gives the picker a
