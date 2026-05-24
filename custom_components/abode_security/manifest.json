@@ -1,18 +1,28 @@
 {
   "domain": "abode_security",
   "name": "Abode Security",
-  "codeowners": ["@molant"],
+  "codeowners": [
+    "@molant"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/molant/abode-security",
   "issue_tracker": "https://github.com/molant/abode-security/issues",
   "homekit": {
-    "models": ["Abode", "Iota"]
+    "models": [
+      "Abode",
+      "Iota"
+    ]
   },
   "iot_class": "cloud_push",
-  "loggers": ["custom_components.abode_security"],
-  "requirements": ["platformdirs", "aiohttp"],
+  "loggers": [
+    "custom_components.abode_security"
+  ],
+  "requirements": [
+    "platformdirs",
+    "aiohttp"
+  ],
   "single_config_entry": true,
-  "version": "1.0.0-dev-20260512-180429",
+  "version": "1.1.0",
   "minimum_home_assistant_version": "2024.1.0",
   "diagnostics": true
 }

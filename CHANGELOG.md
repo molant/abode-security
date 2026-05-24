@@ -5,6 +5,147 @@ All notable changes to the Abode Security integration are documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.1.0 (2026-05-23)
+
+### Features
+-  list all HA cameras + render via ha-camera-stream
+-  deep-link tap-to-camera via /abode_security panel
+-  add Cameras tab + deep-link routing (Sub-Phase B)
+-  add abode_security/entities/cameras WS endpoint (Sub-Phase A)
+-  tap → camera live view via clickAction
+-  copy-action-ID button + docs polish
+-  allow notification-only actions (no alarm)
+-  add debug fire_test_notification service
+-  add docs, blueprint, README pointer, and action_trigger snapshot wiring
+-  wire daily snapshot purge + retention option in config flow
+-  add async_purge_old to snapshot.py with executor-offloaded I/O
+-  wire snapshot capture into action trigger
+-  add snapshot.py with camera discovery and capture helpers
+-  enrich action_triggered payload with sensor context
+-  add _SensorTriggerContext and thread through trigger chain
+-  single-select alarm picker with responsive grid layout
+-  table-align sensor rows; drop red separator and lifetime counter chip
+-  surface sensor availability + state in picker and actions list
+-  collapse sensor categories and add search (#113)
+-  record device audit result, no deletes (phase 4D)
+-  add structured DEBUG log per connect attempt (phase 4C)
+-  surface SocketIO health counters in diagnostics.py (phase 4B)
+-  add SocketIO health counter properties (phase 4A)
+-  remove lomond from manifest/deps, update UPSTREAM.md (phase 3C+3D)
+-  drop run_coroutine_threadsafe bridge in EventController (phase 3B)
+-  rewrite SocketIO as fully async (phase 3A)
+-  add async WebSocket transport scaffold (phase 2)
+-  implement phase 1 fork hygiene and audit log
+-  admin-gate sensitive read-only websocket commands
+-  enable mypy strict for outer integration (fixes #56)
+-  mode-switching UI from Modes tab (fixes #1)
+-  a11y focus management + document Escape on <abode-modal> (fixes #9, #28)
+-  Add GitHub release scripts for HACS integration
+-  Add complete dashboard UI with actions and modes tabs
+-  Add ActionTriggerCoordinator for sensor-based action triggering
+-  Add config endpoints and integration setup
+-  Add entity query endpoints for modes, sensors, alarms
+-  Add WebSocket API for action CRUD operations
+-  Add ActionManager helper methods
+-  Add ActionManager with CRUD operations and validation
+-  Add ActionStore for persistent action storage
+-  Add AbodeAction dataclass with serialization
+-  Add Playwright E2E testing and fix panel registration (Phase 5 & 6)
+-  Add frontend build infrastructure (Phase 5)
+-  Add Claude Code skills and pre-commit review hook
+-  Enable CMS Settings Switch tests (Phase 4.5.3)
+-  Enable switch platform tests (Phase 4.5.3)
+-  Enable camera platform tests (Phase 4.5.3)
+-  Enable alarm control panel integration tests (Phase 4.5.3)
+-  Enable light platform tests (Phase 4.5.3)
+-  Enable sensor platform tests (Phase 4.5.3)
+-  Enable lock platform tests (Phase 4.5.3)
+-  Enable cover platform tests (Phase 4.5.3)
+-  Complete binary_sensor platform tests (Phase 4.5.3)
+-  Enable init tests (Phase 4.5.2)
+-  Enable config flow tests (Phase 4.5.1)
+-  Complete Phase 4 test infrastructure for mock server
+-  Add test infrastructure for mock server integration
+-  Add WebSocket/SocketIO support to mock server
+-  Add configurable base URL for Abode API
+-  Add FastAPI mock Abode API server
+-  Add Docker development environment
+-  Add debug logging configuration and improve options UI
+-  Optimize CMS settings caching and API efficiency
+-  Add CMS configuration switches for Abode security settings
+-  Add Abode integration icon
+-  Add Batch Operations to async wrapper (Phase 4B)
+-  Add Event Filtering system (Phase 4B)
+-  Add Smart Polling and Configuration Presets (Phase 4B)
+-  Implement options flow for user configuration (Phase 4B)
+-  Enhance manifest, hacs config, and README (Phase 4A)
+-  Enhance diagnostics with comprehensive system information (Phase 3E)
+-  Create async wrapper for jaraco.abode operations (Phase 3D)
+-  Add user-configurable settings framework (Phase 3C)
+-  Add comprehensive type hint coverage (Phase 3B)
+-  Add error handling decorators to switch methods (Phase 3A)
+
+### Fixes
+-  address PR #139 review feedback + starlette CVE
+-  set both `url` and `clickAction` for tap-to-camera
+-  address PR review feedback
+-  address PR #137 review feedback and bump idna for CVE-2026-45409
+-  exclude entities hidden in the entity registry from the sensor picker
+-  polish action editor and modes UI (#120)
+-  rename dispatch handlers to match protocol verbs
+-  move integration icon to brand/ folder for HA 2026.3+
+-  address PR #112 review feedback
+-  track in-flight refresh futures + pin mock to EIO v3
+-  async_create accepts enabled kwarg
+-  align WS validation error code with runtime path
+-  null-check Alarm before constructing alarm-attached entities
+-  null-check get_alarm() before trigger_manual_alarm
+-  use public HA import paths
+-  bound websocket command payload sizes (fixes #55)
+-  re-check alarm mode in _delayed_execute (fixes #53)
+-  tolerate corrupt records on action-store load (fixes #54)
+-  correct override() annotation in vendored config (fixes #57)
+-  redact PII from diagnostics output (fixes #50)
+-  redact tokens and PII from DEBUG response logs (fixes #49)
+-  resolve Abode alarm panel via entity registry (fixes #44)
+-  singular "action" for count of 1 in modes badge (fixes #24)
+-  lifecycle + async safety for editor and tabs (fixes #10, #26, #27, #29)
+-  drive editor sensor categories from response keys (fixes #25)
+-  drain in-flight requests in cleanup() (fixes #14)
+-  cleanup() Abode client on every login attempt (fixes #6)
+-  document single-entry contract for hass.data writes
+-  preserve entry on reauth, abort on username change
+-  serialize session recreate, drain in-flight requests (fixes #3)
+-  refresh cookies on reconnect; surface persistent disconnect
+-  correctness fixes for retries, session guards, and shutdown
+-  prevent spurious alarm triggers and double-fire on re-trigger
+-  unwrap WebSocket responses correctly
+-  Handle undefined state during initial render
+-  Correct WebSocket endpoint types and modes response format
+-  Use thread-safe add_job() for automation trigger callback
+-  Update test constants to match actual entity IDs (Phase 4.5.3)
+-  Immediately recreate session on CMS endpoint empty response
+-  Clear CMS cache on session recreation to ensure fresh fetch
+-  Add background session monitor to prevent timeout with SocketIO events
+-  Improve SocketIO authentication and connection reliability
+-  Resolve integration icon display by using local icon file
+-  Use upstream Abode icon from Home Assistant brands repository
+-  Code quality improvements (Phase 4A - Validation)
+
+### Other Changes
+- docs+test: address Copilot feedback on modes/list and mutating-command coverage
+- Pre-release: 20260119-2140
+- remove unnecessary docs
+- fix init flow for HACS
+- update readme.md
+- Implement hybrid dependency approach for jaraco utilities
+- Phase 5: Convert HTTP client from requests to aiohttp (async) + bug fixes
+- Fix import ordering across all test files
+- Add comprehensive end-to-end test scenarios
+- Add comprehensive integration tests for advanced features
+- Improve test mode initialization and polling with better logging
+- Initial setup: Create abode-security custom HACS integration
+
 ## [1.0.0] - 2024-11-23
 
 ### ✨ Initial Release
