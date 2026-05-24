@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { HomeAssistant, AbodeMode, AbodeAction, Mode } from './types';
 import { fetchModes, fetchActions, setMode } from './api';
@@ -136,6 +136,21 @@ export class ModesTab extends LitElement {
     .action-list li ha-icon {
       --mdc-icon-size: 16px;
       color: var(--secondary-text-color);
+    }
+
+    .action-list li.disabled {
+      color: var(--secondary-text-color);
+      opacity: 0.75;
+    }
+
+    .action-list .disabled-tag {
+      margin-left: auto;
+      padding: 1px 6px;
+      background: var(--secondary-background-color, #f5f5f5);
+      border-radius: 10px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
 
     .empty-actions {
@@ -293,7 +308,24 @@ export class ModesTab extends LitElement {
   }
 
   private _getActionsForMode(modeId: Mode): AbodeAction[] {
-    return this._actions.filter((action) => action.enabled && action.modes.includes(modeId));
+    // Include disabled actions so the in-card list reflects what is
+    // configured for the mode (#123). Sort enabled first so disabled ones
+    // appear at the bottom of the list as a less-prominent group.
+    return this._actions
+      .filter((action) => action.modes.includes(modeId))
+      .sort((a, b) => Number(b.enabled) - Number(a.enabled));
+  }
+
+  private _renderActionCountBadge(mode: AbodeMode) {
+    const enabled = mode.action_count;
+    const disabled = mode.disabled_action_count ?? 0;
+    if (enabled > 0 && disabled > 0) {
+      return html`<span class="badge">${enabled} active, ${disabled} disabled</span>`;
+    }
+    if (enabled === 0 && disabled > 0) {
+      return html`<span class="badge">${disabled} disabled</span>`;
+    }
+    return html`<span class="badge">${enabled} ${enabled === 1 ? 'action' : 'actions'}</span>`;
   }
 
   private _requestSwitch(mode: AbodeMode) {
@@ -409,9 +441,7 @@ export class ModesTab extends LitElement {
           <div class="mode-info">
             <h3>${mode.name}</h3>
             <div class="badges">
-              <span class="badge"
-                >${mode.action_count} ${mode.action_count === 1 ? 'action' : 'actions'}</span
-              >
+              ${this._renderActionCountBadge(mode)}
               ${mode.active ? html`<span class="badge active">Active</span>` : ''}
             </div>
           </div>
@@ -422,9 +452,10 @@ export class ModesTab extends LitElement {
               <ul class="action-list" aria-label="Actions for ${mode.name} mode">
                 ${actionsForMode.map(
                   (action) => html`
-                    <li>
+                    <li class=${action.enabled ? nothing : 'disabled'}>
                       <ha-icon icon="mdi:bell-ring"></ha-icon>
                       ${action.name}
+                      ${action.enabled ? nothing : html`<span class="disabled-tag">Disabled</span>`}
                     </li>
                   `,
                 )}

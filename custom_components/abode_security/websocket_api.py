@@ -198,13 +198,13 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
       should not be able to enumerate the alarm wiring even read-only.
     - Read-only commands that expose only non-sensitive metadata are
       open to any authenticated HA user:
-      - `modes/list` returns `{id, name, icon, action_count, active}`
-        per mode. `active` discloses the current armed state, which
-        HA's standard state APIs already expose for the Abode
-        `alarm_control_panel` entity (resolved dynamically by
-        `find_abode_alarm_panel`), so gating here would be security
-        theater. `action_count` is a count only, not the actions
-        themselves (those go through the gated `actions/*`).
+      - `modes/list` returns `{id, name, icon, action_count,
+        disabled_action_count, active}` per mode. `active` discloses the
+        current armed state, which HA's standard state APIs already
+        expose for the Abode `alarm_control_panel` entity (resolved
+        dynamically by `find_abode_alarm_panel`), so gating here would
+        be security theater. The two counts are counts only, not the
+        actions themselves (those go through the gated `actions/*`).
       - `config/get` (currently just `debounce_seconds`). If you add a
         sensitive field to `ConfigStore`, either gate `config/get` or
         split the schema — don't quietly widen what non-admins can
@@ -589,18 +589,27 @@ async def websocket_modes_list(
     panel_state = find_abode_alarm_panel(hass)
     active_mode = STATE_TO_MODE.get(panel_state.state) if panel_state else None
 
-    # Build mode list with action counts
+    # Fetch the full action list once, then bucket per mode below.
+    # `action_count` stays enabled-only so existing consumers (and trigger
+    # semantics) are unchanged; the UI uses `disabled_action_count` to
+    # surface disabled actions per #123, which were previously invisible
+    # in the mode card badge.
+    all_actions = await action_manager.async_get_all() if action_manager else []
+
     modes = []
     for mode_id in VALID_MODES:
         metadata = MODE_METADATA.get(
             mode_id, {"name": mode_id.title(), "icon": "mdi:help"}
         )
 
-        # Count actions for this mode
-        action_count = 0
-        if action_manager:
-            actions = await action_manager.async_get_by_mode(mode_id)
-            action_count = len(actions)
+        action_count = sum(
+            1 for action in all_actions if action.enabled and mode_id in action.modes
+        )
+        disabled_action_count = sum(
+            1
+            for action in all_actions
+            if not action.enabled and mode_id in action.modes
+        )
 
         modes.append(
             {
@@ -608,6 +617,7 @@ async def websocket_modes_list(
                 "name": metadata["name"],
                 "icon": metadata["icon"],
                 "action_count": action_count,
+                "disabled_action_count": disabled_action_count,
                 "active": mode_id == active_mode,
             }
         )
