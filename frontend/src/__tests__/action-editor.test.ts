@@ -120,6 +120,88 @@ describe('ActionEditor', () => {
       expect(el.shadowRoot?.textContent).to.include('Kitchen Gas');
     });
 
+    it('renders semantic camera-detection categories with human labels', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+
+      // Semantic categories are emitted by the backend for camera-style
+      // smart-detect entities (UniFi Protect, Reolink, …) that have no
+      // `device_class` but a recognizable translation_key (#135). The
+      // picker has to render them with readable labels — "smoke_alarm"
+      // alone wouldn't be enough.
+      const semanticSensors: Record<string, SensorEntity[]> = {
+        person: [
+          {
+            entity_id: 'binary_sensor.front_door_person_detected',
+            name: 'Front Door Person',
+            state: 'off',
+          },
+        ],
+        vehicle: [
+          {
+            entity_id: 'binary_sensor.driveway_vehicle_detected',
+            name: 'Driveway Vehicle',
+            state: 'off',
+          },
+        ],
+        smoke_alarm: [
+          {
+            entity_id: 'binary_sensor.kitchen_smoke_alarm_detected',
+            name: 'Kitchen Smoke Alarm',
+            state: 'off',
+          },
+        ],
+        speaking: [
+          {
+            entity_id: 'binary_sensor.porch_speaking_detected',
+            name: 'Porch Speaking',
+            state: 'off',
+          },
+        ],
+        object: [
+          {
+            entity_id: 'binary_sensor.backyard_object_detected',
+            name: 'Backyard Object',
+            state: 'off',
+          },
+        ],
+      };
+
+      await setState(el, {
+        _sensors: semanticSensors,
+        _alarms: createMockAlarms(),
+        _loading: false,
+        _expandedCategories: new Set(Object.keys(semanticSensors)),
+      } as Partial<ActionEditor>);
+
+      const categoryHeaders = Array.from(
+        el.shadowRoot?.querySelectorAll('.category-header span') ?? [],
+      ).map((s) => s.textContent ?? '');
+
+      expect(
+        categoryHeaders.some((l) => /\bperson detected\b/i.test(l)),
+        `expected "Person detected" header, got: ${JSON.stringify(categoryHeaders)}`,
+      ).to.equal(true);
+      expect(
+        categoryHeaders.some((l) => /\bvehicle detected\b/i.test(l)),
+        `expected "Vehicle detected" header, got: ${JSON.stringify(categoryHeaders)}`,
+      ).to.equal(true);
+      expect(
+        categoryHeaders.some((l) => /\bsmoke alarm detected\b/i.test(l)),
+        `expected "Smoke alarm detected" header, got: ${JSON.stringify(categoryHeaders)}`,
+      ).to.equal(true);
+      expect(
+        categoryHeaders.some((l) => /\bspeaking detected\b/i.test(l)),
+        `expected "Speaking detected" header, got: ${JSON.stringify(categoryHeaders)}`,
+      ).to.equal(true);
+      expect(
+        categoryHeaders.some((l) => /\bobject detected\b/i.test(l)),
+        `expected "Object detected" header, got: ${JSON.stringify(categoryHeaders)}`,
+      ).to.equal(true);
+    });
+
     it('skips categories with zero sensors', async () => {
       const hass = createMockHass();
       const el = await fixture<ActionEditor>(html`

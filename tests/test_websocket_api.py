@@ -1325,6 +1325,279 @@ class TestWebSocketSensorsAPI:
         names = [s["name"] for s in response["result"]["sensors"]["door"]]
         assert names == ["alpha door", "Mike Door", "Zulu Door"]
 
+    @pytest.mark.parametrize(
+        ("translation_key", "expected_category"),
+        [
+            # UniFi Protect smart-detect translation_keys
+            ("person_detected", "person"),
+            ("vehicle_detected", "vehicle"),
+            ("animal_detected", "animal"),
+            ("object_detected", "object"),
+            ("audio_object_detected", "object"),
+            ("package_detected", "package"),
+            ("smoke_alarm_detected", "smoke_alarm"),
+            ("co_alarm_detected", "co_alarm"),
+            ("speaking_detected", "speaking"),
+            ("barking_detected", "barking"),
+            ("baby_cry_detected", "baby_cry"),
+            ("glass_break_detected", "glass_break"),
+            ("siren_detected", "siren"),
+            # Reolink-style short keys
+            ("person", "person"),
+            ("vehicle", "vehicle"),
+            ("animal", "animal"),
+            ("pet", "animal"),
+            ("package", "package"),
+            ("face", "face"),
+            ("visitor", "visitor"),
+            ("cry", "baby_cry"),
+            # Reolink crossline/intrusion/linger variants
+            ("crossline_person", "person"),
+            ("intrusion_vehicle", "vehicle"),
+            ("linger_person", "person"),
+            ("non-motor_vehicle", "vehicle"),
+        ],
+    )
+    async def test_ws_entities_sensors_classifies_by_translation_key(
+        self,
+        hass,
+        hass_ws_client,
+        translation_key,
+        expected_category,
+    ) -> None:
+        """Camera detection entities (no device_class) map to semantic category.
+
+        UniFi Protect / Reolink / similar camera integrations expose binary
+        sensors like "person detected" or "smoke alarm detected" with a
+        recognizable `translation_key` but no `device_class`. The picker
+        previously dumped them all into "other"; now they get a category of
+        their own so users can find them.
+
+        Uses a neutral `suggested_object_id` (no substring that
+        `_ENTITY_ID_KEYWORDS` would catch) so this test isolates the
+        translation_key branch — the keyword fallback gets its own test.
+        Without this isolation, the `translation_key="person"` case would
+        also be satisfied by the keyword fallback hitting "camera_person",
+        masking a regression in the translation_key path.
+        """
+        from homeassistant.helpers import entity_registry as er
+
+        entity_reg = er.async_get(hass)
+        # 7-digit hash → unique per case, and never contains a keyword.
+        neutral_id = f"neutral_{abs(hash(translation_key)) % 10_000_000:07d}"
+        entry = entity_reg.async_get_or_create(
+            "binary_sensor",
+            "unifiprotect",
+            f"unique_{translation_key}",
+            suggested_object_id=neutral_id,
+            translation_key=translation_key,
+        )
+        hass.states.async_set(
+            entry.entity_id,
+            "off",
+            {"friendly_name": translation_key.replace("_", " ").title()},
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        sensors = response["result"]["sensors"]
+        assert expected_category in sensors, (
+            f"expected category {expected_category!r}, got: {list(sensors)}"
+        )
+        assert any(
+            s["entity_id"] == entry.entity_id for s in sensors[expected_category]
+        )
+        assert "other" not in sensors
+
+    async def test_ws_entities_sensors_device_class_wins_over_translation_key(
+        self, hass, hass_ws_client
+    ) -> None:
+        """If both device_class and a recognizable translation_key are set,
+        device_class still drives the grouping. This protects integrations
+        that already get the device_class right (e.g. UniFi Protect's
+        motion entities, which have device_class=motion AND a translation_key).
+        """
+        from homeassistant.helpers import entity_registry as er
+
+        entity_reg = er.async_get(hass)
+        entry = entity_reg.async_get_or_create(
+            "binary_sensor",
+            "unifiprotect",
+            "motion_with_translation_key",
+            suggested_object_id="camera_motion",
+            translation_key="person_detected",
+        )
+        hass.states.async_set(
+            entry.entity_id,
+            "off",
+            {"device_class": "motion", "friendly_name": "Camera Motion"},
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        sensors = response["result"]["sensors"]
+        assert "motion" in sensors
+        assert any(s["entity_id"] == entry.entity_id for s in sensors["motion"])
+        assert "person" not in sensors
+
+    async def test_ws_entities_sensors_keyword_fallback_from_entity_id(
+        self, hass, hass_ws_client
+    ) -> None:
+        """No translation_key → fall back to entity_id keyword match.
+
+        Catches integrations (Frigate, some templates) that don't use
+        translation_key but follow the same `<location>_<type>_detected`
+        naming convention HA-wide.
+        """
+        hass.states.async_set(
+            "binary_sensor.front_yard_person_detected",
+            "off",
+            {"friendly_name": "Front Yard Person"},
+        )
+        hass.states.async_set(
+            "binary_sensor.driveway_vehicle",
+            "off",
+            {"friendly_name": "Driveway Vehicle"},
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        sensors = response["result"]["sensors"]
+
+        assert "person" in sensors
+        assert (
+            sensors["person"][0]["entity_id"]
+            == "binary_sensor.front_yard_person_detected"
+        )
+
+        assert "vehicle" in sensors
+        assert sensors["vehicle"][0]["entity_id"] == "binary_sensor.driveway_vehicle"
+
+    @pytest.mark.parametrize(
+        ("object_id", "expected_category"),
+        [
+            # Pet at start of object_id (PR #143 review feedback) — the
+            # previous "_pet" anchor missed these.
+            ("pet_detected", "animal"),
+            ("pet", "animal"),
+            ("living_room_pet", "animal"),
+            # Object keyword (PR #143 review feedback) — was missing
+            # entirely, so backyard_object_detected fell to "other".
+            ("backyard_object_detected", "object"),
+            ("object_detected", "object"),
+            ("object", "object"),
+            # Other tokens still work in all positions.
+            ("front_yard_person", "person"),
+            ("person_at_door", "person"),
+            ("vehicle_in_driveway", "vehicle"),
+        ],
+    )
+    async def test_ws_entities_sensors_keyword_fallback_token_positions(
+        self,
+        hass,
+        hass_ws_client,
+        object_id,
+        expected_category,
+    ) -> None:
+        """Keyword fallback must work whether the token is at the start, middle,
+        or end of the object_id, or is the entire object_id (PR #143 review).
+        """
+        hass.states.async_set(
+            f"binary_sensor.{object_id}",
+            "off",
+            {"friendly_name": object_id.replace("_", " ").title()},
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        sensors = response["result"]["sensors"]
+        assert expected_category in sensors, (
+            f"expected category {expected_category!r} for {object_id!r}, "
+            f"got: {list(sensors)}"
+        )
+        assert (
+            sensors[expected_category][0]["entity_id"] == f"binary_sensor.{object_id}"
+        )
+
+    @pytest.mark.parametrize(
+        "object_id",
+        [
+            # The old "_pet" substring would NOT mismatch these (no leading
+            # underscore), but a naive switch to bare "pet" would land them
+            # all in "animal" incorrectly. Tracked here as regression guards.
+            "carpet_cleaner_active",
+            "front_room_carpet",
+            "puppet_show_running",
+            # Bare "person" must not match these (they're not person sensors).
+            "personal_assistant_active",
+            "personnel_present",
+            # Bare "object" must not match these.
+            "subject_open",
+            "objective_complete",
+        ],
+    )
+    async def test_ws_entities_sensors_keyword_fallback_no_false_positives(
+        self, hass, hass_ws_client, object_id
+    ) -> None:
+        """Keyword fallback must use token boundaries (PR #143 review).
+
+        Switching to boundary-aware matching to fix the start-of-string gap
+        must not regress to substring matching, which would land "carpet" in
+        "animal", "personal_*" in "person", or "subject" in "object".
+        """
+        hass.states.async_set(
+            f"binary_sensor.{object_id}",
+            "off",
+            {"friendly_name": object_id.replace("_", " ").title()},
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        sensors = response["result"]["sensors"]
+        # The entity should fall through to "other" — no semantic category
+        # should claim it.
+        for cat in ("animal", "person", "vehicle", "object"):
+            entity_ids = [s["entity_id"] for s in sensors.get(cat, [])]
+            assert f"binary_sensor.{object_id}" not in entity_ids, (
+                f"{object_id!r} unexpectedly landed in {cat!r}"
+            )
+
+    async def test_ws_entities_sensors_unrecognized_still_goes_to_other(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Entities with no device_class, no matching translation_key, and no
+        recognizable entity_id keyword keep landing in 'other'.
+        """
+        hass.states.async_set(
+            "binary_sensor.misc_thing",
+            "off",
+            {"friendly_name": "Misc Thing"},
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/sensors"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        sensors = response["result"]["sensors"]
+        assert "other" in sensors
+        assert sensors["other"][0]["entity_id"] == "binary_sensor.misc_thing"
+
 
 @pytest.mark.usefixtures("mock_abode", "setup_websocket_api")
 class TestWebSocketAlarmsAPI:

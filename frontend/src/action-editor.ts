@@ -22,10 +22,28 @@ function toggleIn<T extends string>(arr: readonly T[], value: T): T[] {
 // Display order for sensor categories (#120). HA `device_class` is open-ended;
 // anything not in this list keeps its relative alphabetical order and is
 // appended after the prioritized categories so unknown classes still surface.
+//
+// Camera smart-detect categories (person/vehicle/smoke_alarm/…) come right
+// after `motion` — they're the next-most-useful trigger for custom actions
+// (#135), and rank above the more niche detector classes.
 const SENSOR_CATEGORY_PRIORITY = [
   'door',
   'window',
   'motion',
+  'person',
+  'vehicle',
+  'animal',
+  'object',
+  'package',
+  'face',
+  'visitor',
+  'smoke_alarm',
+  'co_alarm',
+  'speaking',
+  'barking',
+  'baby_cry',
+  'glass_break',
+  'siren',
   'smoke',
   'gas',
   'carbon_monoxide',
@@ -55,6 +73,45 @@ const STATE_LABELS: Record<string, { on: string; off: string }> = {
   smoke: { on: 'detected', off: 'clear' },
   gas: { on: 'detected', off: 'clear' },
   carbon_monoxide: { on: 'detected', off: 'clear' },
+  // Camera smart-detect categories (#135). Backend emits these for entities
+  // without a device_class — same "detected"/"clear" verbs as motion.
+  person: { on: 'detected', off: 'clear' },
+  vehicle: { on: 'detected', off: 'clear' },
+  animal: { on: 'detected', off: 'clear' },
+  object: { on: 'detected', off: 'clear' },
+  package: { on: 'detected', off: 'clear' },
+  face: { on: 'detected', off: 'clear' },
+  visitor: { on: 'detected', off: 'clear' },
+  smoke_alarm: { on: 'detected', off: 'clear' },
+  co_alarm: { on: 'detected', off: 'clear' },
+  speaking: { on: 'detected', off: 'clear' },
+  barking: { on: 'detected', off: 'clear' },
+  baby_cry: { on: 'detected', off: 'clear' },
+  glass_break: { on: 'detected', off: 'clear' },
+  siren: { on: 'detected', off: 'clear' },
+};
+
+// Human-readable headers for categories that don't read naturally with the
+// default underscore→space conversion. "smoke alarm" → "Smoke alarm detected"
+// reads better, and matches the labels HA itself shows in the camera card so
+// users see the same words in both places (#135). Categories not in this map
+// keep the existing fallback (replace underscores, no further capitalization
+// beyond CSS).
+const CATEGORY_HUMAN_LABELS: Record<string, string> = {
+  person: 'Person detected',
+  vehicle: 'Vehicle detected',
+  animal: 'Animal detected',
+  object: 'Object detected',
+  package: 'Package detected',
+  face: 'Face detected',
+  visitor: 'Visitor',
+  smoke_alarm: 'Smoke alarm detected',
+  co_alarm: 'CO alarm detected',
+  speaking: 'Speaking detected',
+  barking: 'Barking detected',
+  baby_cry: 'Baby cry detected',
+  glass_break: 'Glass break detected',
+  siren: 'Siren detected',
 };
 
 function describeState(state: string, category: string): string {
@@ -972,7 +1029,10 @@ export class ActionEditor extends LitElement {
             // Human-readable label used for both the visible header text
             // and the accessible name on the disclosure button so a
             // screen-reader announcement matches what sighted users see.
-            const humanLabel = category.replace(/_/g, ' ');
+            // Categories the backend emits as semantic keys (#135) get a
+            // curated label from CATEGORY_HUMAN_LABELS; everything else
+            // falls back to the underscore-to-space conversion.
+            const humanLabel = CATEGORY_HUMAN_LABELS[category] ?? category.replace(/_/g, ' ');
             // While filtering, force-expand matched categories so search
             // results aren't hidden behind a collapse the user can't see.
             const isExpanded = isFiltering || this._expandedCategories.has(category);

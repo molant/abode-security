@@ -106,6 +106,10 @@ export type SensorsByCategory = Partial<Record<string, SensorEntity[]>>;
 // Single source of truth for the well-known sensor categories. Backend can
 // still return categories outside this set (see SensorsByCategory); these are
 // the ones we recognize for typed iterators and label maps.
+//
+// The semantic camera-detection categories (person, vehicle, smoke_alarm, …)
+// are emitted by the backend (#135) when an entity has no `device_class` but
+// a recognizable translation_key — they're not HA `device_class` values.
 export const SENSOR_CATEGORIES = [
   'door',
   'window',
@@ -113,6 +117,21 @@ export const SENSOR_CATEGORIES = [
   'moisture',
   'smoke',
   'connectivity',
+  // Camera smart-detect (#135)
+  'person',
+  'vehicle',
+  'animal',
+  'object',
+  'package',
+  'face',
+  'visitor',
+  'smoke_alarm',
+  'co_alarm',
+  'speaking',
+  'barking',
+  'baby_cry',
+  'glass_break',
+  'siren',
   'other',
 ] as const;
 export type SensorCategory = (typeof SENSOR_CATEGORIES)[number];
