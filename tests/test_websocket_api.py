@@ -839,6 +839,56 @@ class TestWebSocketModesAPI:
         standby_mode = next(m for m in modes if m["id"] == "standby")
         assert standby_mode["action_count"] == 0
 
+    async def test_ws_modes_list_disabled_action_count(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Modes report disabled actions separately so the UI can surface them (#123).
+
+        A disabled action belongs to its mode logically — it just won't fire.
+        Counting only enabled actions makes disabled actions invisible in the
+        mode card, so users assume nothing is configured.
+        """
+        manager = _get_manager(hass)
+        await manager.async_create(
+            name="Away Enabled",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        await manager.async_create(
+            name="Away Disabled",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.panic_alarm"],
+            enabled=False,
+        )
+        await manager.async_create(
+            name="Home Disabled",
+            modes=["home"],
+            sensor_entity_ids=["binary_sensor.window"],
+            alarm_entity_ids=["switch.panic_alarm"],
+            enabled=False,
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/modes/list"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        modes = response["result"]["modes"]
+
+        away_mode = next(m for m in modes if m["id"] == "away")
+        assert away_mode["action_count"] == 1
+        assert away_mode["disabled_action_count"] == 1
+
+        home_mode = next(m for m in modes if m["id"] == "home")
+        assert home_mode["action_count"] == 0
+        assert home_mode["disabled_action_count"] == 1
+
+        standby_mode = next(m for m in modes if m["id"] == "standby")
+        assert standby_mode["action_count"] == 0
+        assert standby_mode["disabled_action_count"] == 0
+
     async def test_ws_modes_list_has_metadata(self, hass, hass_ws_client) -> None:
         """Test modes include name and icon metadata."""
         client = await hass_ws_client(hass)

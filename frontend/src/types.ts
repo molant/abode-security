@@ -84,7 +84,12 @@ export interface AbodeMode {
   id: Mode;
   name: string;
   icon: string;
+  // Enabled actions only — preserves the original semantics so consumers
+  // counting "active wiring" don't change behavior.
   action_count: number;
+  // Disabled actions for this mode (#123). Optional because older backends
+  // predating this field may omit it; render as 0 when missing.
+  disabled_action_count?: number;
   active: boolean;
 }
 

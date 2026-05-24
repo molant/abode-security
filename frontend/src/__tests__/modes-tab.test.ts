@@ -89,6 +89,93 @@ describe('ModesTab', () => {
       expect(el.shadowRoot?.textContent).to.match(/\b0 actions\b/);
     });
 
+    // #123 — disabled actions were invisible in the mode card: the badge
+    // showed only enabled actions and the action list filtered them out,
+    // so users saw "0 actions" / "No actions configured" while a disabled
+    // action existed for the mode. These tests pin the new behavior.
+    it('badge shows "{n} disabled" when only disabled actions exist for a mode', async () => {
+      const hass = createMockHass();
+      const modes = createMockModes();
+      // Standby: 0 enabled, 1 disabled.
+      modes[0].action_count = 0;
+      modes[0].disabled_action_count = 1;
+
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
+      // @ts-expect-error - accessing private property for testing
+      el._modes = modes;
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      const standbyCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (card) => card.textContent?.includes('Standby'),
+      );
+      expect(standbyCard?.textContent).to.match(/\b1 disabled\b/);
+      expect(standbyCard?.textContent).to.not.match(/\b0 actions\b/);
+    });
+
+    it('badge shows "{a} active, {d} disabled" when both kinds exist', async () => {
+      const hass = createMockHass();
+      const modes = createMockModes();
+      // Away: 2 enabled, 3 disabled.
+      modes[2].action_count = 2;
+      modes[2].disabled_action_count = 3;
+
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
+      // @ts-expect-error - accessing private property for testing
+      el._modes = modes;
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      const awayCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (card) => card.textContent?.includes('Away'),
+      );
+      expect(awayCard?.textContent).to.match(/\b2 active\b/);
+      expect(awayCard?.textContent).to.match(/\b3 disabled\b/);
+    });
+
+    it('renders disabled actions in the mode card list with a disabled marker', async () => {
+      const hass = createMockHass();
+      const modes = createMockModes();
+      // Away: 0 enabled, 1 disabled.
+      modes[2].action_count = 0;
+      modes[2].disabled_action_count = 1;
+
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
+      // @ts-expect-error - accessing private property for testing
+      el._modes = modes;
+      // @ts-expect-error - accessing private property for testing
+      el._actions = [
+        {
+          id: 'a1',
+          name: 'Call the police',
+          modes: ['away'],
+          sensor_entity_ids: [],
+          alarm_entity_ids: [],
+          enabled: false,
+          delay_seconds: 0,
+          last_triggered: null,
+          trigger_count: 0,
+        },
+      ];
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      const awayCard = Array.from(el.shadowRoot?.querySelectorAll('.mode-card') ?? []).find(
+        (card) => card.textContent?.includes('Away'),
+      );
+      // The action must appear in the list, not be hidden behind
+      // "No actions configured".
+      expect(awayCard?.textContent).to.include('Call the police');
+      expect(awayCard?.textContent).to.not.include('No actions configured');
+      // The disabled action list item must carry a visible disabled marker
+      // so users can distinguish it from enabled ones.
+      const disabledItem = awayCard?.querySelector('.action-list li.disabled');
+      expect(disabledItem, 'disabled action <li> must carry the .disabled class').to.exist;
+    });
+
     it('highlights active mode', async () => {
       const hass = createMockHass();
       const modes = createMockModes();

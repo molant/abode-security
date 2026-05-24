@@ -118,9 +118,30 @@ export function createMockAlarms(): AlarmEntity[] {
  */
 export function createMockModes(): AbodeMode[] {
   return [
-    { id: 'standby', name: 'Standby', icon: 'mdi:lock-open', action_count: 0, active: false },
-    { id: 'home', name: 'Home', icon: 'mdi:home', action_count: 2, active: true },
-    { id: 'away', name: 'Away', icon: 'mdi:shield-check', action_count: 1, active: false },
+    {
+      id: 'standby',
+      name: 'Standby',
+      icon: 'mdi:lock-open',
+      action_count: 0,
+      disabled_action_count: 0,
+      active: false,
+    },
+    {
+      id: 'home',
+      name: 'Home',
+      icon: 'mdi:home',
+      action_count: 2,
+      disabled_action_count: 0,
+      active: true,
+    },
+    {
+      id: 'away',
+      name: 'Away',
+      icon: 'mdi:shield-check',
+      action_count: 1,
+      disabled_action_count: 0,
+      active: false,
+    },
   ];
 }
 
