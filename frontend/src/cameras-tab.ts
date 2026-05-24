@@ -29,6 +29,7 @@ export class CamerasTab extends LitElement {
   @state() private _cameras: AbodeCamera[] = [];
   @state() private _loading = true;
   @state() private _error: string | null = null;
+  @state() private _unauthorized = false;
 
   private _abort: AbortController | null = null;
   private _highlightTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -162,6 +163,7 @@ export class CamerasTab extends LitElement {
 
     this._loading = true;
     this._error = null;
+    this._unauthorized = false;
 
     try {
       const cameras = await fetchCameras(this.hass);
@@ -169,7 +171,21 @@ export class CamerasTab extends LitElement {
       this._cameras = cameras;
     } catch (err) {
       if (signal.aborted) return;
-      this._error = err instanceof Error ? err.message : 'Failed to load cameras';
+      // HA's WS layer rejects with `{ code, message }` plain objects (not
+      // Error instances) for protocol-level errors. The cameras endpoint is
+      // `@require_admin`, so a non-admin user lands here with
+      // `code === 'unauthorized'`; render the dedicated empty-state instead
+      // of a generic fetch failure with a futile Retry button.
+      if (
+        err !== null &&
+        typeof err === 'object' &&
+        'code' in err &&
+        (err as { code: unknown }).code === 'unauthorized'
+      ) {
+        this._unauthorized = true;
+      } else {
+        this._error = err instanceof Error ? err.message : 'Failed to load cameras';
+      }
     } finally {
       if (!signal.aborted) this._loading = false;
     }
@@ -215,6 +231,11 @@ export class CamerasTab extends LitElement {
   render() {
     if (this._loading) {
       return html`<div class="loading">Loading cameras…</div>`;
+    }
+    if (this._unauthorized) {
+      return html`
+        <div class="empty-state">Admin permissions are required to view the Cameras tab.</div>
+      `;
     }
     if (this._error) {
       return html`

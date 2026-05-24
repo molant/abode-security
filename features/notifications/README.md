@@ -1,13 +1,13 @@
 ---
-status: pending
+status: complete
 feature: notifications
 title: Action-Triggered Notifications
-phases: 4
+phases: 5
 ---
 
 # Action-Triggered Notifications
 
-> **Progress Tracking**: Update checkboxes in phase files as you complete tasks. Run `/spec-implement features/notifications/phase-1-enrich-event-payload.md` to begin implementation.
+> **Status**: All five phases shipped on the `feat/notifications` branch (PR #139). Each phase file's frontmatter is `status: done`; the per-phase checklists record what landed.
 
 ## Goal
 
@@ -56,7 +56,8 @@ Snapshots accumulate on disk. A daily background task deletes JPEGs older than `
 - `docs/ARCHITECTURE.md` action-trigger flow section (lines 127–145) gets a short paragraph describing the enriched event and snapshot side effect.
 
 ### Authorization
-- The integration **does not** call `notify.*` services itself. All notification delivery happens in user-owned HA automations / the shipped blueprint. No new admin permissions are introduced.
+- The integration **does not** call `notify.*` services itself. All notification delivery happens in user-owned HA automations / the shipped blueprint, so no new `notify`-related permissions are introduced.
+- The Phase 4 Cameras tab is served by a new WebSocket endpoint `abode_security/entities/cameras`, which is decorated `@require_admin` — matching every other custom WS endpoint this integration ships (see `custom_components/abode_security/websocket_api.py`, which documents `@require_admin` as mandatory for any new command). Non-admin users navigating to the tab (directly or via a notification deep-link) see an "Admin permissions are required to view the Cameras tab." empty-state — the WS call rejects with `code: 'unauthorized'` and the frontend handles that explicitly rather than showing a generic fetch failure. This is the intended security posture — relaxing it would expose the camera enumeration to every household HA user.
 - Snapshots written under `/config/www/` are reachable at `/local/...` **without authentication** — this is how HA exposes any file in `www/`. The user opted into this trade-off; `docs/notifications.md` must call it out so users with shared HA links understand the surface.
 
 ## Phases
@@ -66,7 +67,8 @@ Snapshots accumulate on disk. A daily background task deletes JPEGs older than `
 | 1 | [Enrich event payload](./phase-1-enrich-event-payload.md) | Thread sensor context through the trigger chain and add 6 new keys to the event payload. No camera work, no breaking change. |
 | 2 | [Camera snapshot capture](./phase-2-camera-snapshot.md) | Detect co-located cameras, snapshot under `/config/www/abode_security_snapshots/` with a 3s timeout, expose `/local/...` URL on the event. Mode-gated to `home`/`away`. |
 | 3 | [Cleanup, docs, and blueprint](./phase-3-cleanup-docs-blueprint.md) | Daily retention purge + configurable retention in the options flow + `docs/notifications.md` + HA blueprint + README pointer. |
-| 4 | [Cameras tab + notification deep-link](./phase-4-cameras-tab.md) | New "Cameras" tab in the existing Abode Security custom panel, auto-discovering every camera co-located with an Abode sensor. Replace the broken `entityId:` deep-link in the blueprint with `/abode_security?tab=cameras&camera=<entity_id>`. |
+| 4 | [Cameras tab + notification deep-link](./phase-4-cameras-tab.md) | New "Cameras" tab in the existing Abode Security custom panel. Replace the broken `entityId:` deep-link in the blueprint with `/abode_security?tab=cameras&camera=<entity_id>`. |
+| 5 | [All HA cameras + ha-camera-stream + auto more-info](./phase-5-cameras-tab-all-cameras.md) | Field-driven follow-up: drop the Abode-paired filter so every HA camera appears, render each card with HA's native `<ha-camera-stream>` (picture-entity parity), tap → `hass-more-info`, deep-link auto-opens the stream popup. |
 
 ## Related Documentation
 
@@ -74,6 +76,7 @@ Snapshots accumulate on disk. A daily background task deletes JPEGs older than `
 - [Phase 2: Camera snapshot capture](./phase-2-camera-snapshot.md)
 - [Phase 3: Cleanup, docs, and blueprint](./phase-3-cleanup-docs-blueprint.md)
 - [Phase 4: Cameras tab + notification deep-link](./phase-4-cameras-tab.md)
+- [Phase 5: All HA cameras + ha-camera-stream + auto more-info](./phase-5-cameras-tab-all-cameras.md)
 - [Architecture overview](../../docs/ARCHITECTURE.md) — see action-trigger flow at lines 127–145
 - [Async patterns reference](../../docs/ASYNC_AWAIT_PATTERNS.md)
 - Dashboard-configuration spec (related, completed): `features/dashboard-configuration/` — defines `AbodeAction`, the trigger coordinator, and the existing event.
@@ -87,7 +90,7 @@ Snapshots accumulate on disk. A daily background task deletes JPEGs older than `
 | Home Assistant | `mcp__home-assistant__*` | Drive the live HA instance from `./scripts/dev.sh`. Use `mcp__home-assistant__ha_list_resources` to discover available tools/resources in the running session, then `mcp__home-assistant__ha_read_resource` to fetch them. Do **not** assume tool names like `ha_get_state`/`ha_call_event` exist; list resources first. To trigger an `off → on` binary_sensor transition, do not fire an arbitrary event on the bus; either (a) call the mock Abode API's sensor-trip endpoint at `http://localhost:8000/docs`, or (b) use HA's REST API `POST /api/states/<entity_id>` with state `"on"` and valid HA auth. Use the HA MCP for observation (state read, history, log inspection) and verification of the entity/device graph, not for synthesizing the trigger. |
 
 Notes:
-- No browser/Playwright MCP is required for this spec — there is no new frontend UI. The dashboard's Action editor is not modified.
+- Phases 1–3 add no frontend UI. Phases 4–5 add the **Cameras** tab to the existing Abode Security custom panel (`/abode_security`), so browser/Playwright verification is useful for those phases' manual checklists; unit-level UI coverage lives in `frontend/src/__tests__/cameras-tab.test.ts`. The dashboard's Action editor is not modified by any phase in this spec.
 - The mock Abode API at `http://localhost:8000/docs` (started by `./scripts/dev.sh`) is the standard fixture for triggering sensor activations in dev. It does **not** expose camera streams — for the Phase 2 manual snapshot test, add a dummy `camera` integration (e.g. the built-in `generic` IP-camera platform pointed at any static image URL) to the dev HA config and assign it to the same device as a mock binary_sensor via the entity registry UI.
 
 ## Logging & Diagnostics
@@ -105,6 +108,8 @@ There is no structured JSON log in this project; raw HA logs are the diagnostic 
 
 ## Access Control
 
-> N/A — this project has no infrastructure access control (no Firestore rules, no Supabase RLS, no IAM policies). Authorization is handled in application code (`@websocket_api.require_admin` on mutation endpoints in `websocket_api.py`). This spec does not add new endpoints, so no new authorization gates are needed.
+> N/A — this project has no infrastructure access control (no Firestore rules, no Supabase RLS, no IAM policies). Authorization is handled in application code (`@websocket_api.require_admin` on every custom WebSocket command in `websocket_api.py`).
+
+Phase 4 adds one new WS endpoint, `abode_security/entities/cameras`, decorated `@require_admin` to match the existing convention. Non-admin users see an empty Cameras tab; the rest of the integration is unaffected. See the [Authorization](#authorization) section above for the full rationale.
 
 The integration **does not** call `notify.*` services, so it inherits no notify-related permission concerns.

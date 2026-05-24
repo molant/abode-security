@@ -62,12 +62,23 @@ action:
            else 'detected motion' if trigger.event.data.sensor_device_class == 'motion'
            else 'triggered' }}
         ({{ trigger.event.data.mode }})
-      has_snapshot: "{{ trigger.event.data.snapshot_path is not none }}"
+  # `trigger.event.data.snapshot_path is not none` is inlined in each branch
+  # rather than stored as a `has_snapshot` variable, because a templated string
+  # stored as a variable can render as the literal strings "True"/"False" —
+  # both of which are truthy in Jinja and would mis-route the choose. The
+  # inline form returns a real Python bool every time.
+  #
+  # Branch matrix: (snapshot, camera, critical). `snapshot` implies `camera`
+  # (snapshot capture only runs when resolve_co_located_camera returns one),
+  # so there's no "snapshot but no camera" cell. The deep-link is set on
+  # `camera_entity_id is not none` independent of `snapshot_path` — if the
+  # snapshot timed out (or we're in standby) but the camera is known, the
+  # notification still lets the user tap through to the live stream.
   - choose:
-      # snapshot + critical
+      # snapshot + critical (camera implied)
       - conditions:
           - condition: template
-            value_template: "{{ has_snapshot and critical }}"
+            value_template: "{{ (trigger.event.data.snapshot_path is not none) and critical }}"
         sequence:
           - service: !input notify_target
             data:
@@ -90,10 +101,10 @@ action:
                 channel: critical
                 priority: high
                 ttl: 0
-      # snapshot + non-critical
+      # snapshot + non-critical (camera implied)
       - conditions:
           - condition: template
-            value_template: "{{ has_snapshot and not critical }}"
+            value_template: "{{ (trigger.event.data.snapshot_path is not none) and not critical }}"
         sequence:
           - service: !input notify_target
             data:
@@ -101,16 +112,51 @@ action:
               message: "{{ message_text }}"
               data:
                 image: "{{ trigger.event.data.snapshot_path }}"
-                # Tap → Abode Security panel's Cameras tab, scrolled/highlighted on
-                # the triggering camera. The URL works the same on iOS Companion
-                # (`url`) and Android Companion (`clickAction`); set both so the
-                # blueprint is platform-agnostic.
                 url: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
                 clickAction: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
-      # no snapshot + critical
+      # no snapshot but camera known + critical
       - conditions:
           - condition: template
-            value_template: "{{ not has_snapshot and critical }}"
+            value_template: >-
+              {{ (trigger.event.data.snapshot_path is none)
+                 and (trigger.event.data.camera_entity_id is not none)
+                 and critical }}
+        sequence:
+          - service: !input notify_target
+            data:
+              title: "{{ title_text }}"
+              message: "{{ message_text }}"
+              data:
+                url: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
+                clickAction: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
+                push:
+                  interruption-level: critical
+                  sound:
+                    name: default
+                    critical: 1
+                    volume: 1.0
+                channel: critical
+                priority: high
+                ttl: 0
+      # no snapshot but camera known + non-critical
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ (trigger.event.data.snapshot_path is none)
+                 and (trigger.event.data.camera_entity_id is not none)
+                 and not critical }}
+        sequence:
+          - service: !input notify_target
+            data:
+              title: "{{ title_text }}"
+              message: "{{ message_text }}"
+              data:
+                url: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
+                clickAction: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
+      # no camera + critical
+      - conditions:
+          - condition: template
+            value_template: "{{ (trigger.event.data.camera_entity_id is none) and critical }}"
         sequence:
           - service: !input notify_target
             data:
@@ -127,7 +173,7 @@ action:
                 priority: high
                 ttl: 0
     default:
-      # no snapshot + non-critical
+      # no camera + non-critical
       - service: !input notify_target
         data:
           title: "{{ title_text }}"

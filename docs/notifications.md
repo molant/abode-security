@@ -42,19 +42,22 @@ alias: Abode action notification
 trigger:
   - platform: event
     event_type: abode_security.action_triggered
+variables:
+  message_text: >-
+    {{ trigger.event.data.sensor_friendly_name or trigger.event.data.triggered_by }}
+    {{ 'opened' if trigger.event.data.sensor_device_class in ['door', 'window']
+       else 'detected motion' if trigger.event.data.sensor_device_class == 'motion'
+       else 'triggered' }}
+    ({{ trigger.event.data.mode }})
 action:
   - choose:
+      # Has snapshot → include image + deep-link (snapshot always implies camera).
       - conditions: "{{ trigger.event.data.snapshot_path is not none }}"
         sequence:
           - service: notify.mobile_app_<your_device>
             data:
               title: "{{ trigger.event.data.action_name }}"
-              message: >-
-                {{ trigger.event.data.sensor_friendly_name or trigger.event.data.triggered_by }}
-                {{ 'opened' if trigger.event.data.sensor_device_class in ['door', 'window']
-                   else 'detected motion' if trigger.event.data.sensor_device_class == 'motion'
-                   else 'triggered' }}
-                ({{ trigger.event.data.mode }})
+              message: "{{ message_text }}"
               data:
                 image: "{{ trigger.event.data.snapshot_path }}"
                 # Tap → Abode Security panel's Cameras tab, scrolled to
@@ -63,19 +66,26 @@ action:
                 # cross-platform parity.
                 url: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
                 clickAction: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
+      # No snapshot, but the camera is known (e.g. snapshot timeout, or standby
+      # mode where capture is skipped). Still let the user tap through.
+      - conditions: "{{ trigger.event.data.snapshot_path is none and trigger.event.data.camera_entity_id is not none }}"
+        sequence:
+          - service: notify.mobile_app_<your_device>
+            data:
+              title: "{{ trigger.event.data.action_name }}"
+              message: "{{ message_text }}"
+              data:
+                url: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
+                clickAction: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
     default:
+      # No camera at all (sensor isn't paired with one) → bare notification.
       - service: notify.mobile_app_<your_device>
         data:
           title: "{{ trigger.event.data.action_name }}"
-          message: >-
-            {{ trigger.event.data.sensor_friendly_name or trigger.event.data.triggered_by }}
-            {{ 'opened' if trigger.event.data.sensor_device_class in ['door', 'window']
-               else 'detected motion' if trigger.event.data.sensor_device_class == 'motion'
-               else 'triggered' }}
-            ({{ trigger.event.data.mode }})
+          message: "{{ message_text }}"
 ```
 
-The `choose` block intentionally omits `data.image` when `snapshot_path` is `null` — some notify integrations reject `image: null`. The tap-action keys (`url` for iOS Companion, `clickAction` for Android Companion) are honored by the HA Companion mobile app and silently ignored by other notify integrations (Telegram, Pushover, `notify.html5`, etc.), so the same automation works for everyone. Both keys use the same path-based URL pointing at the integration's built-in Cameras tab, which works consistently across iOS and Android Companion versions.
+The `choose` block intentionally omits `data.image` when `snapshot_path` is `null` — some notify integrations reject `image: null`. The deep-link (`url`/`clickAction`) is gated on `camera_entity_id`, not on `snapshot_path`, so a notification fired in standby mode (where snapshot capture is skipped) or when the snapshot times out still lets the user tap through to the Cameras tab. The tap-action keys (`url` for iOS Companion, `clickAction` for Android Companion) are honored by the HA Companion mobile app and silently ignored by other notify integrations (Telegram, Pushover, `notify.html5`, etc.), so the same automation works for everyone.
 
 ---
 
