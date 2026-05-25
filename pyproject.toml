@@ -46,11 +46,11 @@ dev = [
     "aioresponses==0.7.8",
 
     # Code quality
-    "ruff==0.15.13",
+    "ruff==0.15.14",
 
     # Mock server dependencies (for running locally outside Docker)
-    "fastapi==0.136.1",
-    "uvicorn[standard]==0.47.0",
+    "fastapi==0.136.3",
+    "uvicorn[standard]==0.48.0",
 
     # Used directly by config_flow.py, conftest.py, and the mock server.
     # Lower-bound only: homeassistant pins requests to a specific patch version
@@ -66,7 +66,7 @@ dev = [
     # Home Assistant camera component dependencies. Not imported directly;
     # installed so the HA `camera`/`stream` integrations can be imported
     # during tests. Pin matches HA's own constraint to avoid dev/prod drift.
-    "PyTurboJPEG==1.8.3",
+    "PyTurboJPEG==2.2.0",
 ]
 
 [tool.pytest.ini_options]
