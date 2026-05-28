@@ -14,6 +14,14 @@ export default [
     ignores: ['dist/**', 'node_modules/**'],
   },
   js.configs.recommended,
+  {
+    // rollup.config.js uses `process.env.BUILD` (a Node.js global). Declare it
+    // so the ESLint `no-undef` rule (from js.configs.recommended) doesn't flag it.
+    files: ['rollup.config.js'],
+    languageOptions: {
+      globals: { process: 'readonly' },
+    },
+  },
   ...tseslint.configs.recommended,
   {
     files: ['src/**/*.ts'],

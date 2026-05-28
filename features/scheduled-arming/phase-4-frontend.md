@@ -128,7 +128,7 @@ Deployable unit: a reusable Lit element rendering 7 weekday chips with multi-sel
 
 #### Implementation
 
-- [ ] Create `frontend/src/day-chip-picker.ts`:
+- [x] Create `frontend/src/day-chip-picker.ts`:
   ```typescript
   import { LitElement, html, css } from 'lit';
   import { customElement, property } from 'lit/decorators.js';
@@ -180,12 +180,12 @@ Deployable unit: a reusable Lit element rendering 7 weekday chips with multi-sel
     }
   }
   ```
-- [ ] Style chips to match the existing `.badge` style in `modes-tab.ts` for visual consistency.
-- [ ] Day labels are single letters; aria-label AND tooltip carry the full name so screen readers and hover users can disambiguate Tue/Thu and Sat/Sun. Tests must assert `aria-label` matches the full weekday name.
+- [x] Style chips to match the existing `.badge` style in `modes-tab.ts` for visual consistency.
+- [x] Day labels are single letters; aria-label AND tooltip carry the full name so screen readers and hover users can disambiguate Tue/Thu and Sat/Sun. Tests must assert `aria-label` matches the full weekday name.
 
 #### Tests
 
-- [ ] `frontend/src/__tests__/day-chip-picker.test.ts`:
+- [x] `frontend/src/__tests__/day-chip-picker.test.ts`:
   - Renders 7 chips.
   - Clicking a chip dispatches `change` with the toggled selection.
   - `disabled=true` blocks clicks.
