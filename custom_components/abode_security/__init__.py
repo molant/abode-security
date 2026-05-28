@@ -212,12 +212,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .action_manager import ActionManager
     from .action_trigger import ActionTriggerCoordinator
     from .config_store import ConfigStore
+    from .scheduling.manager import ScheduleManager
+    from .scheduling.store import SchedulesStore
 
     hass.data.setdefault(DOMAIN, {})
 
     action_manager = ActionManager(hass)
     await action_manager.async_setup()
     hass.data[DOMAIN]["action_manager"] = action_manager
+
+    schedule_store = SchedulesStore(hass)
+    schedule_manager = ScheduleManager(hass, schedule_store)
+    await schedule_manager.async_setup()
+    hass.data[DOMAIN]["schedule_manager"] = schedule_manager
 
     config_store = ConfigStore(hass)
     await config_store.async_load()
@@ -318,14 +325,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if abode_system.logout_listener is not None:
         abode_system.logout_listener()
 
-    # Clean up ActionTriggerCoordinator, ActionManager and ConfigStore
+    # Clean up ActionTriggerCoordinator, ActionManager, ConfigStore, ScheduleManager
     if DOMAIN in hass.data:
         if coordinator := hass.data[DOMAIN].get("action_trigger"):
             await coordinator.async_stop()
+        if schedule_mgr := hass.data[DOMAIN].get("schedule_manager"):
+            await schedule_mgr.async_shutdown()
         hass.data[DOMAIN].pop("action_trigger", None)
         hass.data[DOMAIN].pop("action_manager", None)
         hass.data[DOMAIN].pop("config", None)
         hass.data[DOMAIN].pop("config_store", None)
+        hass.data[DOMAIN].pop("schedule_manager", None)
 
     return cast(bool, unload_ok)
 

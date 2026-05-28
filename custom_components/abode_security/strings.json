@@ -58,6 +58,10 @@
     "corrupt_action_records": {
       "title": "Abode Security: corrupt action records detected",
       "description": "Records dropped: {count}. One or more entries in `.storage/abode_security_actions.json` could not be loaded and were skipped. Any remaining actions are still active. Inspect the file or recreate the affected actions from the Actions panel. See Home Assistant logs for per-record details."
+    },
+    "corrupt_schedule_records": {
+      "title": "Abode Security: corrupt schedule records detected",
+      "description": "Records dropped: {count}. One or more entries in `.storage/abode_security_schedules.json` could not be loaded and were skipped. Any remaining schedules are still active. Inspect the file or recreate the affected schedules from the Modes panel. See Home Assistant logs for per-record details."
     }
   },
   "services": {

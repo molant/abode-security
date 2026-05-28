@@ -27,6 +27,13 @@ from .action_manager import (
 )
 from .const import CONF_DEBUG_LOGGING, DOMAIN
 from .helpers import find_abode_alarm_panel
+from .websocket_schedules import (
+    websocket_schedules_create,
+    websocket_schedules_delete,
+    websocket_schedules_get,
+    websocket_schedules_list,
+    websocket_schedules_update,
+)
 
 # Defense-in-depth upper bounds for websocket action payloads. The frontend is
 # trusted but not assumed correct — these caps stop a buggy or hostile client
@@ -231,6 +238,12 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     # Config endpoints
     websocket_api.async_register_command(hass, websocket_config_get)
     websocket_api.async_register_command(hass, websocket_config_set)
+    # Schedule CRUD endpoints
+    websocket_api.async_register_command(hass, websocket_schedules_list)
+    websocket_api.async_register_command(hass, websocket_schedules_get)
+    websocket_api.async_register_command(hass, websocket_schedules_create)
+    websocket_api.async_register_command(hass, websocket_schedules_update)
+    websocket_api.async_register_command(hass, websocket_schedules_delete)
 
 
 def _get_action_manager(hass: HomeAssistant) -> ActionManager | None:

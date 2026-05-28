@@ -149,11 +149,36 @@ flowchart LR
     Coord --> Event
 ```
 
+### Scheduled arming subsystem (`scheduling/`)
+
+`ScheduleManager` is the public entry point for recurring Home-mode arm/disarm schedules. Phase 1 (domain & CRUD) is complete; the runtime (timers, skip rule, reconciliation) arrives in Phase 3.
+
+- `scheduling/models.py` — `ScheduledPair` dataclass (stores arm/disarm time + weekdays), `ChangeSource` and `SkipReason` enums. Pure Python; no HA dependencies beyond `homeassistant.util.dt`.
+- `scheduling/store.py` — `SchedulesStore`: HA `Store`-backed persistence at `.storage/abode_security_schedules.json`. Mirrors `ActionStore` corruption handling: per-record drops are logged and surfaced as a repair issue; whole-file corruption raises the same issue with `count="unknown"`.
+- `scheduling/repair.py` — thin wrappers over `issue_registry.async_create_issue` / `async_delete_issue` for the `corrupt_schedule_records` repair issue.
+- `scheduling/manager.py` — `ScheduleManager`: CRUD with validation. Instantiated in `async_setup_entry` alongside `ActionManager`; stored at `hass.data[DOMAIN]["schedule_manager"]` (domain-scoped, same pattern as `action_manager`). Runtime methods (`async_arm`, `async_disarm`, `async_reconcile_on_startup`) are added in Phase 3.
+- `websocket_schedules.py` — five WS commands (`schedules/{list,get,create,update,delete}`). `list`/`get` open to any authenticated user; mutations require `@require_admin`.
+
+```mermaid
+flowchart LR
+    WS[WebSocket\nschedules/*]
+    Mgr[ScheduleManager]
+    Store[SchedulesStore]
+    Disk[(.storage/\nabode_security_schedules.json)]
+    Repair[HA Repairs UI]
+
+    WS --> Mgr
+    Mgr --> Store
+    Store --> Disk
+    Store -->|corrupt records| Repair
+```
+
 ### WebSocket API (`websocket_api.py`)
 
 Frontend-facing command registry. All commands namespaced `abode_security/*`:
 
 - **Actions CRUD**: `actions/{list,get,create,update,delete,toggle,test}`
+- **Schedules CRUD**: `schedules/{list,get,create,update,delete}` (Phase 1; runtime in Phase 3)
 - **Entity queries**: `entities/sensors`, `entities/alarms`, `entities/cameras`, `modes/list`
 - **Config**: `config/{get,set}` (debounce, etc.)
 
