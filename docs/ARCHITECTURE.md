@@ -151,15 +151,17 @@ flowchart LR
 
 ### Scheduled arming subsystem (`scheduling/`)
 
-`ScheduleManager` is the public entry point for recurring Home-mode arm/disarm schedules. Phase 1 (domain & CRUD) and Phase 2 (mode dispatcher + clocks) are complete; the runtime (timers, skip rule, reconciliation) arrives in Phase 3.
+`ScheduleManager` is the public entry point for recurring Home-mode arm/disarm schedules. Phases 1–3 are complete; Phase 4 (frontend) adds UI.
 
 - `scheduling/models.py` — `ScheduledPair` dataclass (stores arm/disarm time + weekdays), `ChangeSource` and `SkipReason` enums. Pure Python; no HA dependencies beyond `homeassistant.util.dt`.
 - `scheduling/store.py` — `SchedulesStore`: HA `Store`-backed persistence at `.storage/abode_security_schedules.json`. Mirrors `ActionStore` corruption handling: per-record drops are logged and surfaced as a repair issue; whole-file corruption raises the same issue with `count="unknown"`.
 - `scheduling/repair.py` — thin wrappers over `issue_registry.async_create_issue` / `async_delete_issue` for the `corrupt_schedule_records` repair issue.
-- `scheduling/clock.py` — `Clock` Protocol + `HAClock` impl. Wraps `dt_util.now()` / `dt_util.utcnow()` so tests can inject a fake clock. `ScheduleManager` uses `clock.utcnow()` to stamp `created_at`; Phase 3 uses it for reconciliation.
+- `scheduling/clock.py` — `Clock` Protocol + `HAClock` impl. Wraps `dt_util.now()` / `dt_util.utcnow()` so tests can inject a fake clock.
 - `scheduling/scheduler.py` — `ScheduleClock` Protocol + `HAScheduleClock` impl. Wraps `async_track_time_change` with weekday filtering inside the callback (HA has no weekday param). Returns a cancel handle. DST: non-existent local times are skipped on spring-forward; the first occurrence fires on fall-back.
-- `scheduling/mode_changer.py` — `ModeChanger` Protocol + `HAModeChanger` impl. **The single production call site for `alarm_control_panel.*` service calls.** Stamps `Context.id = "abode_sched_<pair_id>_<8-hex-nonce>"` for schedule-initiated changes (`SCHEDULE_ARM`, `SCHEDULE_DISARM`, `RECONCILE_DISARM`) so Phase 3's state-change listener can distinguish user from schedule transitions. `USER_WS` source gets a default (nil) context. Raises `ModeChangeFailed` (subclass of `HomeAssistantError`) when the panel is unavailable or the service call fails.
-- `scheduling/manager.py` — `ScheduleManager`: CRUD with validation. Constructor accepts `clock`, `scheduler_clock`, `mode_changer` (injected; `scheduler_clock` and `mode_changer` unused until Phase 3). Instantiated in `async_setup_entry`; stored at `hass.data[DOMAIN]["schedule_manager"]`. Runtime methods (`async_arm`, `async_disarm`, `async_reconcile_on_startup`) are added in Phase 3.
+- `scheduling/mode_changer.py` — `ModeChanger` Protocol + `HAModeChanger` impl. **The single production call site for `alarm_control_panel.*` service calls.** Stamps `Context.id = "abode_sched_<pair_id>_<8-hex-nonce>"` for schedule-initiated changes (`SCHEDULE_ARM`, `SCHEDULE_DISARM`, `RECONCILE_DISARM`) so the state-change listener can distinguish user from schedule transitions. `USER_WS` source gets a default (nil) context. Raises `ModeChangeFailed` (subclass of `HomeAssistantError`) when the panel is unavailable or the service call fails.
+- `scheduling/state_machine.py` — `derive_state` pure function: pair is `ARMED` iff `last_armed_at > last_disarmed_at` and `now ≤ expected_disarm_at`. No side effects. `expected_disarm_at` computes the next occurrence of `disarm_time` ≥ `last_armed_at` in HA's local tz (DST-safe).
+- `scheduling/retry.py` — `async_retry` with backoff (1 s / 4 s / 16 s, 4 total attempts). `RetryExhausted` carries the last error and attempt count.
+- `scheduling/manager.py` — `ScheduleManager`: CRUD + full runtime. Registers one daily `ScheduleClock` handle per pair for the arm edge; disarm is a one-shot `async_call_later` registered after each successful arm. Defers reconciliation to `EVENT_HOMEASSISTANT_STARTED` if the panel is not yet in `hass.states`. Fires `abode_security.schedule_fired / .schedule_skipped / .schedule_failed` events. Raises `schedule_fire_failed` repair issue after retry exhaustion; clears it on next success.
 - `websocket_schedules.py` — five WS commands (`schedules/{list,get,create,update,delete}`). `list`/`get` open to any authenticated user; mutations require `@require_admin`.
 
 **Context-id source-tagging convention** (Phase 2 onwards):
@@ -182,6 +184,41 @@ flowchart LR
     Mgr --> Store
     Store --> Disk
     Store -->|corrupt records| Repair
+```
+
+**Runtime sequence (arm fires → context-id propagates → listener handles):**
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant WS as WebSocket API
+    participant Mgr as ScheduleManager
+    participant SC as HAScheduleClock
+    participant MC as HAModeChanger
+    participant HA as Home Assistant
+
+    User->>WS: schedules/create (22:00→06:00 Mon)
+    WS->>Mgr: async_create(...)
+    Mgr->>SC: async_track_daily(arm_cb, hour=22)
+    Note over SC: daily timer registered
+
+    Note over HA: Monday 22:00 local time
+    HA->>SC: async_track_time_change fires
+    SC->>Mgr: arm_cb() → async_arm(pair_id)
+    Mgr->>MC: async_set_mode("home", SCHEDULE_ARM, pair_id=...)
+    MC->>HA: alarm_control_panel.alarm_arm_home\nContext.id="abode_sched_<id>_<nonce>"
+    HA-->>HA: state → armed_home
+    Mgr->>HA: bus.async_fire(schedule_fired, action=arm)
+    Mgr->>HA: async_call_later(8h, disarm_cb)
+
+    Note over HA: Tuesday 06:00 local time
+    HA->>Mgr: disarm_cb() → async_disarm(pair_id)
+    Mgr->>MC: async_set_mode("standby", SCHEDULE_DISARM)
+    MC->>HA: alarm_control_panel.alarm_disarm\nContext.id="abode_sched_<id>_<nonce>"
+    HA-->>HA: state → disarmed
+    Note over HA: EVENT_STATE_CHANGED fires
+    Mgr->>Mgr: _on_panel_state_changed\nctx starts with abode_sched_ → IGNORE
+    Mgr->>HA: bus.async_fire(schedule_fired, action=disarm)
 ```
 
 ### WebSocket API (`websocket_api.py`)
