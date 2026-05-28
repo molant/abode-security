@@ -27,6 +27,8 @@ from .action_manager import (
 )
 from .const import CONF_DEBUG_LOGGING, DOMAIN
 from .helpers import find_abode_alarm_panel
+from .scheduling.mode_changer import ModeChangeFailed, ModeChanger
+from .scheduling.models import ChangeSource
 from .websocket_schedules import (
     websocket_schedules_create,
     websocket_schedules_delete,
@@ -249,6 +251,11 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
 def _get_action_manager(hass: HomeAssistant) -> ActionManager | None:
     """Get the ActionManager from hass.data."""
     return cast("ActionManager | None", hass.data.get(DOMAIN, {}).get("action_manager"))
+
+
+def _get_mode_changer(hass: HomeAssistant) -> ModeChanger | None:
+    """Get the ModeChanger from hass.data."""
+    return cast("ModeChanger | None", hass.data.get(DOMAIN, {}).get("mode_changer"))
 
 
 # --- Action CRUD Endpoints ---
@@ -561,24 +568,6 @@ STATE_TO_MODE = {
     "armed_away": "away",
 }
 
-# Inverse: mode ID → alarm_control_panel service to invoke. The frontend
-# panel calls these via websocket_modes_set, which delegates to the standard
-# alarm_control_panel domain so we don't duplicate the underlying SDK calls.
-MODE_TO_SERVICE = {
-    "standby": "alarm_disarm",
-    "home": "alarm_arm_home",
-    "away": "alarm_arm_away",
-}
-
-# Defense-in-depth against drift: voluptuous already gates `mode_id` on
-# VALID_MODES, but if VALID_MODES grows and MODE_TO_SERVICE doesn't, the
-# `MODE_TO_SERVICE[mode_id]` lookup below would KeyError under a request
-# that passed schema validation. Fail at import time instead.
-assert set(MODE_TO_SERVICE) == VALID_MODES, (
-    "MODE_TO_SERVICE keys must match VALID_MODES exactly"
-)
-
-
 # `find_abode_alarm_panel` (resolves the panel via entity registry, falling
 # back to entity_id prefix) lives in `helpers` so `action_trigger` can share
 # the same lookup. See helpers.py for the rationale.
@@ -662,38 +651,22 @@ async def websocket_modes_set(
     connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Set the active Abode mode by delegating to alarm_control_panel.
+    """Set the active Abode mode via HAModeChanger.
 
-    Maps mode_id → alarm_control_panel service:
-      standby → alarm_disarm
-      home    → alarm_arm_home
-      away    → alarm_arm_away
-
-    The frontend Modes tab calls this after a confirm dialog. We don't go
-    straight to the Abode SDK because alarm_control_panel already wraps it
-    and handles entity-state updates uniformly.
+    All alarm_control_panel service calls route through HAModeChanger so Phase 3
+    can distinguish schedule-initiated changes from user changes via Context.id.
     """
     mode_id = msg["mode_id"]
-
-    panel_state = find_abode_alarm_panel(hass)
-    if panel_state is None:
-        connection.send_error(
-            msg["id"],
-            "not_found",
-            "No Abode alarm_control_panel entity registered",
-        )
+    mode_changer = _get_mode_changer(hass)
+    if mode_changer is None:
+        connection.send_error(msg["id"], "not_ready", "Mode changer not initialized")
         return
-
-    service = MODE_TO_SERVICE[mode_id]
-
     try:
-        await hass.services.async_call(
-            "alarm_control_panel",
-            service,
-            {"entity_id": panel_state.entity_id},
-            blocking=True,
-        )
-    except (HomeAssistantError, ServiceNotFound, ValueError) as err:
+        await mode_changer.async_set_mode(mode_id, ChangeSource.USER_WS)
+    except ValueError as err:
+        connection.send_error(msg["id"], "validation_error", str(err))
+        return
+    except ModeChangeFailed as err:
         _LOGGER.warning("Failed to set mode %s: %s", mode_id, err)
         connection.send_error(msg["id"], "set_mode_failed", str(err))
         return
