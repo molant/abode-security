@@ -10,6 +10,9 @@ import type {
   Mode,
   SensorsByCategory,
   AlarmEntity,
+  AbodeSchedule,
+  ScheduleCreateInput,
+  ScheduleUpdateInput,
 } from './types';
 
 /**
@@ -148,4 +151,54 @@ export async function fetchIntegrationConfig(hass: HomeAssistant): Promise<Abode
   return hass.callWS<AbodeIntegrationConfig>({
     type: 'abode_security/config/get',
   });
+}
+
+/**
+ * Fetch all Home schedules.
+ */
+export async function fetchSchedules(hass: HomeAssistant): Promise<AbodeSchedule[]> {
+  const response = await hass.callWS<{ schedules: AbodeSchedule[] }>({
+    type: 'abode_security/schedules/list',
+  });
+  return response.schedules;
+}
+
+/**
+ * Fetch a single schedule by ID.
+ */
+export async function getSchedule(hass: HomeAssistant, id: string): Promise<AbodeSchedule> {
+  return hass.callWS<AbodeSchedule>({ type: 'abode_security/schedules/get', schedule_id: id });
+}
+
+/**
+ * Create a new schedule.
+ */
+export async function createSchedule(
+  hass: HomeAssistant,
+  data: ScheduleCreateInput,
+): Promise<AbodeSchedule> {
+  return hass.callWS<AbodeSchedule>({ type: 'abode_security/schedules/create', ...data });
+}
+
+/**
+ * Update an existing schedule. Remaps the local `id` field to the backend's
+ * `schedule_id` parameter; the mutable payload fields are spread separately.
+ */
+export async function updateSchedule(
+  hass: HomeAssistant,
+  data: ScheduleUpdateInput,
+): Promise<AbodeSchedule> {
+  const { id, ...rest } = data;
+  return hass.callWS<AbodeSchedule>({
+    type: 'abode_security/schedules/update',
+    schedule_id: id,
+    ...rest,
+  });
+}
+
+/**
+ * Delete a schedule.
+ */
+export async function deleteSchedule(hass: HomeAssistant, id: string): Promise<void> {
+  await hass.callWS({ type: 'abode_security/schedules/delete', schedule_id: id });
 }
