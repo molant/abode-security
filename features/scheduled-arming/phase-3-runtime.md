@@ -402,7 +402,7 @@ Deployable unit: one end-to-end test against the mock Abode API verifying a comp
 
 #### Implementation
 
-- [ ] Create `tests/test_schedule_integration.py` with `@pytest.mark.integration`:
+- [x] Create `tests/test_schedule_integration.py` with `@pytest.mark.integration`:
   - Boot the mock Abode stack (existing fixture from `conftest.py`; see `tests/test_*_integration.py` for the pattern).
   - Create a schedule via WS `schedules/create` for "today 22:00 → 06:00".
   - Advance HA's monotonic clock to 22:00 today using BOTH `freezegun.freeze_time` (for `dt_util.utcnow` / `dt_util.now`) AND `pytest_homeassistant_custom_component.async_fire_time_changed(hass, target_dt)` (so `async_track_time_change` callbacks fire). One without the other is insufficient — `async_track_time_change` schedules against HA's internal "next fire" computation, which only re-evaluates when `async_fire_time_changed` is called. See HA testing docs and the existing `test_action_trigger.py` patterns.
