@@ -782,4 +782,20 @@ describe('ModesTab', () => {
       expect(el._loading).to.equal(true, '_loading must remain true (state ignored)');
     });
   });
+
+  describe('schedules section', () => {
+    it('renders both .modes-grid and abode-schedules-section', async () => {
+      const hass = createMockHass();
+      const el = await fixture<ModesTab>(html` <abode-modes-tab .hass=${hass}></abode-modes-tab> `);
+
+      // @ts-expect-error - accessing private property for testing
+      el._modes = createMockModes();
+      // @ts-expect-error - accessing private property for testing
+      el._loading = false;
+      await elementUpdated(el);
+
+      expect(el.shadowRoot?.querySelector('.modes-grid')).to.exist;
+      expect(el.shadowRoot?.querySelector('abode-schedules-section')).to.exist;
+    });
+  });
 });

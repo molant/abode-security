@@ -4,6 +4,7 @@ import type { PropertyValues } from 'lit';
 import type { HomeAssistant, AbodeMode, AbodeAction, Mode } from './types';
 import { fetchModes, fetchActions, setMode } from './api';
 import './abode-modal';
+import './schedules-section';
 
 // Mirrors backend STATE_TO_MODE (websocket_api.py). Replicated here so the
 // frontend can derive the active mode from `hass.states[panel].state` at
@@ -482,6 +483,8 @@ export class ModesTab extends LitElement {
         : ''}
 
       <div class="modes-grid">${this._modes.map((mode) => this._renderModeCard(mode))}</div>
+
+      <abode-schedules-section .hass=${this.hass}></abode-schedules-section>
 
       ${this._confirmMode ? this._renderConfirmDialog(this._confirmMode) : ''}
     `;
