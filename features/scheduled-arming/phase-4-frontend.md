@@ -446,16 +446,16 @@ Deployable unit: the section actually appears beneath the modes grid.
 
 #### Implementation
 
-- [ ] In `frontend/src/modes-tab.ts`:
+- [x] In `frontend/src/modes-tab.ts`:
   - Import `'./schedules-section'`.
   - Add `<abode-schedules-section .hass=${this.hass}></abode-schedules-section>` immediately after `<div class="modes-grid">…</div>` in the `render()` method (around line 484).
   - Adjust styles: the section needs ~24px of top margin separating it from the modes grid.
-- [ ] No changes to mode card content — the user explicitly said no card-level hints.
+- [x] No changes to mode card content — the user explicitly said no card-level hints.
 
 #### Tests
 
-- [ ] Existing `modes-tab.ts` tests continue to pass (regression check).
-- [ ] Add one mount test: `modes-tab` renders both `.modes-grid` and `<abode-schedules-section>`.
+- [x] Existing `modes-tab.ts` tests continue to pass (regression check).
+- [x] Add one mount test: `modes-tab` renders both `.modes-grid` and `<abode-schedules-section>`.
 
 ### Sub-Phase F: E2E test
 
