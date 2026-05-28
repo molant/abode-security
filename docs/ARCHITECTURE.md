@@ -256,10 +256,20 @@ Lit component `abode-configuration-panel`, registered as HA panel at `/abode_sec
 Three tabs:
 
 - **Actions** — list with enable/disable/edit/delete/test, plus a form editor that multi-selects sensors and alarm entities
-- **Modes** — Standby / Home / Away with active indicator and per-mode action counts
+- **Modes** — Standby / Home / Away with active indicator and per-mode action counts; the tab also hosts the **Schedules section** (see below)
 - **Cameras** — lists every camera entity in HA (`entities/cameras` WS endpoint). The integration is camera-source-agnostic — any camera is a valid notification deep-link target. Each card renders HA's native `<ha-camera-stream>` element (the same renderer the picture-entity Lovelace card uses with `camera_view: auto`), so auth, HLS/WebRTC fallback, and stream lifecycle are delegated to HA. Tapping a card dispatches `hass-more-info` for that entity, matching picture-entity's `tap_action: more-info`. Deep-link URL scheme: `?tab=cameras&camera=<entity_id>` — parsed at field-init time to mount directly on the target tab without a flash. On deep-link arrival the matching card scrolls/highlights *and* the component fires `hass-more-info` once so the user lands on the live-stream popup; closing the popup reveals the grid below. Notification blueprint sets `url`/`clickAction` to this path.
 
 Communication is **WebSocket-only** via `hass.callWS()`; no custom REST endpoints. Command schemas live in `frontend/src/api.ts`.
+
+### Schedules UI (`abode-schedules-section`)
+
+An always-visible section mounted below the mode cards in `abode-modes-tab`. Three components compose it:
+
+- **`abode-day-chip-picker`** — reusable 7-chip weekday multi-select (Mon–Sun). Fires `change` events with `bubbles: true, composed: true`. Each chip is a native `<button>` with `aria-pressed` and full-name `aria-label` for disambiguation.
+- **`abode-schedule-row`** — single row with view and inline-edit modes. View mode renders day chips (read-only), arm→disarm times, enabled toggle, and admin-only edit/delete icons. Edit mode renders the chip picker, two `<input type="time">` pickers, optional name field, enabled toggle, and Save/Cancel. Client-side validation runs before any WS call. `save` events carry `{ id, data: ScheduleCreateInput }`; `id === ''` signals a new row.
+- **`abode-schedules-section`** — list container. Fetches schedules on mount via `schedules/list`, delegates save/delete/cancel-new events from child rows via event delegation on the `<section>` element. Admin gating hides Add/edit/delete controls for non-admin users (UX layer only; `@require_admin` is enforced server-side). Confirm-delete uses `abode-modal` with `variant="alertdialog"`.
+
+Data flow: section fetches list → renders rows → row save dispatches event → section calls `createSchedule`/`updateSchedule` → replaces local copy on success. No live push updates in v1 (the section only refreshes on mount).
 
 ## Data Flow
 
