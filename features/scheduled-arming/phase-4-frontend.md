@@ -281,7 +281,7 @@ Deployable unit: the section component that owns the list, fetches schedules on 
 
 #### Implementation
 
-- [ ] Create `frontend/src/schedules-section.ts`:
+- [x] Create `frontend/src/schedules-section.ts`:
   ```typescript
   @customElement('abode-schedules-section')
   export class SchedulesSection extends LitElement {
@@ -423,13 +423,13 @@ Deployable unit: the section component that owns the list, fetches schedules on 
     }
   }
   ```
-- [ ] Confirm-before-delete pattern: reuse `abode-modal` like `modes-tab.ts` does for the mode-switch confirm. Heading "Delete schedule?", body "This will stop the automatic arming at the configured times. The action does not affect the current panel state."
-- [ ] **Optimistic concurrency**: when a WS update returns the updated schedule, replace the local copy. If the user is mid-edit on another row when the section re-fetches (rare, but possible via `hass-tagged` reactivity), preserve the in-progress draft. Simplest implementation: only refresh on explicit mount; do not subscribe to WS push updates in v1.
-- [ ] Listen to WS events (`abode_security.schedule_fired` etc.) for **live `last_armed_at` / `last_disarmed_at` updates** on rows? **Out of scope for v1** — keep the section's data fresh only on mount. The row's "last fired" UI is just `last_armed_at`/`last_disarmed_at` from the stored schedule.
+- [x] Confirm-before-delete pattern: reuse `abode-modal` like `modes-tab.ts` does for the mode-switch confirm. Heading "Delete schedule?", body "This will stop the automatic arming at the configured times. The action does not affect the current panel state."
+- [x] **Optimistic concurrency**: when a WS update returns the updated schedule, replace the local copy. If the user is mid-edit on another row when the section re-fetches (rare, but possible via `hass-tagged` reactivity), preserve the in-progress draft. Simplest implementation: only refresh on explicit mount; do not subscribe to WS push updates in v1.
+- [x] Listen to WS events (`abode_security.schedule_fired` etc.) for **live `last_armed_at` / `last_disarmed_at` updates** on rows? **Out of scope for v1** — keep the section's data fresh only on mount. The row's "last fired" UI is just `last_armed_at`/`last_disarmed_at` from the stored schedule.
 
 #### Tests
 
-- [ ] `frontend/src/__tests__/schedules-section.test.ts`:
+- [x] `frontend/src/__tests__/schedules-section.test.ts`:
   - Initial mount fetches schedules; renders empty-state if list is empty.
   - "Add schedule" button visible for admin, hidden for non-admin.
   - Click "Add schedule" → new row in edit mode appears at the bottom.
