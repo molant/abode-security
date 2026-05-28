@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: done
 ---
 
 # Phase 2: Mode dispatcher + scheduler clock
@@ -42,9 +42,9 @@ tests/
 
 ### Baseline Test Verification
 
-- [ ] `uv run pytest -m ""` — all tests pass.
-- [ ] `./scripts/check.sh` — green.
-- [ ] Existing `tests/test_websocket_api.py` modes/set tests pass — they will be the regression net for the refactor.
+- [x] `uv run pytest -m ""` — all tests pass.
+- [x] `./scripts/check.sh` — green.
+- [x] Existing `tests/test_websocket_api.py` modes/set tests pass — they will be the regression net for the refactor.
 
 ### Sub-Phase A: Clock protocol (`scheduling/clock.py`)
 
@@ -233,18 +233,18 @@ Deployable unit: a single typed boundary around the existing `hass.services.asyn
 
 ### Documentation (End of Phase)
 
-- [ ] `docs/ARCHITECTURE.md` — under the "Schedule scheduling subsystem" section added in Phase 1, add the Clock / ScheduleClock / ModeChanger protocols and their HA impls. Note the Context-id source-tagging convention.
-- [ ] `docs/ASYNC_AWAIT_PATTERNS.md` — if it documents service-call patterns, add a note that all alarm-mode changes route through `HAModeChanger`.
+- [x] `docs/ARCHITECTURE.md` — under the "Schedule scheduling subsystem" section added in Phase 1, add the Clock / ScheduleClock / ModeChanger protocols and their HA impls. Note the Context-id source-tagging convention.
+- [x] `docs/ASYNC_AWAIT_PATTERNS.md` — if it documents service-call patterns, add a note that all alarm-mode changes route through `HAModeChanger`.
 
 ### Build Verification
 
-- [ ] `uv run ruff check .` — zero issues.
-- [ ] `uv run mypy custom_components` — zero errors. Protocol classes type-check correctly.
-- [ ] `uv run pyright` — zero errors.
-- [ ] `uv run pytest -m ""` — all tests pass.
-- [ ] Scan output for warnings/errors/uncaught exceptions even when exit code is 0.
+- [x] `uv run ruff check .` — zero issues.
+- [x] `uv run mypy custom_components` — zero errors. Protocol classes type-check correctly.
+- [x] `uv run pyright` — zero errors.
+- [x] `uv run pytest -m ""` — all tests pass.
+- [x] Scan output for warnings/errors/uncaught exceptions even when exit code is 0.
 - [ ] Existing modes/set behavior unchanged: deploy to dev HA via `./scripts/dev.sh`, verify the Modes tab still switches modes correctly (manual smoke test).
-- [ ] `grep -rn "alarm_control_panel" custom_components/abode_security/` — exactly one production hit (in `mode_changer.py`), excluding constants and comments.
+- [x] `grep -rn "alarm_control_panel" custom_components/abode_security/` — exactly one production hit (in `mode_changer.py`), excluding constants and comments.
 
 ### Manual Verification with MCP Tools
 
