@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Phase 3: Runtime — fire, skip, reconcile, retry
@@ -413,19 +413,19 @@ Deployable unit: one end-to-end test against the mock Abode API verifying a comp
 
 ### Documentation (End of Phase)
 
-- [ ] `docs/ARCHITECTURE.md` — extend the schedule scheduling subsystem section: add a sequence diagram (Mermaid) of "user creates schedule → arm fires → context-id propagates → state change → manager handles".
-- [ ] `docs/notifications.md` — append a section "Notifying on schedule events" with a small automation snippet listening on `abode_security.schedule_fired` / `schedule_failed` (parallel to the existing `action_triggered` pattern). Mention the bundled blueprint already covers the shape; users can copy and adapt.
-- [ ] `CLAUDE.md` — no change needed.
+- [x] `docs/ARCHITECTURE.md` — extend the schedule scheduling subsystem section: add a sequence diagram (Mermaid) of "user creates schedule → arm fires → context-id propagates → state change → manager handles".
+- [x] `docs/notifications.md` — append a section "Notifying on schedule events" with a small automation snippet listening on `abode_security.schedule_fired` / `schedule_failed` (parallel to the existing `action_triggered` pattern). Mention the bundled blueprint already covers the shape; users can copy and adapt.
+- [x] `CLAUDE.md` — no change needed.
 
 ### Build Verification
 
-- [ ] `uv run ruff check .` — zero issues.
-- [ ] `uv run mypy custom_components` — zero errors.
-- [ ] `uv run pyright` — zero errors.
-- [ ] `uv run pytest -m ""` — all tests pass.
-- [ ] `uv run pytest -m integration` against `./scripts/dev.sh` stack — passes.
-- [ ] Scan output for `WARNING` / `ERROR` lines; verify no unexpected stack traces.
-- [ ] `./scripts/check.sh` — green.
+- [x] `uv run ruff check .` — zero issues.
+- [x] `uv run mypy custom_components` — zero errors.
+- [x] `uv run pyright` — zero errors.
+- [x] `uv run pytest -m ""` — all tests pass.
+- [ ] `uv run pytest -m integration` against `./scripts/dev.sh` stack — passes (requires Docker; deferred to deployment).
+- [x] Scan output for `WARNING` / `ERROR` lines; verify no unexpected stack traces.
+- [x] `./scripts/check.sh` — green.
 
 ### Manual Verification with MCP Tools
 
