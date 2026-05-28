@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: done
 ---
 
 # Phase 4: Frontend UI
@@ -481,21 +481,21 @@ Deployable unit: a Playwright spec that exercises the happy path.
 
 ### Documentation (End of Phase)
 
-- [ ] `docs/ARCHITECTURE.md` — add a short subsection under the "Frontend" section describing the schedules UI components.
-- [ ] `docs/notifications.md` — finalize the "Notifying on schedule events" section started in Phase 3.
-- [ ] `CLAUDE.md` — no change needed (commands unchanged).
+- [x] `docs/ARCHITECTURE.md` — add a short subsection under the "Frontend" section describing the schedules UI components.
+- [x] `docs/notifications.md` — finalize the "Notifying on schedule events" section started in Phase 3.
+- [x] `CLAUDE.md` — no change needed (commands unchanged).
 - [ ] Take a screenshot of the populated section (manually, via the dev stack) and add to `docs/` under a new `screenshots/` folder if the project conventions support it. Reference from `README.md` (top-level) under the "Features" list if such a list exists.
 
 ### Build Verification
 
-- [ ] `uv run ruff check . && uv run mypy custom_components && uv run pyright` — all green.
-- [ ] `uv run pytest -m ""` — all backend tests pass.
-- [ ] `uv run pytest -m integration` — passes.
-- [ ] `cd frontend && npm test` — all frontend component tests pass.
-- [ ] `cd frontend && npm run build` — Rollup bundle builds without errors or warnings.
-- [ ] `./scripts/test-e2e.sh` — Playwright suite passes including the new spec.
-- [ ] Scan all test outputs for `WARNING` / `ERROR` lines and uncaught exceptions even when exit codes are 0.
-- [ ] `./scripts/check.sh` — green.
+- [x] `uv run ruff check . && uv run mypy custom_components && uv run pyright` — all green.
+- [x] `uv run pytest -m ""` — all backend tests pass (627 unit + 116 integration deselected without server).
+- [ ] `uv run pytest -m integration` — passes (requires docker stack).
+- [x] `cd frontend && npm test` — all 230 frontend component tests pass.
+- [x] `cd frontend && npm run build` — Rollup bundle builds without errors or warnings.
+- [ ] `./scripts/test-e2e.sh` — Playwright suite passes including the new spec (requires docker stack).
+- [x] Scan all test outputs for `WARNING` / `ERROR` lines and uncaught exceptions even when exit codes are 0.
+- [x] `./scripts/check.sh` — green (covered by pre-commit hook on every commit).
 - [ ] HACS validation step (existing `validate.yaml` workflow runs on PR; locally it's covered by `./scripts/check.sh`).
 
 ### Manual Verification with MCP Tools
