@@ -85,7 +85,7 @@ Deployable unit: a thin wrapper around `async_track_time_change` that returns a 
 
 #### Implementation
 
-- [ ] Create `scheduling/scheduler.py`:
+- [x] Create `scheduling/scheduler.py`:
   ```python
   from typing import Protocol, Callable, Awaitable
   from homeassistant.helpers.event import async_track_time_change
@@ -115,12 +115,12 @@ Deployable unit: a thin wrapper around `async_track_time_change` that returns a 
                   await callback()
           return async_track_time_change(self._hass, _wrapper, hour=hour, minute=minute, second=0)
   ```
-- [ ] Verify HA `async_track_time_change` calls the callback in local tz (it does — see HA source). Document this in a comment because it's the crux of "wall-clock local" semantics from the README.
-- [ ] Export `ScheduleClock`, `HAScheduleClock`, `CancelHandle` from `scheduling/__init__.py`.
+- [x] Verify HA `async_track_time_change` calls the callback in local tz (it does — see HA source). Document this in a comment because it's the crux of "wall-clock local" semantics from the README.
+- [x] Export `ScheduleClock`, `HAScheduleClock`, `CancelHandle` from `scheduling/__init__.py`.
 
 #### Tests
 
-- [ ] `tests/test_scheduler.py` (use HA's `async_fire_time_changed` from `pytest_homeassistant_custom_component`):
+- [x] `tests/test_scheduler.py` (use HA's `async_fire_time_changed` from `pytest_homeassistant_custom_component`):
   - Register a daily 22:00 Mon-only callback. Advance HA time to a Monday 22:00 → callback fires.
   - Advance to a Tuesday 22:00 → callback does NOT fire.
   - Cancel the handle → subsequent 22:00 ticks don't fire.
