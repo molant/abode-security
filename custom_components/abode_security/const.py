@@ -23,6 +23,13 @@ DEFAULT_RETRY_COUNT = 3
 DEFAULT_EVENT_FILTER: list[str] = []  # No filtering by default
 DEFAULT_SNAPSHOT_RETENTION_DAYS = 30
 
+# Schedules storage
+STORAGE_KEY_SCHEDULES = "abode_security_schedules"
+STORAGE_VERSION_SCHEDULES = 1
+REPAIR_ISSUE_CORRUPT_SCHEDULES = "corrupt_schedule_records"
+MAX_SCHEDULE_NAME_LENGTH = 100
+MAX_SCHEDULES = 50
+
 # Event types for filtering
 EVENT_TYPES = [
     "device_update",
