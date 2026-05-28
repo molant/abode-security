@@ -31,6 +31,18 @@ MAX_SCHEDULE_NAME_LENGTH = 100
 MAX_SCHEDULES = 50
 CONTEXT_ID_PREFIX = "abode_sched_"
 
+# Schedule retry policy
+SCHEDULE_RETRY_DELAYS_SECONDS = (1, 4, 16)  # delays between attempts
+SCHEDULE_RETRY_TOTAL_ATTEMPTS = (
+    4  # 1 initial + 3 retries; must equal len(SCHEDULE_RETRY_DELAYS_SECONDS) + 1
+)
+
+# Schedule HA events
+EVENT_SCHEDULE_FIRED = "abode_security.schedule_fired"
+EVENT_SCHEDULE_SKIPPED = "abode_security.schedule_skipped"
+EVENT_SCHEDULE_FAILED = "abode_security.schedule_failed"
+REPAIR_ISSUE_SCHEDULE_FIRE_FAILED = "schedule_fire_failed"
+
 # Event types for filtering
 EVENT_TYPES = [
     "device_update",

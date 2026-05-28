@@ -26,7 +26,8 @@ async def schedule_manager(hass):
         HAModeChanger(hass),
     )
     await mgr.async_setup()
-    return mgr
+    yield mgr
+    await mgr.async_shutdown()
 
 
 @pytest.fixture

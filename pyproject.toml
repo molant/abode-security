@@ -101,6 +101,11 @@ exclude = [
 select = ["E", "F", "W", "I", "N", "UP", "PIE", "SIM", "ARG", "ASYNC", "DTZ"]
 ignore = ["E501", "N812", "N818"]  # Naming conventions in vendored library
 
+[tool.ruff.lint.per-file-ignores]
+# Pytest fixtures appear in method signatures even when not used directly —
+# they are evaluated as DI regardless of whether the test body references them.
+"tests/**" = ["ARG002"]
+
 [tool.mypy]
 # Matches `requires-python = ">=3.14.2"`. Enables 3.12+/3.13+/3.14+ syntax
 # checks (PEP 695 type aliases, `type` statements, etc.) and standard-library

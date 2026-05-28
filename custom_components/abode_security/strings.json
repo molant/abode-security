@@ -62,6 +62,10 @@
     "corrupt_schedule_records": {
       "title": "Abode Security: corrupt schedule records detected",
       "description": "Records dropped: {count}. One or more entries in `.storage/abode_security_schedules.json` could not be loaded and were skipped. Any remaining schedules are still active. Inspect the file or recreate the affected schedules from the Modes panel. See Home Assistant logs for per-record details."
+    },
+    "schedule_fire_failed": {
+      "title": "Abode Security: schedule '{schedule_name}' failed to fire",
+      "description": "After 4 attempts (1 initial + 3 retries), the scheduled arm or disarm for '{schedule_name}' could not complete. Last error: {error}. Check your Abode connection and the Home Assistant logs. The schedule will retry at its next scheduled time."
     }
   },
   "services": {
