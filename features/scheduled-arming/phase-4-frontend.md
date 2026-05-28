@@ -37,7 +37,7 @@ frontend/src/
     schedule-row.test.ts          # new: edit flow, validation
     schedules-section.test.ts     # new: list rendering, add flow, WS interaction
 tests/e2e/
-  test_scheduled_arming.spec.ts   # new: Playwright happy-path E2E
+  scheduled-arming.spec.ts        # new: Playwright happy-path E2E
 ```
 
 ## Implementation Checklist
@@ -463,7 +463,7 @@ Deployable unit: a Playwright spec that exercises the happy path.
 
 #### Implementation
 
-- [ ] Create `tests/e2e/test_scheduled_arming.spec.ts` (mirror existing E2E layout):
+- [x] Create `tests/e2e/scheduled-arming.spec.ts` (mirror existing E2E layout):
   - Setup: dev stack via `./scripts/dev.sh` (the e2e suite already launches it).
   - Log in as admin.
   - Navigate to `/abode_security`.
@@ -477,7 +477,7 @@ Deployable unit: a Playwright spec that exercises the happy path.
   - Verify name displayed.
   - Toggle enabled off → verify visual state.
   - Delete the row → confirm in dialog → verify row gone.
-- [ ] **Non-admin E2E is optional, not required.** No non-admin fixture exists today in `tests/e2e/fixtures/` (only `auth.ts` for the `admin/admin` user). If you decide to add one, create a new HA user via the WS API in a setup step rather than baking credentials into the fixture; otherwise, cover the non-admin path in the `web-test-runner` unit tests for `schedules-section.test.ts` (which already mock `hass.user.is_admin`) and skip the E2E variant.
+- [x] **Non-admin E2E is optional, not required.** No non-admin fixture exists today in `tests/e2e/fixtures/` (only `auth.ts` for the `admin/admin` user). If you decide to add one, create a new HA user via the WS API in a setup step rather than baking credentials into the fixture; otherwise, cover the non-admin path in the `web-test-runner` unit tests for `schedules-section.test.ts` (which already mock `hass.user.is_admin`) and skip the E2E variant.
 
 ### Documentation (End of Phase)
 
