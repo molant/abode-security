@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in_progress
 ---
 
 # Phase 4: Frontend UI
@@ -55,7 +55,7 @@ Deployable unit: TypeScript types and `api.ts` functions that the new components
 
 #### Implementation
 
-- [ ] In `frontend/src/types.ts`, **widen the existing `HomeAssistant` interface** (at lines 18-21) to expose the current user — required by the section's admin-gating logic:
+- [x] In `frontend/src/types.ts`, **widen the existing `HomeAssistant` interface** (at lines 18-21) to expose the current user — required by the section's admin-gating logic:
   ```typescript
   export interface HomeAssistant {
     callWS<T>(params: { type: string; [key: string]: unknown }): Promise<T>;
@@ -67,7 +67,7 @@ Deployable unit: TypeScript types and `api.ts` functions that the new components
     };
   }
   ```
-- [ ] In `frontend/src/types.ts` add:
+- [x] In `frontend/src/types.ts` add:
   ```typescript
   export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
   export const WEEKDAYS: readonly Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -96,7 +96,7 @@ Deployable unit: TypeScript types and `api.ts` functions that the new components
 
   export type ScheduleUpdateInput = Partial<ScheduleCreateInput> & { id: string };
   ```
-- [ ] In `frontend/src/api.ts` add (parallel to the existing actions functions):
+- [x] In `frontend/src/api.ts` add (parallel to the existing actions functions):
   ```typescript
   export async function fetchSchedules(hass: HomeAssistant): Promise<AbodeSchedule[]> {
     const resp = await hass.callWS<{ schedules: AbodeSchedule[] }>({
@@ -120,7 +120,7 @@ Deployable unit: TypeScript types and `api.ts` functions that the new components
 
 #### Tests
 
-- [ ] No new unit test for `api.ts` (it's a thin pass-through; existing convention doesn't unit-test these directly). Type-checking via `tsc` is the safety net.
+- [x] No new unit test for `api.ts` (it's a thin pass-through; existing convention doesn't unit-test these directly). Type-checking via `tsc` is the safety net.
 
 ### Sub-Phase B: `day-chip-picker.ts` widget
 

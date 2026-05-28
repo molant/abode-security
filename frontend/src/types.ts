@@ -18,6 +18,11 @@ export interface HassEntityState {
 export interface HomeAssistant {
   callWS<T>(params: { type: string; [key: string]: unknown }): Promise<T>;
   states: Record<string, HassEntityState>;
+  user?: {
+    is_admin: boolean;
+    id?: string;
+    name?: string;
+  };
 }
 
 /**
@@ -152,3 +157,30 @@ export interface AbodeCamera {
   name: string;
   area: string | null;
 }
+
+export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+export const WEEKDAYS: readonly Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+export interface AbodeSchedule {
+  id: string;
+  name: string;
+  weekdays: Weekday[];
+  arm_time: string;
+  disarm_time: string;
+  enabled: boolean;
+  created_at: string;
+  last_armed_at: string | null;
+  last_disarmed_at: string | null;
+  last_skip_reason: string | null;
+  last_error: string | null;
+}
+
+export interface ScheduleCreateInput {
+  name?: string;
+  weekdays: Weekday[];
+  arm_time: string;
+  disarm_time: string;
+  enabled?: boolean;
+}
+
+export type ScheduleUpdateInput = Partial<ScheduleCreateInput> & { id: string };
