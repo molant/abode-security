@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in_progress
 ---
 
 # Phase 2: Mode dispatcher + scheduler clock
@@ -52,7 +52,7 @@ Deployable unit: a 30-line module wrapping `dt_util.now()` for tz-aware "now" qu
 
 #### Implementation
 
-- [ ] Create `scheduling/clock.py`:
+- [x] Create `scheduling/clock.py`:
   ```python
   from typing import Protocol
   from datetime import datetime
@@ -70,11 +70,11 @@ Deployable unit: a 30-line module wrapping `dt_util.now()` for tz-aware "now" qu
       def utcnow(self) -> datetime:
           return dt_util.utcnow()
   ```
-- [ ] Export `Clock` and `HAClock` from `scheduling/__init__.py`.
+- [x] Export `Clock` and `HAClock` from `scheduling/__init__.py`.
 
 #### Tests
 
-- [ ] `tests/test_clock.py`:
+- [x] `tests/test_clock.py`:
   - `HAClock(hass).now()` returns aware datetime in `hass.config.time_zone`.
   - `HAClock(hass).utcnow()` returns aware UTC datetime.
   - Both methods return values within 1s of each other when called back-to-back (sanity).
