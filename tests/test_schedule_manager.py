@@ -25,7 +25,8 @@ async def manager(hass):
         HAModeChanger(hass),
     )
     await mgr.async_setup()
-    return mgr
+    yield mgr
+    await mgr.async_shutdown()
 
 
 @pytest.mark.usefixtures("mock_abode")

@@ -16,7 +16,7 @@ TO_REDACT = {"unique_id", "email", "username", "phone", "cookie", "token", "pass
 
 
 async def async_get_config_entry_diagnostics(
-    _hass: HomeAssistant, entry: ConfigEntry
+    hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
     abode_system: AbodeSystem = entry.runtime_data
@@ -109,5 +109,17 @@ async def async_get_config_entry_diagnostics(
             "consecutive_connect_failures": socketio_inst.consecutive_connect_failures,
             "last_packet_age_seconds": socketio_inst.last_packet_age_seconds,
         }
+
+    # Schedule stats (high-level only; no names/times to respect privacy).
+    schedule_mgr = hass.data.get("abode_security", {}).get("schedule_manager")
+    if schedule_mgr is not None:
+        try:
+            pairs = await schedule_mgr.async_get_all()
+            payload["schedules"] = {
+                "count": len(pairs),
+                "enabled_count": sum(1 for p in pairs if p.enabled),
+            }
+        except (AttributeError, TypeError):
+            payload["schedules"] = {"status": "unavailable"}
 
     return cast(dict[str, Any], async_redact_data(payload, TO_REDACT))
