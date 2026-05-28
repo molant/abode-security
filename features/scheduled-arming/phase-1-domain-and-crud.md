@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Phase 1: Domain & CRUD
