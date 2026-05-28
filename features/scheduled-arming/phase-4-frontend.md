@@ -198,7 +198,7 @@ Deployable unit: a single row that toggles between view and edit modes, validate
 
 #### Implementation
 
-- [ ] Create `frontend/src/schedule-row.ts`:
+- [x] Create `frontend/src/schedule-row.ts`:
   ```typescript
   @customElement('abode-schedule-row')
   export class ScheduleRow extends LitElement {
@@ -252,19 +252,19 @@ Deployable unit: a single row that toggles between view and edit modes, validate
     // Render view-mode and edit-mode bodies.
   }
   ```
-- [ ] View mode renders: `[day chips read-only] [arm → disarm] [enable toggle] [edit icon] [delete icon]`. If `last_error` is non-null on the schedule, render a small warning badge.
-- [ ] Edit mode renders: `[day-chip-picker editable] [arm input[type=time]] [→] [disarm input[type=time]] [name input optional] [enable toggle] [Save] [Cancel]`.
-- [ ] Validation errors appear inline beneath the row's edit area with `role="alert"`.
-- [ ] When `canEdit=false` (non-admin), the edit/delete icons are hidden; view mode only.
-- [ ] Disabled schedules render with reduced opacity (parallel to `action-list li.disabled` in `modes-tab.ts`).
+- [x] View mode renders: `[day chips read-only] [arm → disarm] [enable toggle] [edit icon] [delete icon]`. If `last_error` is non-null on the schedule, render a small warning badge.
+- [x] Edit mode renders: `[day-chip-picker editable] [arm input[type=time]] [→] [disarm input[type=time]] [name input optional] [enable toggle] [Save] [Cancel]`.
+- [x] Validation errors appear inline beneath the row's edit area with `role="alert"`.
+- [x] When `canEdit=false` (non-admin), the edit/delete icons are hidden; view mode only.
+- [x] Disabled schedules render with reduced opacity (parallel to `action-list li.disabled` in `modes-tab.ts`).
 
 #### "New row" subtype
 
-- [ ] Same component handles the "add schedule" case: the section creates a synthetic `AbodeSchedule` with empty fields and `id=""`, sets `_editing=true` initially, and listens for `save` (calls `createSchedule`) or `cancel-new` (removes the synthetic row). When `schedule.id === ''`, the row is in "new" mode and Cancel emits `cancel-new` instead of just toggling `_editing`.
+- [x] Same component handles the "add schedule" case: the section creates a synthetic `AbodeSchedule` with empty fields and `id=""`, sets `_editing=true` initially, and listens for `save` (calls `createSchedule`) or `cancel-new` (removes the synthetic row). When `schedule.id === ''`, the row is in "new" mode and Cancel emits `cancel-new` instead of just toggling `_editing`.
 
 #### Tests
 
-- [ ] `frontend/src/__tests__/schedule-row.test.ts`:
+- [x] `frontend/src/__tests__/schedule-row.test.ts`:
   - View mode renders correctly with all fields.
   - Click edit → enters edit mode with draft initialized.
   - Validation: empty weekdays → error shown, no save event.
