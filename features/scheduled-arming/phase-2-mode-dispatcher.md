@@ -133,11 +133,11 @@ Deployable unit: a single typed boundary around the existing `hass.services.asyn
 
 #### Implementation
 
-- [ ] In `const.py` add:
+- [x] In `const.py` add:
   ```python
   CONTEXT_ID_PREFIX = "abode_sched_"
   ```
-- [ ] Create `scheduling/mode_changer.py`:
+- [x] Create `scheduling/mode_changer.py`:
   ```python
   from typing import Protocol
   from homeassistant.core import Context, HomeAssistant
@@ -190,11 +190,11 @@ Deployable unit: a single typed boundary around the existing `hass.services.asyn
           except (HomeAssistantError, ServiceNotFound, ValueError) as err:
               raise ModeChangeFailed(str(err)) from err
   ```
-- [ ] **Use the existing `find_abode_alarm_panel` helper** at `custom_components/abode_security/helpers.py:11`. Import via `from .helpers import find_abode_alarm_panel` (same import used today by `websocket_api.py:29` and `action_trigger.py`). Do NOT move it, do NOT duplicate it, do NOT re-implement.
+- [x] **Use the existing `find_abode_alarm_panel` helper** at `custom_components/abode_security/helpers.py:11`. Import via `from .helpers import find_abode_alarm_panel` (same import used today by `websocket_api.py:29` and `action_trigger.py`). Do NOT move it, do NOT duplicate it, do NOT re-implement.
 
 #### Refactor `websocket_modes_set`
 
-- [ ] In `websocket_api.py`, modify `websocket_modes_set` to delegate to `HAModeChanger`:
+- [x] In `websocket_api.py`, modify `websocket_modes_set` to delegate to `HAModeChanger`:
   ```python
   async def websocket_modes_set(hass, connection, msg):
       mode_id = msg["mode_id"]
@@ -211,23 +211,23 @@ Deployable unit: a single typed boundary around the existing `hass.services.asyn
       _LOGGER.info("Mode set to %s by user %s", mode_id, connection.user.id)
       connection.send_result(msg["id"], {"success": True, "mode_id": mode_id})
   ```
-- [ ] Old inline `hass.services.async_call(...)` call **must be removed** — `HAModeChanger` is the single mode-change call site. Reviewers should grep `alarm_control_panel.*alarm_(arm|disarm)` and find only one production hit.
+- [x] Old inline `hass.services.async_call(...)` call **must be removed** — `HAModeChanger` is the single mode-change call site. Reviewers should grep `alarm_control_panel.*alarm_(arm|disarm)` and find only one production hit.
 
 #### Wiring
 
-- [ ] In `__init__.py` (`async_setup_entry`), construct: `HAClock(hass)`, `HAScheduleClock(hass)`, `HAModeChanger(hass)`. Stash on `hass.data[DOMAIN]["clock"]`, `hass.data[DOMAIN]["schedule_clock"]`, `hass.data[DOMAIN]["mode_changer"]` — **domain-scoped, not entry-scoped**, matching the precedent at `__init__.py:218-231` (and the Phase 1 fix). Pop them in `async_unload_entry` next to the existing cleanup block.
-- [ ] Update `ScheduleManager.__init__` signature (from Phase 1) to accept `clock: Clock`, `scheduler_clock: ScheduleClock`, `mode_changer: ModeChanger`. Store as attributes. **`clock` is used in this phase**: `async_create` (and `_validate`) need `clock.utcnow()` to stamp `created_at` — switch the Phase 1 implementation from a direct `dt_util.utcnow()` call to `self._clock.utcnow()` so tests can inject a fake clock. The other two attributes (`scheduler_clock`, `mode_changer`) stay unused until Phase 3.
+- [x] In `__init__.py` (`async_setup_entry`), construct: `HAClock(hass)`, `HAScheduleClock(hass)`, `HAModeChanger(hass)`. Stash on `hass.data[DOMAIN]["clock"]`, `hass.data[DOMAIN]["schedule_clock"]`, `hass.data[DOMAIN]["mode_changer"]` — **domain-scoped, not entry-scoped**, matching the precedent at `__init__.py:218-231` (and the Phase 1 fix). Pop them in `async_unload_entry` next to the existing cleanup block.
+- [x] Update `ScheduleManager.__init__` signature (from Phase 1) to accept `clock: Clock`, `scheduler_clock: ScheduleClock`, `mode_changer: ModeChanger`. Store as attributes. **`clock` is used in this phase**: `async_create` (and `_validate`) need `clock.utcnow()` to stamp `created_at` — switch the Phase 1 implementation from a direct `dt_util.utcnow()` call to `self._clock.utcnow()` so tests can inject a fake clock. The other two attributes (`scheduler_clock`, `mode_changer`) stay unused until Phase 3.
 
 #### Tests
 
-- [ ] `tests/test_mode_changer.py`:
+- [x] `tests/test_mode_changer.py`:
   - `async_set_mode("home", USER_WS)` calls `alarm_control_panel.alarm_arm_home` with `context=None` (default Context).
   - `async_set_mode("home", SCHEDULE_ARM, pair_id="abc-123")` calls the same service with `context.id` starting with `"abode_sched_abc-123_"`.
   - `async_set_mode("home", SCHEDULE_ARM)` (missing pair_id) → `ValueError`.
   - `async_set_mode("invalid", USER_WS)` → `ValueError`.
   - When alarm panel entity is missing → `ModeChangeFailed`.
   - When `hass.services.async_call` raises `HomeAssistantError` → `ModeChangeFailed` wraps it.
-- [ ] Update `tests/test_websocket_api.py`:
+- [x] Update `tests/test_websocket_api.py`:
   - Existing `modes/set` tests still pass — this is the regression net.
   - Add one assertion: when `modes/set` is called from a WS client, the resulting service call's `context.id` does **not** start with `CONTEXT_ID_PREFIX`. (Listen via `async_track_state_change_event` or capture via `hass.services.async_call` spy.)
 

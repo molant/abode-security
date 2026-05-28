@@ -212,7 +212,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .action_manager import ActionManager
     from .action_trigger import ActionTriggerCoordinator
     from .config_store import ConfigStore
+    from .scheduling.clock import HAClock
     from .scheduling.manager import ScheduleManager
+    from .scheduling.mode_changer import HAModeChanger
+    from .scheduling.scheduler import HAScheduleClock
     from .scheduling.store import SchedulesStore
 
     hass.data.setdefault(DOMAIN, {})
@@ -221,8 +224,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await action_manager.async_setup()
     hass.data[DOMAIN]["action_manager"] = action_manager
 
+    clock = HAClock(hass)
+    schedule_clock = HAScheduleClock(hass)
+    mode_changer = HAModeChanger(hass)
+    hass.data[DOMAIN]["clock"] = clock
+    hass.data[DOMAIN]["schedule_clock"] = schedule_clock
+    hass.data[DOMAIN]["mode_changer"] = mode_changer
+
     schedule_store = SchedulesStore(hass)
-    schedule_manager = ScheduleManager(hass, schedule_store)
+    schedule_manager = ScheduleManager(
+        hass, schedule_store, clock, schedule_clock, mode_changer
+    )
     await schedule_manager.async_setup()
     hass.data[DOMAIN]["schedule_manager"] = schedule_manager
 
@@ -325,7 +337,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if abode_system.logout_listener is not None:
         abode_system.logout_listener()
 
-    # Clean up ActionTriggerCoordinator, ActionManager, ConfigStore, ScheduleManager
+    # Clean up ActionTriggerCoordinator, ActionManager, ConfigStore, ScheduleManager, clocks, mode_changer
     if DOMAIN in hass.data:
         if coordinator := hass.data[DOMAIN].get("action_trigger"):
             await coordinator.async_stop()
@@ -336,6 +348,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop("config", None)
         hass.data[DOMAIN].pop("config_store", None)
         hass.data[DOMAIN].pop("schedule_manager", None)
+        hass.data[DOMAIN].pop("clock", None)
+        hass.data[DOMAIN].pop("schedule_clock", None)
+        hass.data[DOMAIN].pop("mode_changer", None)
 
     return cast(bool, unload_ok)
 

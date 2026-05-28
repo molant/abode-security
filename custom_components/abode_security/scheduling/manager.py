@@ -5,10 +5,11 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.util import dt as dt_util
-
 from ..const import MAX_SCHEDULE_NAME_LENGTH
+from .clock import Clock
+from .mode_changer import ModeChanger
 from .models import _TIME_RE, WEEKDAYS, ScheduledPair
+from .scheduler import ScheduleClock
 from .store import SchedulesStore
 
 if TYPE_CHECKING:
@@ -22,17 +23,22 @@ if TYPE_CHECKING:
 
 
 class ScheduleManager:
-    """CRUD over SchedulesStore with field validation.
+    """CRUD over SchedulesStore with field validation."""
 
-    The constructor signature anticipates Phase 3 widening to accept ``clock``,
-    ``scheduler_clock``, and ``mode_changer`` — do not construct dependencies
-    inside ``__init__``.
-    """
-
-    def __init__(self, hass: HomeAssistant, store: SchedulesStore) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        store: SchedulesStore,
+        clock: Clock,
+        scheduler_clock: ScheduleClock,
+        mode_changer: ModeChanger,
+    ) -> None:
         """Initialize the manager with injected dependencies."""
         self._hass = hass
         self._store = store
+        self._clock = clock
+        self._scheduler_clock = scheduler_clock
+        self._mode_changer = mode_changer
 
     async def async_setup(self) -> None:
         """Load persistent state.  Timer registration arrives in Phase 3."""
@@ -62,7 +68,7 @@ class ScheduleManager:
             arm_time=arm_time,
             disarm_time=disarm_time,
             enabled=enabled,
-            created_at=dt_util.utcnow(),
+            created_at=self._clock.utcnow(),
         )
         self._validate(pair)
         await self._store.async_add(pair)

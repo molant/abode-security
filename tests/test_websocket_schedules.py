@@ -5,7 +5,10 @@ from __future__ import annotations
 import pytest
 
 from custom_components.abode_security.const import DOMAIN
+from custom_components.abode_security.scheduling.clock import HAClock
 from custom_components.abode_security.scheduling.manager import ScheduleManager
+from custom_components.abode_security.scheduling.mode_changer import HAModeChanger
+from custom_components.abode_security.scheduling.scheduler import HAScheduleClock
 from custom_components.abode_security.scheduling.store import SchedulesStore
 from custom_components.abode_security.websocket_api import (
     async_register_websocket_commands,
@@ -15,7 +18,13 @@ from custom_components.abode_security.websocket_api import (
 @pytest.fixture
 async def schedule_manager(hass):
     store = SchedulesStore(hass)
-    mgr = ScheduleManager(hass, store)
+    mgr = ScheduleManager(
+        hass,
+        store,
+        HAClock(hass),
+        HAScheduleClock(hass),
+        HAModeChanger(hass),
+    )
     await mgr.async_setup()
     return mgr
 

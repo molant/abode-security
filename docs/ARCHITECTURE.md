@@ -151,13 +151,24 @@ flowchart LR
 
 ### Scheduled arming subsystem (`scheduling/`)
 
-`ScheduleManager` is the public entry point for recurring Home-mode arm/disarm schedules. Phase 1 (domain & CRUD) is complete; the runtime (timers, skip rule, reconciliation) arrives in Phase 3.
+`ScheduleManager` is the public entry point for recurring Home-mode arm/disarm schedules. Phase 1 (domain & CRUD) and Phase 2 (mode dispatcher + clocks) are complete; the runtime (timers, skip rule, reconciliation) arrives in Phase 3.
 
 - `scheduling/models.py` — `ScheduledPair` dataclass (stores arm/disarm time + weekdays), `ChangeSource` and `SkipReason` enums. Pure Python; no HA dependencies beyond `homeassistant.util.dt`.
 - `scheduling/store.py` — `SchedulesStore`: HA `Store`-backed persistence at `.storage/abode_security_schedules.json`. Mirrors `ActionStore` corruption handling: per-record drops are logged and surfaced as a repair issue; whole-file corruption raises the same issue with `count="unknown"`.
 - `scheduling/repair.py` — thin wrappers over `issue_registry.async_create_issue` / `async_delete_issue` for the `corrupt_schedule_records` repair issue.
-- `scheduling/manager.py` — `ScheduleManager`: CRUD with validation. Instantiated in `async_setup_entry` alongside `ActionManager`; stored at `hass.data[DOMAIN]["schedule_manager"]` (domain-scoped, same pattern as `action_manager`). Runtime methods (`async_arm`, `async_disarm`, `async_reconcile_on_startup`) are added in Phase 3.
+- `scheduling/clock.py` — `Clock` Protocol + `HAClock` impl. Wraps `dt_util.now()` / `dt_util.utcnow()` so tests can inject a fake clock. `ScheduleManager` uses `clock.utcnow()` to stamp `created_at`; Phase 3 uses it for reconciliation.
+- `scheduling/scheduler.py` — `ScheduleClock` Protocol + `HAScheduleClock` impl. Wraps `async_track_time_change` with weekday filtering inside the callback (HA has no weekday param). Returns a cancel handle. DST: non-existent local times are skipped on spring-forward; the first occurrence fires on fall-back.
+- `scheduling/mode_changer.py` — `ModeChanger` Protocol + `HAModeChanger` impl. **The single production call site for `alarm_control_panel.*` service calls.** Stamps `Context.id = "abode_sched_<pair_id>_<8-hex-nonce>"` for schedule-initiated changes (`SCHEDULE_ARM`, `SCHEDULE_DISARM`, `RECONCILE_DISARM`) so Phase 3's state-change listener can distinguish user from schedule transitions. `USER_WS` source gets a default (nil) context. Raises `ModeChangeFailed` (subclass of `HomeAssistantError`) when the panel is unavailable or the service call fails.
+- `scheduling/manager.py` — `ScheduleManager`: CRUD with validation. Constructor accepts `clock`, `scheduler_clock`, `mode_changer` (injected; `scheduler_clock` and `mode_changer` unused until Phase 3). Instantiated in `async_setup_entry`; stored at `hass.data[DOMAIN]["schedule_manager"]`. Runtime methods (`async_arm`, `async_disarm`, `async_reconcile_on_startup`) are added in Phase 3.
 - `websocket_schedules.py` — five WS commands (`schedules/{list,get,create,update,delete}`). `list`/`get` open to any authenticated user; mutations require `@require_admin`.
+
+**Context-id source-tagging convention** (Phase 2 onwards):
+
+```
+abode_sched_<pair_id>_<8-hex-nonce>
+```
+
+`HAClock`, `HAScheduleClock`, and `HAModeChanger` are instantiated once in `async_setup_entry` and stored at `hass.data[DOMAIN]["clock"]`, `hass.data[DOMAIN]["schedule_clock"]`, and `hass.data[DOMAIN]["mode_changer"]` respectively. All three are domain-scoped (safe because `manifest.json` declares `single_config_entry: true`).
 
 ```mermaid
 flowchart LR

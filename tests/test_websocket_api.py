@@ -8,7 +8,8 @@ from custom_components.abode_security.action_manager import (
     ActionManager,
 )
 from custom_components.abode_security.config_store import ConfigStore
-from custom_components.abode_security.const import DOMAIN
+from custom_components.abode_security.const import CONTEXT_ID_PREFIX, DOMAIN
+from custom_components.abode_security.scheduling.mode_changer import HAModeChanger
 from custom_components.abode_security.websocket_api import (
     async_register_websocket_commands,
 )
@@ -32,11 +33,12 @@ async def config_store(hass):
 
 @pytest.fixture
 async def setup_websocket_api(hass, action_manager, config_store):
-    """Set up WebSocket API with ActionManager and ConfigStore in hass.data."""
+    """Set up WebSocket API with ActionManager, ConfigStore, and ModeChanger in hass.data."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["action_manager"] = action_manager
     hass.data[DOMAIN]["config_store"] = config_store
     hass.data[DOMAIN]["config"] = config_store.get_config()
+    hass.data[DOMAIN]["mode_changer"] = HAModeChanger(hass)
     async_register_websocket_commands(hass)
     return action_manager
 
@@ -942,7 +944,12 @@ class TestWebSocketModesAPI:
     # --- Set mode (#1) ---
 
     async def test_ws_modes_set_home(self, hass, hass_ws_client) -> None:
-        """Setting mode=home calls alarm_arm_home on the abode panel."""
+        """Setting mode=home calls alarm_arm_home on the abode panel.
+
+        The service call's context.id must NOT start with CONTEXT_ID_PREFIX —
+        user-initiated changes carry a default (non-schedule) context so Phase 3
+        can distinguish them from schedule-initiated changes.
+        """
         hass.states.async_set("alarm_control_panel.abode_alarm", "disarmed")
 
         calls = []
@@ -968,6 +975,8 @@ class TestWebSocketModesAPI:
         assert response["result"]["mode_id"] == "home"
         assert len(calls) == 1
         assert calls[0].data["entity_id"] == "alarm_control_panel.abode_alarm"
+        # User-initiated: context.id must not carry the schedule prefix
+        assert not calls[0].context.id.startswith(CONTEXT_ID_PREFIX)
 
     async def test_ws_modes_set_away(self, hass, hass_ws_client) -> None:
         """Setting mode=away calls alarm_arm_away on the abode panel."""
@@ -1040,7 +1049,11 @@ class TestWebSocketModesAPI:
         assert response["error"]["code"] == "invalid_format"
 
     async def test_ws_modes_set_no_panel(self, hass, hass_ws_client) -> None:
-        """No abode alarm_control_panel registered → not_found error."""
+        """No abode alarm_control_panel registered → set_mode_failed error.
+
+        Panel lookup moved into HAModeChanger, so the error code is now
+        set_mode_failed (wrapping ModeChangeFailed) rather than not_found.
+        """
         # Intentionally no alarm_control_panel.abode_* state set.
         client = await hass_ws_client(hass)
         await client.send_json(
@@ -1053,7 +1066,7 @@ class TestWebSocketModesAPI:
         response = await client.receive_json()
 
         assert not response["success"]
-        assert response["error"]["code"] == "not_found"
+        assert response["error"]["code"] == "set_mode_failed"
 
     async def test_ws_modes_set_finds_renamed_entity_via_registry(
         self, hass, hass_ws_client

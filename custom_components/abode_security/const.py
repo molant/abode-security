@@ -29,6 +29,7 @@ STORAGE_VERSION_SCHEDULES = 1
 REPAIR_ISSUE_CORRUPT_SCHEDULES = "corrupt_schedule_records"
 MAX_SCHEDULE_NAME_LENGTH = 100
 MAX_SCHEDULES = 50
+CONTEXT_ID_PREFIX = "abode_sched_"
 
 # Event types for filtering
 EVENT_TYPES = [
