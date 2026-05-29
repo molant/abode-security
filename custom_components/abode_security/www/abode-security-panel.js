@@ -206,7 +206,7 @@ function e(e,t,o,i){var r,s=arguments.length,a=s<3?t:null===i?i=Object.getOwnPro
                   title="Edit"
                   @click=${this._startEdit}
                 >
-                  ✏
+                  <ha-icon icon="mdi:pencil-outline"></ha-icon>
                 </button>
                 <button
                   type="button"
@@ -215,7 +215,7 @@ function e(e,t,o,i){var r,s=arguments.length,a=s<3?t:null===i?i=Object.getOwnPro
                   title="Delete"
                   @click=${this._delete}
                 >
-                  🗑
+                  <ha-icon icon="mdi:trash-can-outline"></ha-icon>
                 </button>
               `:q}
         </div>
@@ -360,6 +360,10 @@ function e(e,t,o,i){var r,s=arguments.length,a=s<3?t:null===i?i=Object.getOwnPro
 
     .icon-button.delete:hover {
       color: var(--error-color, #f44336);
+    }
+
+    .icon-button ha-icon {
+      --mdc-icon-size: 20px;
     }
 
     .spacer {
