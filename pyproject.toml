@@ -67,6 +67,12 @@ dev = [
     # installed so the HA `camera`/`stream` integrations can be imported
     # during tests. Pin matches HA's own constraint to avoid dev/prod drift.
     "PyTurboJPEG==1.8.3",
+
+    # Imported directly by tests/test_brand_assets.py to validate brand image
+    # content. Available transitively via homeassistant, but declared here so
+    # the test dependency is explicit. Pin matches HA's own constraint to avoid
+    # dev/prod drift.
+    "pillow==12.2.0",
 ]
 
 [tool.pytest.ini_options]
