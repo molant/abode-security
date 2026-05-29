@@ -104,6 +104,10 @@ export class ScheduleRow extends LitElement {
       color: var(--error-color, #f44336);
     }
 
+    .icon-button ha-icon {
+      --mdc-icon-size: 20px;
+    }
+
     .spacer {
       flex: 1;
     }
@@ -373,7 +377,7 @@ export class ScheduleRow extends LitElement {
                   title="Edit"
                   @click=${this._startEdit}
                 >
-                  ✏
+                  <ha-icon icon="mdi:pencil-outline"></ha-icon>
                 </button>
                 <button
                   type="button"
@@ -382,7 +386,7 @@ export class ScheduleRow extends LitElement {
                   title="Delete"
                   @click=${this._delete}
                 >
-                  🗑
+                  <ha-icon icon="mdi:trash-can-outline"></ha-icon>
                 </button>
               `
             : nothing}
