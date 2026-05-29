@@ -169,6 +169,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -  surface disabled actions in mode card (fixes #123)
 -  expose camera smart-detect categories in sensor picker (fixes #135)
 
+## v1.2.1 (2026-05-29)
+
+### Fixes
+-  disarm never fires due to derive_state boundary
+
 ## [1.0.0] - 2024-11-23
 
 ### ✨ Initial Release
