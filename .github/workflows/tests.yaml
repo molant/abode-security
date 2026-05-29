@@ -139,3 +139,17 @@ jobs:
           fi
           echo "Frontend build successful"
           ls -lh ../custom_components/abode_security/www/
+
+      - name: Verify committed bundle is up to date
+        # The bundle is a generated artifact that must be committed alongside
+        # its source. `npm run build` above just regenerated it; if it now
+        # differs from the committed copy, someone changed frontend/src
+        # without rebuilding and committing the bundle. Fail loudly with the
+        # fix rather than shipping a stale UI.
+        working-directory: ${{ github.workspace }}
+        run: |
+          if ! git diff --exit-code -- custom_components/abode_security/www/abode-security-panel.js; then
+            echo "::error::Committed abode-security-panel.js is stale. Run 'cd frontend && npm run build' and commit the regenerated bundle."
+            exit 1
+          fi
+          echo "Committed bundle matches fresh build"
