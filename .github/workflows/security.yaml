@@ -75,9 +75,18 @@ jobs:
         # individually when `pytest-homeassistant-custom-component` bumps
         # to a release whose lockstep resolves the dep. Triage tracked
         # in #79.
+        #   CVE-2026-4539        — earlier HA-pinned transitive dep
+        #   GHSA-4gg8-gxpx-9rph  — uv 0.11.8 (HA pins; fix 0.11.15)
+        #   CVE-2026-47180       — zeroconf 0.148.0 (HA pins; fix 0.149.5)
+        #   CVE-2026-47183       — zeroconf 0.148.0 (HA pins; fix 0.149.6)
+        #   CVE-2026-47184       — zeroconf 0.148.0 (HA pins; fix 0.149.7)
         run: |
           uvx pip-audit --requirement /tmp/requirements-locked.txt --strict \
-            --ignore-vuln CVE-2026-4539
+            --ignore-vuln CVE-2026-4539 \
+            --ignore-vuln GHSA-4gg8-gxpx-9rph \
+            --ignore-vuln CVE-2026-47180 \
+            --ignore-vuln CVE-2026-47183 \
+            --ignore-vuln CVE-2026-47184
 
   npm-audit-frontend:
     name: npm audit (frontend)
