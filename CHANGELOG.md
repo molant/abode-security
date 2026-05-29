@@ -146,6 +146,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improve test mode initialization and polling with better logging
 - Initial setup: Create abode-security custom HACS integration
 
+## v1.2.0 (2026-05-28)
+
+### Features
+-  use mdi icons for schedule row edit/delete buttons
+-  rebuild frontend bundle with schedules UI
+-  Phase 4F – Playwright E2E happy-path test for scheduled arming
+-  Phase 4E – mount schedules section in modes-tab
+-  Phase 4D – schedules-section list container with CRUD and admin gating
+-  Phase 4C – schedule-row inline-edit component
+-  Phase 4B – day-chip-picker weekday selector component
+-  Phase 4A – types and API client wrappers for schedules
+-  Phase 3G – integration test for arm/disarm cycle
+-  Phase 3A-F – runtime arm/disarm, retry, reconcile, listener, events
+-  Phase 2C – ModeChanger protocol and HAModeChanger impl
+-  Phase 2B – ScheduleClock protocol and HAScheduleClock impl
+-  Phase 2A – Clock protocol and HAClock impl
+-  Phase 1 – domain models, storage, CRUD, WS endpoints
+
+### Fixes
+-  live-reactive active mode + cancel mid-arming (fixes #124)
+-  surface disabled actions in mode card (fixes #123)
+-  expose camera smart-detect categories in sensor picker (fixes #135)
+
 ## [1.0.0] - 2024-11-23
 
 ### ✨ Initial Release
