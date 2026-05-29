@@ -237,9 +237,21 @@ class ScheduleManager:
             last_error=pair.last_error,
         )
         self._validate(updated)
+        # A pending one-shot disarm timer (created on-demand by a successful arm)
+        # is NOT re-registered by _register_pair_timers, so the blanket
+        # _unregister_timers below would silently drop it.  Editing the name or
+        # toggling `enabled` while the panel is armed would then leave the panel
+        # armed with no auto-disarm.  Detect a pending disarm and re-establish it
+        # after the update: recompute from the updated pair so a changed
+        # disarm_time reschedules correctly, while a name-only edit is a no-op.
+        had_pending_disarm = (pair_id, "disarm") in self._pending_handles
         self._unregister_timers(pair_id)
         await self._store.async_update(updated)
         self._register_pair_timers(pair_id)
+        # Disabling the pair (or clearing the arm anchor) leaves it disarm-less;
+        # async_disarm no-ops on a disabled pair, so don't re-arm a timer there.
+        if had_pending_disarm and updated.enabled and updated.last_armed_at is not None:
+            self._schedule_disarm(updated)
         return updated
 
     async def async_delete(self, pair_id: str) -> bool:
@@ -536,6 +548,13 @@ class ScheduleManager:
             # Pair was armed and never disarmed — determine action.
             ed = expected_disarm_at(pair, last_armed_at=pair.last_armed_at, tz=tz)
 
+            # Intentional asymmetry with derive_state: reconcile uses a strict
+            # `now >= ed` with NO grace, while derive_state allows
+            # DISARM_WINDOW_GRACE for an on-time timer that fires a hair late.
+            # On startup there is no in-flight timer to be late, and we must be
+            # conservative — a genuinely missed window (HA was down) must be
+            # marked disarmed WITHOUT auto-disarming the panel hours later. Do
+            # NOT add the grace here to "match" derive_state.
             if now >= ed:
                 pair.last_disarmed_at = now
                 pair.last_skip_reason = SkipReason.RECONCILE_WINDOW_ELAPSED

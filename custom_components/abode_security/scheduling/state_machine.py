@@ -12,6 +12,16 @@ from enum import Enum, auto
 
 from .models import ScheduledPair
 
+# Grace tolerance applied to the "window elapsed" check.  The one-shot disarm
+# timer (async_call_later) fires at-or-slightly-after expected_disarm_at, so the
+# utcnow() read inside async_disarm is always a hair past the boundary.  Without
+# this grace, a strict `now > expected_disarm` would treat an on-time disarm as
+# a missed window and silently skip it.  Kept small: it must exceed worst-case
+# event-loop latency between the timer firing and the utcnow() read (sub-second
+# to seconds) while staying far below a genuinely-missed window (e.g. HA down for
+# hours), which is left to the conservative startup-reconcile path.
+DISARM_WINDOW_GRACE = timedelta(minutes=5)
+
 
 class PairState(Enum):
     """Derived run-state for a single schedule pair."""
@@ -36,8 +46,8 @@ def derive_state(pair: ScheduledPair, *, now: datetime, tz: tzinfo) -> PairState
     ):
         return PairState.IDLE
     expected_disarm = expected_disarm_at(pair, last_armed_at=pair.last_armed_at, tz=tz)
-    if now > expected_disarm:
-        return PairState.IDLE  # window has elapsed
+    if now > expected_disarm + DISARM_WINDOW_GRACE:
+        return PairState.IDLE  # window has elapsed (past the grace tolerance)
     return PairState.ARMED
 
 

@@ -10,13 +10,14 @@ mock Abode server.  Time control relies on:
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.abode_security.const import (
@@ -31,6 +32,7 @@ from custom_components.abode_security.scheduling.manager import ScheduleManager
 from custom_components.abode_security.scheduling.mode_changer import ModeChangeFailed
 from custom_components.abode_security.scheduling.models import ChangeSource, SkipReason
 from custom_components.abode_security.scheduling.scheduler import CancelHandle
+from custom_components.abode_security.scheduling.state_machine import expected_disarm_at
 from custom_components.abode_security.scheduling.store import SchedulesStore
 
 # ---------------------------------------------------------------------------
@@ -52,6 +54,20 @@ def _capture_events(hass: HomeAssistant, event_name: str) -> list[dict[str, Any]
 
     hass.bus.async_listen(event_name, _listener)
     return events
+
+
+async def _expected_disarm(manager: ScheduleManager, pair_id: str) -> datetime:
+    """Compute a pair's expected disarm instant using the live HA timezone.
+
+    The runtime hass fixture sets a non-UTC timezone, so tests must derive the
+    disarm boundary the same way the manager does rather than hardcoding a UTC
+    wall-clock time.
+    """
+    pair = await manager.async_get(pair_id)
+    assert pair is not None and pair.last_armed_at is not None
+    return expected_disarm_at(
+        pair, last_armed_at=pair.last_armed_at, tz=dt_util.DEFAULT_TIME_ZONE
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -222,8 +238,12 @@ class TestArmFlow:
 
         fired = _capture_events(hass, EVENT_SCHEDULE_FIRED)
 
-        # Advance clock and fire time-based callbacks for disarm.
-        disarm_dt = datetime(2030, 1, 8, 6, 0, 0, tzinfo=UTC)
+        # Advance clock and fire time-based callbacks for disarm.  Fire a couple
+        # of seconds PAST the exact boundary: async_call_later fires at-or-after
+        # the scheduled instant, so the real utcnow() read inside async_disarm is
+        # always a hair late.  Pinning the clock to the exact microsecond would
+        # mask the boundary bug (see test_disarm_fires_when_slightly_past_boundary).
+        disarm_dt = await _expected_disarm(manager, pair.id) + timedelta(seconds=2)
         fake_clock.set(disarm_dt)
         async_fire_time_changed(hass, disarm_dt, fire_all=True)
         await hass.async_block_till_done(wait_background_tasks=True)
@@ -235,6 +255,74 @@ class TestArmFlow:
 
         await hass.async_block_till_done()
         assert any(e["action"] == "disarm" for e in fired)
+
+    @pytest.mark.parametrize(
+        "late_delta",
+        [
+            timedelta(microseconds=1),  # event-loop jitter
+            timedelta(seconds=2),  # task-scheduling latency
+            timedelta(minutes=1),  # event-loop backlog, still within grace
+        ],
+    )
+    async def test_disarm_fires_when_slightly_past_boundary(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+        late_delta: timedelta,
+    ) -> None:
+        """Regression: disarm still fires when utcnow() is just past expected_disarm.
+
+        The one-shot disarm timer fires at-or-after expected_disarm_at, so the
+        clock is always slightly late by the time async_disarm re-checks the
+        derived state.  Before the DISARM_WINDOW_GRACE fix, the strict
+        ``now > expected_disarm`` check treated the pair as IDLE and silently
+        skipped the disarm (panel stayed armed).
+        """
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        await manager.async_arm(pair.id)
+        _set_panel(hass, "armed_home")
+
+        fire_at = await _expected_disarm(manager, pair.id) + late_delta
+        fake_clock.set(fire_at)
+        async_fire_time_changed(hass, fire_at, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        disarm_calls = [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+        assert len(disarm_calls) == 1, f"disarm skipped for late_delta={late_delta}"
+        assert disarm_calls[0]["source"] == ChangeSource.SCHEDULE_DISARM
+
+    async def test_disarm_skipped_when_window_missed_beyond_grace(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """A window missed by more than the grace is treated as IDLE — no disarm.
+
+        Protects the safety net: if the timer somehow fires hours late (e.g. the
+        event loop was wedged), we must NOT auto-disarm long after the intended
+        window.  The conservative startup-reconcile path handles genuine misses.
+        """
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        await manager.async_arm(pair.id)
+        _set_panel(hass, "armed_home")
+
+        fire_at = await _expected_disarm(manager, pair.id) + timedelta(hours=2)
+        fake_clock.set(fire_at)
+        async_fire_time_changed(hass, fire_at, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        disarm_calls = [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+        assert len(disarm_calls) == 0
 
     async def test_skip_away_active(
         self,
@@ -410,6 +498,113 @@ class TestArmFlow:
         await manager.async_update(pair.id, arm_time="21:00")
         assert len(cancelled) == 1
         assert (pair.id, "arm") in manager._pending_handles
+
+    async def test_update_while_armed_preserves_disarm(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Editing a pair while armed must NOT drop the pending disarm timer.
+
+        Regression: async_update cancels all handles then re-registers only the
+        arm timer.  Without preserving the on-demand disarm handle, a name edit
+        or `enabled` toggle while the panel is armed would leave it armed with no
+        auto-disarm.
+        """
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        await manager.async_arm(pair.id)
+        _set_panel(hass, "armed_home")
+        assert (pair.id, "disarm") in manager._pending_handles
+
+        # Edit an arm-unrelated field while armed.
+        await manager.async_update(pair.id, name="Weeknights")
+        assert (pair.id, "disarm") in manager._pending_handles, (
+            "pending disarm was dropped by async_update"
+        )
+
+        # Disarm must still fire at the (unchanged) expected time.
+        fire_at = await _expected_disarm(manager, pair.id) + timedelta(seconds=2)
+        fake_clock.set(fire_at)
+        async_fire_time_changed(hass, fire_at, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        disarm_calls = [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+        assert len(disarm_calls) == 1
+
+    async def test_update_disarm_time_while_armed_reschedules(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Editing disarm_time while armed recomputes the disarm boundary.
+
+        The pending disarm is rebuilt from the updated pair (the comment in
+        async_update promises a changed disarm_time reschedules correctly), so
+        the guard now accepts the NEW expected_disarm_at.  A clock value between
+        the old and new boundary — which the original 06:00 window would have
+        treated as elapsed (past grace) and skipped — must still disarm.
+        """
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        await manager.async_arm(pair.id)
+        _set_panel(hass, "armed_home")
+        old_disarm = await _expected_disarm(manager, pair.id)
+
+        # Move disarm later (07:00); the timer must follow.
+        await manager.async_update(pair.id, disarm_time="07:00")
+        assert (pair.id, "disarm") in manager._pending_handles
+        new_disarm = await _expected_disarm(manager, pair.id)
+        # New boundary is an hour later than the old one.
+        assert new_disarm == old_disarm + timedelta(hours=1)
+
+        # Fire at a clock between old (06:00) and new (07:00) boundary, well past
+        # the old window's grace.  Under the new disarm_time this is still within
+        # the window → ARMED → disarms.  Had the edit not been applied to the
+        # derived window, this would be treated as elapsed and skipped.
+        fire_at = old_disarm + timedelta(minutes=30)
+        assert fire_at > old_disarm + timedelta(minutes=5)  # past old grace
+        assert fire_at < new_disarm
+        fake_clock.set(fire_at)
+        async_fire_time_changed(hass, fire_at, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        disarm_calls = [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+        assert len(disarm_calls) == 1
+
+    async def test_update_disabling_while_armed_cancels_disarm(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Disabling a pair while armed cancels the pending disarm (no auto-disarm)."""
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        await manager.async_arm(pair.id)
+        _set_panel(hass, "armed_home")
+        assert (pair.id, "disarm") in manager._pending_handles
+
+        fire_at = await _expected_disarm(manager, pair.id) + timedelta(seconds=2)
+        await manager.async_update(pair.id, enabled=False)
+        assert (pair.id, "disarm") not in manager._pending_handles
+
+        fake_clock.set(fire_at)
+        async_fire_time_changed(hass, fire_at, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        disarm_calls = [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+        assert len(disarm_calls) == 0
 
     async def test_delete_cancels_timers(
         self,

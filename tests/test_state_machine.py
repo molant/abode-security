@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from custom_components.abode_security.scheduling.models import ScheduledPair
 from custom_components.abode_security.scheduling.state_machine import (
+    DISARM_WINDOW_GRACE,
     PairState,
     derive_state,
     expected_disarm_at,
@@ -57,7 +58,7 @@ class TestDerivState:
     def test_past_expected_disarm_is_idle(self) -> None:
         armed = datetime(2024, 6, 1, 22, 0, tzinfo=_UTC)
         pair = _pair(last_armed_at=armed)
-        now = datetime(2024, 6, 2, 7, 0, tzinfo=_UTC)  # strictly past 06:00
+        now = datetime(2024, 6, 2, 7, 0, tzinfo=_UTC)  # well past 06:00 + grace
         assert derive_state(pair, now=now, tz=_UTC) == PairState.IDLE
 
     def test_at_expected_disarm_time_is_armed(self) -> None:
@@ -67,6 +68,32 @@ class TestDerivState:
         now = datetime(2024, 6, 2, 6, 0, tzinfo=_UTC)  # exactly 06:00
         assert derive_state(pair, now=now, tz=_UTC) == PairState.ARMED
 
+    def test_slightly_past_disarm_within_grace_is_armed(self) -> None:
+        # The one-shot disarm timer fires at-or-after 06:00, so derive_state is
+        # always re-checked a hair late.  Within DISARM_WINDOW_GRACE it must stay
+        # ARMED, otherwise the on-time disarm is silently skipped.
+        armed = datetime(2024, 6, 1, 22, 0, tzinfo=_UTC)
+        pair = _pair(last_armed_at=armed)
+        expected = datetime(2024, 6, 2, 6, 0, tzinfo=_UTC)
+        now = expected + DISARM_WINDOW_GRACE - timedelta(seconds=1)
+        assert derive_state(pair, now=now, tz=_UTC) == PairState.ARMED
+
+    def test_at_grace_boundary_is_armed(self) -> None:
+        # The elapsed check is strict (`now > expected + grace`), so exactly at
+        # the boundary the pair is still ARMED.
+        armed = datetime(2024, 6, 1, 22, 0, tzinfo=_UTC)
+        pair = _pair(last_armed_at=armed)
+        expected = datetime(2024, 6, 2, 6, 0, tzinfo=_UTC)
+        now = expected + DISARM_WINDOW_GRACE
+        assert derive_state(pair, now=now, tz=_UTC) == PairState.ARMED
+
+    def test_just_past_grace_is_idle(self) -> None:
+        armed = datetime(2024, 6, 1, 22, 0, tzinfo=_UTC)
+        pair = _pair(last_armed_at=armed)
+        expected = datetime(2024, 6, 2, 6, 0, tzinfo=_UTC)
+        now = expected + DISARM_WINDOW_GRACE + timedelta(seconds=1)
+        assert derive_state(pair, now=now, tz=_UTC) == PairState.IDLE
+
     def test_overnight_within_window(self) -> None:
         # arm Sat 22:00 UTC, disarm 06:00 next day; now = Sat 23:30 UTC
         armed = datetime(2024, 6, 1, 22, 0, tzinfo=_UTC)  # Saturday
@@ -75,10 +102,10 @@ class TestDerivState:
         assert derive_state(pair, now=now, tz=_UTC) == PairState.ARMED
 
     def test_overnight_past_disarm_is_idle(self) -> None:
-        # arm Sat 22:00 UTC, disarm 06:00 next day; now = Sun 06:01 UTC (strictly past)
+        # arm Sat 22:00 UTC, disarm 06:00 next day; now = Sun 06:10 UTC (past grace)
         armed = datetime(2024, 6, 1, 22, 0, tzinfo=_UTC)
         pair = _pair(arm_time="22:00", disarm_time="06:00", last_armed_at=armed)
-        now = datetime(2024, 6, 2, 6, 1, tzinfo=_UTC)
+        now = datetime(2024, 6, 2, 6, 10, tzinfo=_UTC)
         assert derive_state(pair, now=now, tz=_UTC) == PairState.IDLE
 
     def test_same_day_within_window(self) -> None:
@@ -91,7 +118,7 @@ class TestDerivState:
     def test_same_day_past_disarm_is_idle(self) -> None:
         armed = datetime(2024, 6, 1, 13, 0, tzinfo=_UTC)
         pair = _pair(arm_time="13:00", disarm_time="17:00", last_armed_at=armed)
-        now = datetime(2024, 6, 1, 17, 1, tzinfo=_UTC)  # strictly past 17:00
+        now = datetime(2024, 6, 1, 17, 10, tzinfo=_UTC)  # past 17:00 + grace
         assert derive_state(pair, now=now, tz=_UTC) == PairState.IDLE
 
     def test_dst_forward_unaffected(self) -> None:
