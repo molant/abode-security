@@ -1,4 +1,4 @@
-function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPropertyDescriptor(e,o):i;if("object"==typeof Reflect&&"function"==typeof Reflect.decorate)a=Reflect.decorate(t,e,o,i);else for(var n=t.length-1;n>=0;n--)(r=t[n])&&(a=(s<3?r(a):s>3?r(e,o,a):r(e,o))||a);return s>3&&a&&Object.defineProperty(e,o,a),a}"function"==typeof SuppressedError&&SuppressedError;const e=globalThis,o=e.ShadowRoot&&(void 0===e.ShadyCSS||e.ShadyCSS.nativeShadow)&&"adoptedStyleSheets"in Document.prototype&&"replace"in CSSStyleSheet.prototype,i=Symbol(),r=new WeakMap;let s=class{constructor(t,e,o){if(this._$cssResult$=!0,o!==i)throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");this.cssText=t,this.t=e}get styleSheet(){let t=this.o;const e=this.t;if(o&&void 0===t){const o=void 0!==e&&1===e.length;o&&(t=r.get(e)),void 0===t&&((this.o=t=new CSSStyleSheet).replaceSync(this.cssText),o&&r.set(e,t))}return t}toString(){return this.cssText}};const a=(t,...e)=>{const o=1===t.length?t[0]:e.reduce((e,o,i)=>e+(t=>{if(!0===t._$cssResult$)return t.cssText;if("number"==typeof t)return t;throw Error("Value passed to 'css' function must be a 'css' function result: "+t+". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.")})(o)+t[i+1],t[0]);return new s(o,t,i)},n=o?t=>t:t=>t instanceof CSSStyleSheet?(t=>{let e="";for(const o of t.cssRules)e+=o.cssText;return(t=>new s("string"==typeof t?t:t+"",void 0,i))(e)})(t):t,{is:l,defineProperty:c,getOwnPropertyDescriptor:d,getOwnPropertyNames:h,getOwnPropertySymbols:p,getPrototypeOf:u}=Object,g=globalThis,m=g.trustedTypes,b=m?m.emptyScript:"",f=g.reactiveElementPolyfillSupport,_=(t,e)=>t,y={toAttribute(t,e){switch(e){case Boolean:t=t?b:null;break;case Object:case Array:t=null==t?t:JSON.stringify(t)}return t},fromAttribute(t,e){let o=t;switch(e){case Boolean:o=null!==t;break;case Number:o=null===t?null:Number(t);break;case Object:case Array:try{o=JSON.parse(t)}catch(t){o=null}}return o}},v=(t,e)=>!l(t,e),x={attribute:!0,type:String,converter:y,reflect:!1,useDefault:!1,hasChanged:v};Symbol.metadata??=Symbol("metadata"),g.litPropertyMetadata??=new WeakMap;let $=class extends HTMLElement{static addInitializer(t){this._$Ei(),(this.l??=[]).push(t)}static get observedAttributes(){return this.finalize(),this._$Eh&&[...this._$Eh.keys()]}static createProperty(t,e=x){if(e.state&&(e.attribute=!1),this._$Ei(),this.prototype.hasOwnProperty(t)&&((e=Object.create(e)).wrapped=!0),this.elementProperties.set(t,e),!e.noAccessor){const o=Symbol(),i=this.getPropertyDescriptor(t,o,e);void 0!==i&&c(this.prototype,t,i)}}static getPropertyDescriptor(t,e,o){const{get:i,set:r}=d(this.prototype,t)??{get(){return this[e]},set(t){this[e]=t}};return{get:i,set(e){const s=i?.call(this);r?.call(this,e),this.requestUpdate(t,s,o)},configurable:!0,enumerable:!0}}static getPropertyOptions(t){return this.elementProperties.get(t)??x}static _$Ei(){if(this.hasOwnProperty(_("elementProperties")))return;const t=u(this);t.finalize(),void 0!==t.l&&(this.l=[...t.l]),this.elementProperties=new Map(t.elementProperties)}static finalize(){if(this.hasOwnProperty(_("finalized")))return;if(this.finalized=!0,this._$Ei(),this.hasOwnProperty(_("properties"))){const t=this.properties,e=[...h(t),...p(t)];for(const o of e)this.createProperty(o,t[o])}const t=this[Symbol.metadata];if(null!==t){const e=litPropertyMetadata.get(t);if(void 0!==e)for(const[t,o]of e)this.elementProperties.set(t,o)}this._$Eh=new Map;for(const[t,e]of this.elementProperties){const o=this._$Eu(t,e);void 0!==o&&this._$Eh.set(o,t)}this.elementStyles=this.finalizeStyles(this.styles)}static finalizeStyles(t){const e=[];if(Array.isArray(t)){const o=new Set(t.flat(1/0).reverse());for(const t of o)e.unshift(n(t))}else void 0!==t&&e.push(n(t));return e}static _$Eu(t,e){const o=e.attribute;return!1===o?void 0:"string"==typeof o?o:"string"==typeof t?t.toLowerCase():void 0}constructor(){super(),this._$Ep=void 0,this.isUpdatePending=!1,this.hasUpdated=!1,this._$Em=null,this._$Ev()}_$Ev(){this._$ES=new Promise(t=>this.enableUpdating=t),this._$AL=new Map,this._$E_(),this.requestUpdate(),this.constructor.l?.forEach(t=>t(this))}addController(t){(this._$EO??=new Set).add(t),void 0!==this.renderRoot&&this.isConnected&&t.hostConnected?.()}removeController(t){this._$EO?.delete(t)}_$E_(){const t=new Map,e=this.constructor.elementProperties;for(const o of e.keys())this.hasOwnProperty(o)&&(t.set(o,this[o]),delete this[o]);t.size>0&&(this._$Ep=t)}createRenderRoot(){const t=this.shadowRoot??this.attachShadow(this.constructor.shadowRootOptions);return((t,i)=>{if(o)t.adoptedStyleSheets=i.map(t=>t instanceof CSSStyleSheet?t:t.styleSheet);else for(const o of i){const i=document.createElement("style"),r=e.litNonce;void 0!==r&&i.setAttribute("nonce",r),i.textContent=o.cssText,t.appendChild(i)}})(t,this.constructor.elementStyles),t}connectedCallback(){this.renderRoot??=this.createRenderRoot(),this.enableUpdating(!0),this._$EO?.forEach(t=>t.hostConnected?.())}enableUpdating(t){}disconnectedCallback(){this._$EO?.forEach(t=>t.hostDisconnected?.())}attributeChangedCallback(t,e,o){this._$AK(t,o)}_$ET(t,e){const o=this.constructor.elementProperties.get(t),i=this.constructor._$Eu(t,o);if(void 0!==i&&!0===o.reflect){const r=(void 0!==o.converter?.toAttribute?o.converter:y).toAttribute(e,o.type);this._$Em=t,null==r?this.removeAttribute(i):this.setAttribute(i,r),this._$Em=null}}_$AK(t,e){const o=this.constructor,i=o._$Eh.get(t);if(void 0!==i&&this._$Em!==i){const t=o.getPropertyOptions(i),r="function"==typeof t.converter?{fromAttribute:t.converter}:void 0!==t.converter?.fromAttribute?t.converter:y;this._$Em=i;const s=r.fromAttribute(e,t.type);this[i]=s??this._$Ej?.get(i)??s,this._$Em=null}}requestUpdate(t,e,o,i=!1,r){if(void 0!==t){const s=this.constructor;if(!1===i&&(r=this[t]),o??=s.getPropertyOptions(t),!((o.hasChanged??v)(r,e)||o.useDefault&&o.reflect&&r===this._$Ej?.get(t)&&!this.hasAttribute(s._$Eu(t,o))))return;this.C(t,e,o)}!1===this.isUpdatePending&&(this._$ES=this._$EP())}C(t,e,{useDefault:o,reflect:i,wrapped:r},s){o&&!(this._$Ej??=new Map).has(t)&&(this._$Ej.set(t,s??e??this[t]),!0!==r||void 0!==s)||(this._$AL.has(t)||(this.hasUpdated||o||(e=void 0),this._$AL.set(t,e)),!0===i&&this._$Em!==t&&(this._$Eq??=new Set).add(t))}async _$EP(){this.isUpdatePending=!0;try{await this._$ES}catch(t){Promise.reject(t)}const t=this.scheduleUpdate();return null!=t&&await t,!this.isUpdatePending}scheduleUpdate(){return this.performUpdate()}performUpdate(){if(!this.isUpdatePending)return;if(!this.hasUpdated){if(this.renderRoot??=this.createRenderRoot(),this._$Ep){for(const[t,e]of this._$Ep)this[t]=e;this._$Ep=void 0}const t=this.constructor.elementProperties;if(t.size>0)for(const[e,o]of t){const{wrapped:t}=o,i=this[e];!0!==t||this._$AL.has(e)||void 0===i||this.C(e,void 0,o,i)}}let t=!1;const e=this._$AL;try{t=this.shouldUpdate(e),t?(this.willUpdate(e),this._$EO?.forEach(t=>t.hostUpdate?.()),this.update(e)):this._$EM()}catch(e){throw t=!1,this._$EM(),e}t&&this._$AE(e)}willUpdate(t){}_$AE(t){this._$EO?.forEach(t=>t.hostUpdated?.()),this.hasUpdated||(this.hasUpdated=!0,this.firstUpdated(t)),this.updated(t)}_$EM(){this._$AL=new Map,this.isUpdatePending=!1}get updateComplete(){return this.getUpdateComplete()}getUpdateComplete(){return this._$ES}shouldUpdate(t){return!0}update(t){this._$Eq&&=this._$Eq.forEach(t=>this._$ET(t,this[t])),this._$EM()}updated(t){}firstUpdated(t){}};$.elementStyles=[],$.shadowRootOptions={mode:"open"},$[_("elementProperties")]=new Map,$[_("finalized")]=new Map,f?.({ReactiveElement:$}),(g.reactiveElementVersions??=[]).push("2.1.2");const w=globalThis,k=t=>t,A=w.trustedTypes,S=A?A.createPolicy("lit-html",{createHTML:t=>t}):void 0,E="$lit$",C=`lit$${Math.random().toFixed(9).slice(2)}$`,T="?"+C,M=`<${T}>`,z=document,I=()=>z.createComment(""),P=t=>null===t||"object"!=typeof t&&"function"!=typeof t,O=Array.isArray,D="[ \t\n\f\r]",R=/<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g,F=/-->/g,U=/>/g,N=RegExp(`>|${D}(?:([^\\s"'>=/]+)(${D}*=${D}*(?:[^ \t\n\f\r"'\`<>=]|("|')|))|$)`,"g"),j=/'/g,H=/"/g,L=/^(?:script|style|textarea|title)$/i,B=(t=>(e,...o)=>({_$litType$:t,strings:e,values:o}))(1),q=Symbol.for("lit-noChange"),W=Symbol.for("lit-nothing"),V=new WeakMap,K=z.createTreeWalker(z,129);function G(t,e){if(!O(t)||!t.hasOwnProperty("raw"))throw Error("invalid template strings array");return void 0!==S?S.createHTML(e):e}class J{constructor({strings:t,_$litType$:e},o){let i;this.parts=[];let r=0,s=0;const a=t.length-1,n=this.parts,[l,c]=((t,e)=>{const o=t.length-1,i=[];let r,s=2===e?"<svg>":3===e?"<math>":"",a=R;for(let e=0;e<o;e++){const o=t[e];let n,l,c=-1,d=0;for(;d<o.length&&(a.lastIndex=d,l=a.exec(o),null!==l);)d=a.lastIndex,a===R?"!--"===l[1]?a=F:void 0!==l[1]?a=U:void 0!==l[2]?(L.test(l[2])&&(r=RegExp("</"+l[2],"g")),a=N):void 0!==l[3]&&(a=N):a===N?">"===l[0]?(a=r??R,c=-1):void 0===l[1]?c=-2:(c=a.lastIndex-l[2].length,n=l[1],a=void 0===l[3]?N:'"'===l[3]?H:j):a===H||a===j?a=N:a===F||a===U?a=R:(a=N,r=void 0);const h=a===N&&t[e+1].startsWith("/>")?" ":"";s+=a===R?o+M:c>=0?(i.push(n),o.slice(0,c)+E+o.slice(c)+C+h):o+C+(-2===c?e:h)}return[G(t,s+(t[o]||"<?>")+(2===e?"</svg>":3===e?"</math>":"")),i]})(t,e);if(this.el=J.createElement(l,o),K.currentNode=this.el.content,2===e||3===e){const t=this.el.content.firstChild;t.replaceWith(...t.childNodes)}for(;null!==(i=K.nextNode())&&n.length<a;){if(1===i.nodeType){if(i.hasAttributes())for(const t of i.getAttributeNames())if(t.endsWith(E)){const e=c[s++],o=i.getAttribute(t).split(C),a=/([.?@])?(.*)/.exec(e);n.push({type:1,index:r,name:a[2],strings:o,ctor:"."===a[1]?tt:"?"===a[1]?et:"@"===a[1]?ot:Y}),i.removeAttribute(t)}else t.startsWith(C)&&(n.push({type:6,index:r}),i.removeAttribute(t));if(L.test(i.tagName)){const t=i.textContent.split(C),e=t.length-1;if(e>0){i.textContent=A?A.emptyScript:"";for(let o=0;o<e;o++)i.append(t[o],I()),K.nextNode(),n.push({type:2,index:++r});i.append(t[e],I())}}}else if(8===i.nodeType)if(i.data===T)n.push({type:2,index:r});else{let t=-1;for(;-1!==(t=i.data.indexOf(C,t+1));)n.push({type:7,index:r}),t+=C.length-1}r++}}static createElement(t,e){const o=z.createElement("template");return o.innerHTML=t,o}}function X(t,e,o=t,i){if(e===q)return e;let r=void 0!==i?o._$Co?.[i]:o._$Cl;const s=P(e)?void 0:e._$litDirective$;return r?.constructor!==s&&(r?._$AO?.(!1),void 0===s?r=void 0:(r=new s(t),r._$AT(t,o,i)),void 0!==i?(o._$Co??=[])[i]=r:o._$Cl=r),void 0!==r&&(e=X(t,r._$AS(t,e.values),r,i)),e}class Z{constructor(t,e){this._$AV=[],this._$AN=void 0,this._$AD=t,this._$AM=e}get parentNode(){return this._$AM.parentNode}get _$AU(){return this._$AM._$AU}u(t){const{el:{content:e},parts:o}=this._$AD,i=(t?.creationScope??z).importNode(e,!0);K.currentNode=i;let r=K.nextNode(),s=0,a=0,n=o[0];for(;void 0!==n;){if(s===n.index){let e;2===n.type?e=new Q(r,r.nextSibling,this,t):1===n.type?e=new n.ctor(r,n.name,n.strings,this,t):6===n.type&&(e=new it(r,this,t)),this._$AV.push(e),n=o[++a]}s!==n?.index&&(r=K.nextNode(),s++)}return K.currentNode=z,i}p(t){let e=0;for(const o of this._$AV)void 0!==o&&(void 0!==o.strings?(o._$AI(t,o,e),e+=o.strings.length-2):o._$AI(t[e])),e++}}class Q{get _$AU(){return this._$AM?._$AU??this._$Cv}constructor(t,e,o,i){this.type=2,this._$AH=W,this._$AN=void 0,this._$AA=t,this._$AB=e,this._$AM=o,this.options=i,this._$Cv=i?.isConnected??!0}get parentNode(){let t=this._$AA.parentNode;const e=this._$AM;return void 0!==e&&11===t?.nodeType&&(t=e.parentNode),t}get startNode(){return this._$AA}get endNode(){return this._$AB}_$AI(t,e=this){t=X(this,t,e),P(t)?t===W||null==t||""===t?(this._$AH!==W&&this._$AR(),this._$AH=W):t!==this._$AH&&t!==q&&this._(t):void 0!==t._$litType$?this.$(t):void 0!==t.nodeType?this.T(t):(t=>O(t)||"function"==typeof t?.[Symbol.iterator])(t)?this.k(t):this._(t)}O(t){return this._$AA.parentNode.insertBefore(t,this._$AB)}T(t){this._$AH!==t&&(this._$AR(),this._$AH=this.O(t))}_(t){this._$AH!==W&&P(this._$AH)?this._$AA.nextSibling.data=t:this.T(z.createTextNode(t)),this._$AH=t}$(t){const{values:e,_$litType$:o}=t,i="number"==typeof o?this._$AC(t):(void 0===o.el&&(o.el=J.createElement(G(o.h,o.h[0]),this.options)),o);if(this._$AH?._$AD===i)this._$AH.p(e);else{const t=new Z(i,this),o=t.u(this.options);t.p(e),this.T(o),this._$AH=t}}_$AC(t){let e=V.get(t.strings);return void 0===e&&V.set(t.strings,e=new J(t)),e}k(t){O(this._$AH)||(this._$AH=[],this._$AR());const e=this._$AH;let o,i=0;for(const r of t)i===e.length?e.push(o=new Q(this.O(I()),this.O(I()),this,this.options)):o=e[i],o._$AI(r),i++;i<e.length&&(this._$AR(o&&o._$AB.nextSibling,i),e.length=i)}_$AR(t=this._$AA.nextSibling,e){for(this._$AP?.(!1,!0,e);t!==this._$AB;){const e=k(t).nextSibling;k(t).remove(),t=e}}setConnected(t){void 0===this._$AM&&(this._$Cv=t,this._$AP?.(t))}}class Y{get tagName(){return this.element.tagName}get _$AU(){return this._$AM._$AU}constructor(t,e,o,i,r){this.type=1,this._$AH=W,this._$AN=void 0,this.element=t,this.name=e,this._$AM=i,this.options=r,o.length>2||""!==o[0]||""!==o[1]?(this._$AH=Array(o.length-1).fill(new String),this.strings=o):this._$AH=W}_$AI(t,e=this,o,i){const r=this.strings;let s=!1;if(void 0===r)t=X(this,t,e,0),s=!P(t)||t!==this._$AH&&t!==q,s&&(this._$AH=t);else{const i=t;let a,n;for(t=r[0],a=0;a<r.length-1;a++)n=X(this,i[o+a],e,a),n===q&&(n=this._$AH[a]),s||=!P(n)||n!==this._$AH[a],n===W?t=W:t!==W&&(t+=(n??"")+r[a+1]),this._$AH[a]=n}s&&!i&&this.j(t)}j(t){t===W?this.element.removeAttribute(this.name):this.element.setAttribute(this.name,t??"")}}class tt extends Y{constructor(){super(...arguments),this.type=3}j(t){this.element[this.name]=t===W?void 0:t}}class et extends Y{constructor(){super(...arguments),this.type=4}j(t){this.element.toggleAttribute(this.name,!!t&&t!==W)}}class ot extends Y{constructor(t,e,o,i,r){super(t,e,o,i,r),this.type=5}_$AI(t,e=this){if((t=X(this,t,e,0)??W)===q)return;const o=this._$AH,i=t===W&&o!==W||t.capture!==o.capture||t.once!==o.once||t.passive!==o.passive,r=t!==W&&(o===W||i);i&&this.element.removeEventListener(this.name,this,o),r&&this.element.addEventListener(this.name,this,t),this._$AH=t}handleEvent(t){"function"==typeof this._$AH?this._$AH.call(this.options?.host??this.element,t):this._$AH.handleEvent(t)}}class it{constructor(t,e,o){this.element=t,this.type=6,this._$AN=void 0,this._$AM=e,this.options=o}get _$AU(){return this._$AM._$AU}_$AI(t){X(this,t)}}const rt={I:Q},st=w.litHtmlPolyfillSupport;st?.(J,Q),(w.litHtmlVersions??=[]).push("3.3.2");const at=globalThis;let nt=class extends ${constructor(){super(...arguments),this.renderOptions={host:this},this._$Do=void 0}createRenderRoot(){const t=super.createRenderRoot();return this.renderOptions.renderBefore??=t.firstChild,t}update(t){const e=this.render();this.hasUpdated||(this.renderOptions.isConnected=this.isConnected),super.update(t),this._$Do=((t,e,o)=>{const i=o?.renderBefore??e;let r=i._$litPart$;if(void 0===r){const t=o?.renderBefore??null;i._$litPart$=r=new Q(e.insertBefore(I(),t),t,void 0,o??{})}return r._$AI(t),r})(e,this.renderRoot,this.renderOptions)}connectedCallback(){super.connectedCallback(),this._$Do?.setConnected(!0)}disconnectedCallback(){super.disconnectedCallback(),this._$Do?.setConnected(!1)}render(){return q}};nt._$litElement$=!0,nt.finalized=!0,at.litElementHydrateSupport?.({LitElement:nt});const lt=at.litElementPolyfillSupport;lt?.({LitElement:nt}),(at.litElementVersions??=[]).push("4.2.2");const ct=t=>(e,o)=>{void 0!==o?o.addInitializer(()=>{customElements.define(t,e)}):customElements.define(t,e)},dt={attribute:!0,type:String,converter:y,reflect:!1,hasChanged:v},ht=(t=dt,e,o)=>{const{kind:i,metadata:r}=o;let s=globalThis.litPropertyMetadata.get(r);if(void 0===s&&globalThis.litPropertyMetadata.set(r,s=new Map),"setter"===i&&((t=Object.create(t)).wrapped=!0),s.set(o.name,t),"accessor"===i){const{name:i}=o;return{set(o){const r=e.get.call(this);e.set.call(this,o),this.requestUpdate(i,r,t,!0,o)},init(e){return void 0!==e&&this.C(i,void 0,t,e),e}}}if("setter"===i){const{name:i}=o;return function(o){const r=this[i];e.call(this,o),this.requestUpdate(i,r,t,!0,o)}}throw Error("Unsupported decorator location: "+i)};function pt(t){return(e,o)=>"object"==typeof o?ht(t,e,o):((t,e,o)=>{const i=e.hasOwnProperty(o);return e.constructor.createProperty(o,t),i?Object.getOwnPropertyDescriptor(e,o):void 0})(t,e,o)}function ut(t){return pt({...t,state:!0,attribute:!1})}async function gt(t){return(await t.callWS({type:"abode_security/actions/list"})).actions}async function mt(t){return(await t.callWS({type:"abode_security/modes/list"})).modes}async function bt(t){return(await t.callWS({type:"abode_security/entities/sensors"})).sensors}async function ft(t){return(await t.callWS({type:"abode_security/entities/alarms"})).alarms}async function _t(t,e,o){return t.callWS({type:"abode_security/actions/update",action_id:e,...o})}let yt=0;const vt=[],xt=["a[href]","button:not([disabled])",'input:not([disabled]):not([type="hidden"])',"textarea:not([disabled])","select:not([disabled])",'[tabindex]:not([tabindex="-1"])'].join(",");let $t=class extends nt{constructor(){super(...arguments),this.heading="",this.variant="dialog",this.size="sm",this.dismissOnOverlay=!0,this.dismissOnEscape=!0,this._hasFooterContent=!1,this._headingId="abode-modal-heading-"+ ++yt,this._previouslyFocused=null,this._onOverlayClick=t=>{this.dismissOnOverlay&&t.target===t.currentTarget&&this._dismiss()},this._onDocKeydown=t=>{this.dismissOnEscape&&vt[vt.length-1]===this&&"Escape"===t.key&&this._dismiss()},this._onFooterSlotChange=t=>{const e=t.target;this._hasFooterContent=e.assignedElements().length>0},this._onSentinelStartFocus=()=>{this._redirectFocus("last")},this._onSentinelEndFocus=()=>{this._redirectFocus("first")}}_redirectFocus(t){const e=this._getFocusable();if(0===e.length)return void this._focusBox();("first"===t?e[0]:e[e.length-1]).focus()}_getFocusable(){const t=this.shadowRoot?.querySelectorAll('slot:not([name]), slot[name="footer"]');if(!t)return[];const e=[];for(const o of t)for(const t of o.assignedElements({flatten:!0}))t instanceof HTMLElement&&(t.matches(xt)&&e.push(t),e.push(...t.querySelectorAll(xt)));return e.filter(t=>t.tabIndex>=0)}_focusBox(){const t=this.shadowRoot?.querySelector(".modal-box");t?.focus()}_dismiss(){this.dispatchEvent(new CustomEvent("dismiss",{bubbles:!0,composed:!0}))}connectedCallback(){super.connectedCallback(),null===this._previouslyFocused&&(this._previouslyFocused=document.activeElement),vt.push(this),document.addEventListener("keydown",this._onDocKeydown)}disconnectedCallback(){super.disconnectedCallback(),document.removeEventListener("keydown",this._onDocKeydown);const t=vt.indexOf(this);-1!==t&&vt.splice(t,1);const e=document.activeElement;(!e||e===document.body||this.contains(e))&&this._previouslyFocused?.focus?.(),this._previouslyFocused=null}firstUpdated(){const t=this._getFocusable();t.length>0?t[0].focus():this._focusBox()}render(){return B`
+function e(e,t,o,i){var r,s=arguments.length,a=s<3?t:null===i?i=Object.getOwnPropertyDescriptor(t,o):i;if("object"==typeof Reflect&&"function"==typeof Reflect.decorate)a=Reflect.decorate(e,t,o,i);else for(var n=e.length-1;n>=0;n--)(r=e[n])&&(a=(s<3?r(a):s>3?r(t,o,a):r(t,o))||a);return s>3&&a&&Object.defineProperty(t,o,a),a}"function"==typeof SuppressedError&&SuppressedError;const t=globalThis,o=t.ShadowRoot&&(void 0===t.ShadyCSS||t.ShadyCSS.nativeShadow)&&"adoptedStyleSheets"in Document.prototype&&"replace"in CSSStyleSheet.prototype,i=Symbol(),r=new WeakMap;let s=class{constructor(e,t,o){if(this._$cssResult$=!0,o!==i)throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");this.cssText=e,this.t=t}get styleSheet(){let e=this.o;const t=this.t;if(o&&void 0===e){const o=void 0!==t&&1===t.length;o&&(e=r.get(t)),void 0===e&&((this.o=e=new CSSStyleSheet).replaceSync(this.cssText),o&&r.set(t,e))}return e}toString(){return this.cssText}};const a=(e,...t)=>{const o=1===e.length?e[0]:t.reduce((t,o,i)=>t+(e=>{if(!0===e._$cssResult$)return e.cssText;if("number"==typeof e)return e;throw Error("Value passed to 'css' function must be a 'css' function result: "+e+". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.")})(o)+e[i+1],e[0]);return new s(o,e,i)},n=o?e=>e:e=>e instanceof CSSStyleSheet?(e=>{let t="";for(const o of e.cssRules)t+=o.cssText;return(e=>new s("string"==typeof e?e:e+"",void 0,i))(t)})(e):e,{is:l,defineProperty:d,getOwnPropertyDescriptor:c,getOwnPropertyNames:h,getOwnPropertySymbols:p,getPrototypeOf:u}=Object,m=globalThis,b=m.trustedTypes,g=b?b.emptyScript:"",_=m.reactiveElementPolyfillSupport,f=(e,t)=>e,y={toAttribute(e,t){switch(t){case Boolean:e=e?g:null;break;case Object:case Array:e=null==e?e:JSON.stringify(e)}return e},fromAttribute(e,t){let o=e;switch(t){case Boolean:o=null!==e;break;case Number:o=null===e?null:Number(e);break;case Object:case Array:try{o=JSON.parse(e)}catch(e){o=null}}return o}},v=(e,t)=>!l(e,t),x={attribute:!0,type:String,converter:y,reflect:!1,useDefault:!1,hasChanged:v};Symbol.metadata??=Symbol("metadata"),m.litPropertyMetadata??=new WeakMap;let $=class extends HTMLElement{static addInitializer(e){this._$Ei(),(this.l??=[]).push(e)}static get observedAttributes(){return this.finalize(),this._$Eh&&[...this._$Eh.keys()]}static createProperty(e,t=x){if(t.state&&(t.attribute=!1),this._$Ei(),this.prototype.hasOwnProperty(e)&&((t=Object.create(t)).wrapped=!0),this.elementProperties.set(e,t),!t.noAccessor){const o=Symbol(),i=this.getPropertyDescriptor(e,o,t);void 0!==i&&d(this.prototype,e,i)}}static getPropertyDescriptor(e,t,o){const{get:i,set:r}=c(this.prototype,e)??{get(){return this[t]},set(e){this[t]=e}};return{get:i,set(t){const s=i?.call(this);r?.call(this,t),this.requestUpdate(e,s,o)},configurable:!0,enumerable:!0}}static getPropertyOptions(e){return this.elementProperties.get(e)??x}static _$Ei(){if(this.hasOwnProperty(f("elementProperties")))return;const e=u(this);e.finalize(),void 0!==e.l&&(this.l=[...e.l]),this.elementProperties=new Map(e.elementProperties)}static finalize(){if(this.hasOwnProperty(f("finalized")))return;if(this.finalized=!0,this._$Ei(),this.hasOwnProperty(f("properties"))){const e=this.properties,t=[...h(e),...p(e)];for(const o of t)this.createProperty(o,e[o])}const e=this[Symbol.metadata];if(null!==e){const t=litPropertyMetadata.get(e);if(void 0!==t)for(const[e,o]of t)this.elementProperties.set(e,o)}this._$Eh=new Map;for(const[e,t]of this.elementProperties){const o=this._$Eu(e,t);void 0!==o&&this._$Eh.set(o,e)}this.elementStyles=this.finalizeStyles(this.styles)}static finalizeStyles(e){const t=[];if(Array.isArray(e)){const o=new Set(e.flat(1/0).reverse());for(const e of o)t.unshift(n(e))}else void 0!==e&&t.push(n(e));return t}static _$Eu(e,t){const o=t.attribute;return!1===o?void 0:"string"==typeof o?o:"string"==typeof e?e.toLowerCase():void 0}constructor(){super(),this._$Ep=void 0,this.isUpdatePending=!1,this.hasUpdated=!1,this._$Em=null,this._$Ev()}_$Ev(){this._$ES=new Promise(e=>this.enableUpdating=e),this._$AL=new Map,this._$E_(),this.requestUpdate(),this.constructor.l?.forEach(e=>e(this))}addController(e){(this._$EO??=new Set).add(e),void 0!==this.renderRoot&&this.isConnected&&e.hostConnected?.()}removeController(e){this._$EO?.delete(e)}_$E_(){const e=new Map,t=this.constructor.elementProperties;for(const o of t.keys())this.hasOwnProperty(o)&&(e.set(o,this[o]),delete this[o]);e.size>0&&(this._$Ep=e)}createRenderRoot(){const e=this.shadowRoot??this.attachShadow(this.constructor.shadowRootOptions);return((e,i)=>{if(o)e.adoptedStyleSheets=i.map(e=>e instanceof CSSStyleSheet?e:e.styleSheet);else for(const o of i){const i=document.createElement("style"),r=t.litNonce;void 0!==r&&i.setAttribute("nonce",r),i.textContent=o.cssText,e.appendChild(i)}})(e,this.constructor.elementStyles),e}connectedCallback(){this.renderRoot??=this.createRenderRoot(),this.enableUpdating(!0),this._$EO?.forEach(e=>e.hostConnected?.())}enableUpdating(e){}disconnectedCallback(){this._$EO?.forEach(e=>e.hostDisconnected?.())}attributeChangedCallback(e,t,o){this._$AK(e,o)}_$ET(e,t){const o=this.constructor.elementProperties.get(e),i=this.constructor._$Eu(e,o);if(void 0!==i&&!0===o.reflect){const r=(void 0!==o.converter?.toAttribute?o.converter:y).toAttribute(t,o.type);this._$Em=e,null==r?this.removeAttribute(i):this.setAttribute(i,r),this._$Em=null}}_$AK(e,t){const o=this.constructor,i=o._$Eh.get(e);if(void 0!==i&&this._$Em!==i){const e=o.getPropertyOptions(i),r="function"==typeof e.converter?{fromAttribute:e.converter}:void 0!==e.converter?.fromAttribute?e.converter:y;this._$Em=i;const s=r.fromAttribute(t,e.type);this[i]=s??this._$Ej?.get(i)??s,this._$Em=null}}requestUpdate(e,t,o,i=!1,r){if(void 0!==e){const s=this.constructor;if(!1===i&&(r=this[e]),o??=s.getPropertyOptions(e),!((o.hasChanged??v)(r,t)||o.useDefault&&o.reflect&&r===this._$Ej?.get(e)&&!this.hasAttribute(s._$Eu(e,o))))return;this.C(e,t,o)}!1===this.isUpdatePending&&(this._$ES=this._$EP())}C(e,t,{useDefault:o,reflect:i,wrapped:r},s){o&&!(this._$Ej??=new Map).has(e)&&(this._$Ej.set(e,s??t??this[e]),!0!==r||void 0!==s)||(this._$AL.has(e)||(this.hasUpdated||o||(t=void 0),this._$AL.set(e,t)),!0===i&&this._$Em!==e&&(this._$Eq??=new Set).add(e))}async _$EP(){this.isUpdatePending=!0;try{await this._$ES}catch(e){Promise.reject(e)}const e=this.scheduleUpdate();return null!=e&&await e,!this.isUpdatePending}scheduleUpdate(){return this.performUpdate()}performUpdate(){if(!this.isUpdatePending)return;if(!this.hasUpdated){if(this.renderRoot??=this.createRenderRoot(),this._$Ep){for(const[e,t]of this._$Ep)this[e]=t;this._$Ep=void 0}const e=this.constructor.elementProperties;if(e.size>0)for(const[t,o]of e){const{wrapped:e}=o,i=this[t];!0!==e||this._$AL.has(t)||void 0===i||this.C(t,void 0,o,i)}}let e=!1;const t=this._$AL;try{e=this.shouldUpdate(t),e?(this.willUpdate(t),this._$EO?.forEach(e=>e.hostUpdate?.()),this.update(t)):this._$EM()}catch(t){throw e=!1,this._$EM(),t}e&&this._$AE(t)}willUpdate(e){}_$AE(e){this._$EO?.forEach(e=>e.hostUpdated?.()),this.hasUpdated||(this.hasUpdated=!0,this.firstUpdated(e)),this.updated(e)}_$EM(){this._$AL=new Map,this.isUpdatePending=!1}get updateComplete(){return this.getUpdateComplete()}getUpdateComplete(){return this._$ES}shouldUpdate(e){return!0}update(e){this._$Eq&&=this._$Eq.forEach(e=>this._$ET(e,this[e])),this._$EM()}updated(e){}firstUpdated(e){}};$.elementStyles=[],$.shadowRootOptions={mode:"open"},$[f("elementProperties")]=new Map,$[f("finalized")]=new Map,_?.({ReactiveElement:$}),(m.reactiveElementVersions??=[]).push("2.1.2");const w=globalThis,k=e=>e,A=w.trustedTypes,E=A?A.createPolicy("lit-html",{createHTML:e=>e}):void 0,S="$lit$",C=`lit$${Math.random().toFixed(9).slice(2)}$`,T="?"+C,z=`<${T}>`,M=document,D=()=>M.createComment(""),I=e=>null===e||"object"!=typeof e&&"function"!=typeof e,P=Array.isArray,R="[ \t\n\f\r]",O=/<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g,F=/-->/g,N=/>/g,U=RegExp(`>|${R}(?:([^\\s"'>=/]+)(${R}*=${R}*(?:[^ \t\n\f\r"'\`<>=]|("|')|))|$)`,"g"),j=/'/g,H=/"/g,L=/^(?:script|style|textarea|title)$/i,B=(e=>(t,...o)=>({_$litType$:e,strings:t,values:o}))(1),W=Symbol.for("lit-noChange"),q=Symbol.for("lit-nothing"),V=new WeakMap,K=M.createTreeWalker(M,129);function G(e,t){if(!P(e)||!e.hasOwnProperty("raw"))throw Error("invalid template strings array");return void 0!==E?E.createHTML(t):t}class J{constructor({strings:e,_$litType$:t},o){let i;this.parts=[];let r=0,s=0;const a=e.length-1,n=this.parts,[l,d]=((e,t)=>{const o=e.length-1,i=[];let r,s=2===t?"<svg>":3===t?"<math>":"",a=O;for(let t=0;t<o;t++){const o=e[t];let n,l,d=-1,c=0;for(;c<o.length&&(a.lastIndex=c,l=a.exec(o),null!==l);)c=a.lastIndex,a===O?"!--"===l[1]?a=F:void 0!==l[1]?a=N:void 0!==l[2]?(L.test(l[2])&&(r=RegExp("</"+l[2],"g")),a=U):void 0!==l[3]&&(a=U):a===U?">"===l[0]?(a=r??O,d=-1):void 0===l[1]?d=-2:(d=a.lastIndex-l[2].length,n=l[1],a=void 0===l[3]?U:'"'===l[3]?H:j):a===H||a===j?a=U:a===F||a===N?a=O:(a=U,r=void 0);const h=a===U&&e[t+1].startsWith("/>")?" ":"";s+=a===O?o+z:d>=0?(i.push(n),o.slice(0,d)+S+o.slice(d)+C+h):o+C+(-2===d?t:h)}return[G(e,s+(e[o]||"<?>")+(2===t?"</svg>":3===t?"</math>":"")),i]})(e,t);if(this.el=J.createElement(l,o),K.currentNode=this.el.content,2===t||3===t){const e=this.el.content.firstChild;e.replaceWith(...e.childNodes)}for(;null!==(i=K.nextNode())&&n.length<a;){if(1===i.nodeType){if(i.hasAttributes())for(const e of i.getAttributeNames())if(e.endsWith(S)){const t=d[s++],o=i.getAttribute(e).split(C),a=/([.?@])?(.*)/.exec(t);n.push({type:1,index:r,name:a[2],strings:o,ctor:"."===a[1]?ee:"?"===a[1]?te:"@"===a[1]?oe:Y}),i.removeAttribute(e)}else e.startsWith(C)&&(n.push({type:6,index:r}),i.removeAttribute(e));if(L.test(i.tagName)){const e=i.textContent.split(C),t=e.length-1;if(t>0){i.textContent=A?A.emptyScript:"";for(let o=0;o<t;o++)i.append(e[o],D()),K.nextNode(),n.push({type:2,index:++r});i.append(e[t],D())}}}else if(8===i.nodeType)if(i.data===T)n.push({type:2,index:r});else{let e=-1;for(;-1!==(e=i.data.indexOf(C,e+1));)n.push({type:7,index:r}),e+=C.length-1}r++}}static createElement(e,t){const o=M.createElement("template");return o.innerHTML=e,o}}function X(e,t,o=e,i){if(t===W)return t;let r=void 0!==i?o._$Co?.[i]:o._$Cl;const s=I(t)?void 0:t._$litDirective$;return r?.constructor!==s&&(r?._$AO?.(!1),void 0===s?r=void 0:(r=new s(e),r._$AT(e,o,i)),void 0!==i?(o._$Co??=[])[i]=r:o._$Cl=r),void 0!==r&&(t=X(e,r._$AS(e,t.values),r,i)),t}class Z{constructor(e,t){this._$AV=[],this._$AN=void 0,this._$AD=e,this._$AM=t}get parentNode(){return this._$AM.parentNode}get _$AU(){return this._$AM._$AU}u(e){const{el:{content:t},parts:o}=this._$AD,i=(e?.creationScope??M).importNode(t,!0);K.currentNode=i;let r=K.nextNode(),s=0,a=0,n=o[0];for(;void 0!==n;){if(s===n.index){let t;2===n.type?t=new Q(r,r.nextSibling,this,e):1===n.type?t=new n.ctor(r,n.name,n.strings,this,e):6===n.type&&(t=new ie(r,this,e)),this._$AV.push(t),n=o[++a]}s!==n?.index&&(r=K.nextNode(),s++)}return K.currentNode=M,i}p(e){let t=0;for(const o of this._$AV)void 0!==o&&(void 0!==o.strings?(o._$AI(e,o,t),t+=o.strings.length-2):o._$AI(e[t])),t++}}class Q{get _$AU(){return this._$AM?._$AU??this._$Cv}constructor(e,t,o,i){this.type=2,this._$AH=q,this._$AN=void 0,this._$AA=e,this._$AB=t,this._$AM=o,this.options=i,this._$Cv=i?.isConnected??!0}get parentNode(){let e=this._$AA.parentNode;const t=this._$AM;return void 0!==t&&11===e?.nodeType&&(e=t.parentNode),e}get startNode(){return this._$AA}get endNode(){return this._$AB}_$AI(e,t=this){e=X(this,e,t),I(e)?e===q||null==e||""===e?(this._$AH!==q&&this._$AR(),this._$AH=q):e!==this._$AH&&e!==W&&this._(e):void 0!==e._$litType$?this.$(e):void 0!==e.nodeType?this.T(e):(e=>P(e)||"function"==typeof e?.[Symbol.iterator])(e)?this.k(e):this._(e)}O(e){return this._$AA.parentNode.insertBefore(e,this._$AB)}T(e){this._$AH!==e&&(this._$AR(),this._$AH=this.O(e))}_(e){this._$AH!==q&&I(this._$AH)?this._$AA.nextSibling.data=e:this.T(M.createTextNode(e)),this._$AH=e}$(e){const{values:t,_$litType$:o}=e,i="number"==typeof o?this._$AC(e):(void 0===o.el&&(o.el=J.createElement(G(o.h,o.h[0]),this.options)),o);if(this._$AH?._$AD===i)this._$AH.p(t);else{const e=new Z(i,this),o=e.u(this.options);e.p(t),this.T(o),this._$AH=e}}_$AC(e){let t=V.get(e.strings);return void 0===t&&V.set(e.strings,t=new J(e)),t}k(e){P(this._$AH)||(this._$AH=[],this._$AR());const t=this._$AH;let o,i=0;for(const r of e)i===t.length?t.push(o=new Q(this.O(D()),this.O(D()),this,this.options)):o=t[i],o._$AI(r),i++;i<t.length&&(this._$AR(o&&o._$AB.nextSibling,i),t.length=i)}_$AR(e=this._$AA.nextSibling,t){for(this._$AP?.(!1,!0,t);e!==this._$AB;){const t=k(e).nextSibling;k(e).remove(),e=t}}setConnected(e){void 0===this._$AM&&(this._$Cv=e,this._$AP?.(e))}}class Y{get tagName(){return this.element.tagName}get _$AU(){return this._$AM._$AU}constructor(e,t,o,i,r){this.type=1,this._$AH=q,this._$AN=void 0,this.element=e,this.name=t,this._$AM=i,this.options=r,o.length>2||""!==o[0]||""!==o[1]?(this._$AH=Array(o.length-1).fill(new String),this.strings=o):this._$AH=q}_$AI(e,t=this,o,i){const r=this.strings;let s=!1;if(void 0===r)e=X(this,e,t,0),s=!I(e)||e!==this._$AH&&e!==W,s&&(this._$AH=e);else{const i=e;let a,n;for(e=r[0],a=0;a<r.length-1;a++)n=X(this,i[o+a],t,a),n===W&&(n=this._$AH[a]),s||=!I(n)||n!==this._$AH[a],n===q?e=q:e!==q&&(e+=(n??"")+r[a+1]),this._$AH[a]=n}s&&!i&&this.j(e)}j(e){e===q?this.element.removeAttribute(this.name):this.element.setAttribute(this.name,e??"")}}class ee extends Y{constructor(){super(...arguments),this.type=3}j(e){this.element[this.name]=e===q?void 0:e}}class te extends Y{constructor(){super(...arguments),this.type=4}j(e){this.element.toggleAttribute(this.name,!!e&&e!==q)}}class oe extends Y{constructor(e,t,o,i,r){super(e,t,o,i,r),this.type=5}_$AI(e,t=this){if((e=X(this,e,t,0)??q)===W)return;const o=this._$AH,i=e===q&&o!==q||e.capture!==o.capture||e.once!==o.once||e.passive!==o.passive,r=e!==q&&(o===q||i);i&&this.element.removeEventListener(this.name,this,o),r&&this.element.addEventListener(this.name,this,e),this._$AH=e}handleEvent(e){"function"==typeof this._$AH?this._$AH.call(this.options?.host??this.element,e):this._$AH.handleEvent(e)}}class ie{constructor(e,t,o){this.element=e,this.type=6,this._$AN=void 0,this._$AM=t,this.options=o}get _$AU(){return this._$AM._$AU}_$AI(e){X(this,e)}}const re={I:Q},se=w.litHtmlPolyfillSupport;se?.(J,Q),(w.litHtmlVersions??=[]).push("3.3.2");const ae=globalThis;let ne=class extends ${constructor(){super(...arguments),this.renderOptions={host:this},this._$Do=void 0}createRenderRoot(){const e=super.createRenderRoot();return this.renderOptions.renderBefore??=e.firstChild,e}update(e){const t=this.render();this.hasUpdated||(this.renderOptions.isConnected=this.isConnected),super.update(e),this._$Do=((e,t,o)=>{const i=o?.renderBefore??t;let r=i._$litPart$;if(void 0===r){const e=o?.renderBefore??null;i._$litPart$=r=new Q(t.insertBefore(D(),e),e,void 0,o??{})}return r._$AI(e),r})(t,this.renderRoot,this.renderOptions)}connectedCallback(){super.connectedCallback(),this._$Do?.setConnected(!0)}disconnectedCallback(){super.disconnectedCallback(),this._$Do?.setConnected(!1)}render(){return W}};ne._$litElement$=!0,ne.finalized=!0,ae.litElementHydrateSupport?.({LitElement:ne});const le=ae.litElementPolyfillSupport;le?.({LitElement:ne}),(ae.litElementVersions??=[]).push("4.2.2");const de=e=>(t,o)=>{void 0!==o?o.addInitializer(()=>{customElements.define(e,t)}):customElements.define(e,t)},ce={attribute:!0,type:String,converter:y,reflect:!1,hasChanged:v},he=(e=ce,t,o)=>{const{kind:i,metadata:r}=o;let s=globalThis.litPropertyMetadata.get(r);if(void 0===s&&globalThis.litPropertyMetadata.set(r,s=new Map),"setter"===i&&((e=Object.create(e)).wrapped=!0),s.set(o.name,e),"accessor"===i){const{name:i}=o;return{set(o){const r=t.get.call(this);t.set.call(this,o),this.requestUpdate(i,r,e,!0,o)},init(t){return void 0!==t&&this.C(i,void 0,e,t),t}}}if("setter"===i){const{name:i}=o;return function(o){const r=this[i];t.call(this,o),this.requestUpdate(i,r,e,!0,o)}}throw Error("Unsupported decorator location: "+i)};function pe(e){return(t,o)=>"object"==typeof o?he(e,t,o):((e,t,o)=>{const i=t.hasOwnProperty(o);return t.constructor.createProperty(o,e),i?Object.getOwnPropertyDescriptor(t,o):void 0})(e,t,o)}function ue(e){return pe({...e,state:!0,attribute:!1})}async function me(e){return(await e.callWS({type:"abode_security/actions/list"})).actions}async function be(e){return e.callWS({type:"abode_security/modes/list"})}async function ge(e){return(await e.callWS({type:"abode_security/entities/sensors"})).sensors}async function _e(e){return(await e.callWS({type:"abode_security/entities/alarms"})).alarms}async function fe(e,t,o){return e.callWS({type:"abode_security/actions/update",action_id:t,...o})}let ye=0;const ve=[],xe=["a[href]","button:not([disabled])",'input:not([disabled]):not([type="hidden"])',"textarea:not([disabled])","select:not([disabled])",'[tabindex]:not([tabindex="-1"])'].join(",");let $e=class extends ne{constructor(){super(...arguments),this.heading="",this.variant="dialog",this.size="sm",this.dismissOnOverlay=!0,this.dismissOnEscape=!0,this._hasFooterContent=!1,this._headingId="abode-modal-heading-"+ ++ye,this._previouslyFocused=null,this._onOverlayClick=e=>{this.dismissOnOverlay&&e.target===e.currentTarget&&this._dismiss()},this._onDocKeydown=e=>{this.dismissOnEscape&&ve[ve.length-1]===this&&"Escape"===e.key&&this._dismiss()},this._onFooterSlotChange=e=>{const t=e.target;this._hasFooterContent=t.assignedElements().length>0},this._onSentinelStartFocus=()=>{this._redirectFocus("last")},this._onSentinelEndFocus=()=>{this._redirectFocus("first")}}_redirectFocus(e){const t=this._getFocusable();if(0===t.length)return void this._focusBox();("first"===e?t[0]:t[t.length-1]).focus()}_getFocusable(){const e=this.shadowRoot?.querySelectorAll('slot:not([name]), slot[name="footer"]');if(!e)return[];const t=[];for(const o of e)for(const e of o.assignedElements({flatten:!0}))e instanceof HTMLElement&&(e.matches(xe)&&t.push(e),t.push(...e.querySelectorAll(xe)));return t.filter(e=>e.tabIndex>=0)}_focusBox(){const e=this.shadowRoot?.querySelector(".modal-box");e?.focus()}_dismiss(){this.dispatchEvent(new CustomEvent("dismiss",{bubbles:!0,composed:!0}))}connectedCallback(){super.connectedCallback(),null===this._previouslyFocused&&(this._previouslyFocused=document.activeElement),ve.push(this),document.addEventListener("keydown",this._onDocKeydown)}disconnectedCallback(){super.disconnectedCallback(),document.removeEventListener("keydown",this._onDocKeydown);const e=ve.indexOf(this);-1!==e&&ve.splice(e,1);const t=document.activeElement;(!t||t===document.body||this.contains(t))&&this._previouslyFocused?.focus?.(),this._previouslyFocused=null}firstUpdated(){const e=this._getFocusable();e.length>0?e[0].focus():this._focusBox()}render(){return B`
       <div class="modal-overlay" @click=${this._onOverlayClick}>
         <span
           class="focus-sentinel focus-sentinel-start"
@@ -25,7 +25,7 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
           @focus=${this._onSentinelEndFocus}
         ></span>
       </div>
-    `}};$t.styles=a`
+    `}};function we(e,t,o="unavailable"){return e.states?.[t]?.state??o}function ke(e){return"unavailable"===e||"unknown"===e}$e.styles=a`
     :host {
       display: block;
     }
@@ -111,7 +111,514 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
     .modal-box:focus {
       outline: none;
     }
-  `,t([pt({type:String})],$t.prototype,"heading",void 0),t([pt({type:String})],$t.prototype,"variant",void 0),t([pt({type:String})],$t.prototype,"size",void 0),t([pt({type:Boolean,attribute:"dismiss-on-overlay"})],$t.prototype,"dismissOnOverlay",void 0),t([pt({type:Boolean,attribute:"dismiss-on-escape"})],$t.prototype,"dismissOnEscape",void 0),t([ut()],$t.prototype,"_hasFooterContent",void 0),$t=t([ct("abode-modal")],$t);let wt=class extends nt{constructor(){super(...arguments),this._modes=[],this._actions=[],this._loading=!0,this._error=null,this._confirmMode=null,this._settingModeId=null,this._setError=null,this._abort=null}async connectedCallback(){super.connectedCallback(),await this._loadData()}disconnectedCallback(){this._abort?.abort(),this._abort=null,super.disconnectedCallback()}async _loadData(t={}){this._abort?.abort();const e=new AbortController;this._abort=e;const{signal:o}=e;t.silent||(this._loading=!0),this._error=null;try{const[t,e]=await Promise.all([mt(this.hass),gt(this.hass)]);if(o.aborted)return;this._modes=t,this._actions=e}catch(t){if(o.aborted)return;this._error=t instanceof Error?t.message:"Failed to load data"}finally{o.aborted||t.silent||(this._loading=!1)}}_getActionsForMode(t){return this._actions.filter(e=>e.modes.includes(t)).sort((t,e)=>Number(e.enabled)-Number(t.enabled))}_renderActionCountBadge(t){const e=t.action_count,o=t.disabled_action_count??0;return e>0&&o>0?B`<span class="badge">${e} active, ${o} disabled</span>`:0===e&&o>0?B`<span class="badge">${o} disabled</span>`:B`<span class="badge">${e} ${1===e?"action":"actions"}</span>`}_requestSwitch(t){t.active||null!==this._settingModeId||(this._setError=null,this._confirmMode=t)}async _confirmSwitch(){if(!this._confirmMode)return;const t=this._confirmMode;this._confirmMode=null,this._settingModeId=t.id,this._setError=null;try{await async function(t,e){await t.callWS({type:"abode_security/modes/set",mode_id:e})}(this.hass,t.id)}catch(t){return console.error("Failed to set mode:",t),this._setError="Failed to change mode",void(this._settingModeId=null)}await this._loadData({silent:!0}),this._error&&(this._setError=`Mode changed; refresh failed: ${this._error}`,this._error=null),this._settingModeId=null}render(){return this._loading?B`<div class="loading">Loading modes...</div>`:this._error?B`<div class="error" role="alert">${this._error}</div>`:B`
+  `,e([pe({type:String})],$e.prototype,"heading",void 0),e([pe({type:String})],$e.prototype,"variant",void 0),e([pe({type:String})],$e.prototype,"size",void 0),e([pe({type:Boolean,attribute:"dismiss-on-overlay"})],$e.prototype,"dismissOnOverlay",void 0),e([pe({type:Boolean,attribute:"dismiss-on-escape"})],$e.prototype,"dismissOnEscape",void 0),e([ue()],$e.prototype,"_hasFooterContent",void 0),$e=e([de("abode-modal")],$e);const Ae=["standby","home","away"],Ee=["mon","tue","wed","thu","fri","sat","sun"];let Se=class extends ne{constructor(){super(...arguments),this.selected=[],this.disabled=!1}_toggle(e){if(this.disabled)return;const t=this.selected.includes(e)?this.selected.filter(t=>t!==e):[...this.selected,e];this.dispatchEvent(new CustomEvent("change",{detail:{selected:t},bubbles:!0,composed:!0}))}render(){return B`
+      <div class="chips" role="group" aria-label="Weekdays">
+        ${Ee.map(e=>B`
+            <button
+              type="button"
+              class="chip ${this.selected.includes(e)?"active":""}"
+              ?disabled=${this.disabled}
+              aria-pressed=${this.selected.includes(e)?"true":"false"}
+              aria-label=${this._fullName(e)}
+              title=${this._fullName(e)}
+              @click=${()=>this._toggle(e)}
+            >
+              ${this._label(e)}
+            </button>
+          `)}
+      </div>
+    `}_label(e){return{mon:"M",tue:"T",wed:"W",thu:"T",fri:"F",sat:"S",sun:"S"}[e]}_fullName(e){return{mon:"Monday",tue:"Tuesday",wed:"Wednesday",thu:"Thursday",fri:"Friday",sat:"Saturday",sun:"Sunday"}[e]}};Se.styles=a`
+    :host {
+      display: block;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border-radius: 50%;
+      border: 1px solid var(--divider-color, #e0e0e0);
+      background: var(--secondary-background-color, #f5f5f5);
+      color: var(--secondary-text-color);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition:
+        background 0.15s,
+        color 0.15s,
+        border-color 0.15s;
+    }
+
+    .chip.active {
+      background: var(--primary-color, #03a9f4);
+      color: white;
+      border-color: var(--primary-color, #03a9f4);
+    }
+
+    .chip:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: 2px;
+    }
+
+    .chip:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .chip:not(:disabled):hover:not(.active) {
+      background: var(--primary-color, #03a9f4);
+      color: white;
+      border-color: var(--primary-color, #03a9f4);
+      opacity: 0.7;
+    }
+  `,e([pe({type:Array})],Se.prototype,"selected",void 0),e([pe({type:Boolean})],Se.prototype,"disabled",void 0),Se=e([de("abode-day-chip-picker")],Se);let Ce=class extends ne{constructor(){super(...arguments),this.canEdit=!1,this._editing=!1,this._draft=null,this._error=null,this._saving=!1}connectedCallback(){super.connectedCallback(),""===this.schedule?.id&&this._startEdit()}_startEdit(){this._editing=!0,this._draft={name:this.schedule.name,weekdays:[...this.schedule.weekdays],arm_time:this.schedule.arm_time,disarm_time:this.schedule.disarm_time,enabled:this.schedule.enabled},this._error=null}_cancel(){this._saving=!1,""!==this.schedule.id?(this._editing=!1,this._draft=null,this._error=null):this.dispatchEvent(new CustomEvent("cancel-new",{detail:{},bubbles:!0,composed:!0}))}_validate(e){return 0===e.weekdays.length?"Pick at least one weekday":e.arm_time===e.disarm_time?"Arm and disarm times must differ":/^([01]\d|2[0-3]):[0-5]\d$/.test(e.arm_time)?/^([01]\d|2[0-3]):[0-5]\d$/.test(e.disarm_time)?(e.name?.length??0)>100?"Name too long (max 100)":null:"Invalid disarm time":"Invalid arm time"}_save(){if(!this._draft)return;const e=this._validate(this._draft);e?this._error=e:(this._error=null,this._saving=!0,this.dispatchEvent(new CustomEvent("save",{detail:{id:this.schedule.id,data:{...this._draft}},bubbles:!0,composed:!0})))}_delete(){this.dispatchEvent(new CustomEvent("delete",{detail:{id:this.schedule.id},bubbles:!0,composed:!0}))}_onDaysChange(e){if(!this._draft)return;const{selected:t}=e.detail;this._draft={...this._draft,weekdays:t},this._error=null}_onArmTimeChange(e){this._draft&&(this._draft={...this._draft,arm_time:e.target.value},this._error=null)}_onDisarmTimeChange(e){this._draft&&(this._draft={...this._draft,disarm_time:e.target.value},this._error=null)}_onNameChange(e){this._draft&&(this._draft={...this._draft,name:e.target.value})}_onEnabledChange(e){this._draft&&(this._draft={...this._draft,enabled:e.target.checked})}render(){return this._editing&&this._draft?this._renderEditMode(this._draft):this._renderViewMode()}_renderViewMode(){const e=this.schedule,t=!e.enabled;return B`
+      <div class="row">
+        <div class="view-row ${t?"disabled":""}">
+          <abode-day-chip-picker .selected=${e.weekdays} .disabled=${!0}></abode-day-chip-picker>
+          <span class="time-display">${e.arm_time} → ${e.disarm_time}</span>
+          ${e.name?B`<span class="row-name">${e.name}</span>`:q}
+          ${e.last_error?B`<span class="error-badge" title=${e.last_error}>⚠ Error</span>`:q}
+          <span class="spacer"></span>
+          <label class="enable-toggle" title=${e.enabled?"Enabled":"Disabled"}>
+            <input
+              type="checkbox"
+              .checked=${e.enabled}
+              ?disabled=${!this.canEdit}
+              aria-label=${e.enabled?"Enabled":"Disabled"}
+              @change=${this._onViewEnabledChange}
+            />
+            ${e.enabled?"Enabled":"Disabled"}
+          </label>
+          ${this.canEdit?B`
+                <button
+                  type="button"
+                  class="icon-button"
+                  aria-label="Edit schedule"
+                  title="Edit"
+                  @click=${this._startEdit}
+                >
+                  ✏
+                </button>
+                <button
+                  type="button"
+                  class="icon-button delete"
+                  aria-label="Delete schedule"
+                  title="Delete"
+                  @click=${this._delete}
+                >
+                  🗑
+                </button>
+              `:q}
+        </div>
+      </div>
+    `}_onViewEnabledChange(e){if(!this.canEdit)return;const t=e.target.checked;this.dispatchEvent(new CustomEvent("save",{detail:{id:this.schedule.id,data:{name:this.schedule.name,weekdays:[...this.schedule.weekdays],arm_time:this.schedule.arm_time,disarm_time:this.schedule.disarm_time,enabled:t}},bubbles:!0,composed:!0}))}_renderEditMode(e){return B`
+      <div class="row">
+        <div class="edit-form">
+          <div class="form-row">
+            <abode-day-chip-picker
+              .selected=${e.weekdays}
+              @change=${this._onDaysChange}
+            ></abode-day-chip-picker>
+          </div>
+          <div class="form-row">
+            <label>Arm</label>
+            <input
+              type="time"
+              class="time-input"
+              .value=${e.arm_time}
+              @change=${this._onArmTimeChange}
+              aria-label="Arm time"
+            />
+            <span class="arrow">→</span>
+            <label>Disarm</label>
+            <input
+              type="time"
+              class="time-input"
+              .value=${e.disarm_time}
+              @change=${this._onDisarmTimeChange}
+              aria-label="Disarm time"
+            />
+          </div>
+          <div class="form-row">
+            <label>Name</label>
+            <input
+              type="text"
+              class="name-input"
+              .value=${e.name??""}
+              placeholder="Optional label"
+              maxlength="100"
+              @input=${this._onNameChange}
+              aria-label="Schedule name"
+            />
+          </div>
+          <div class="form-row">
+            <label class="enable-toggle">
+              <input
+                type="checkbox"
+                .checked=${e.enabled??!0}
+                @change=${this._onEnabledChange}
+                aria-label="Enabled"
+              />
+              Enabled
+            </label>
+          </div>
+          ${this._error?B`<div class="validation-error" role="alert">${this._error}</div>`:q}
+          <div class="form-actions">
+            <button
+              type="button"
+              class="btn primary"
+              ?disabled=${this._saving}
+              @click=${this._save}
+            >
+              Save
+            </button>
+            <button type="button" class="btn secondary" @click=${this._cancel}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    `}};Ce.styles=a`
+    :host {
+      display: block;
+    }
+
+    .row {
+      padding: 10px 0;
+      border-bottom: 1px solid var(--divider-color, #e0e0e0);
+    }
+
+    .row:last-of-type {
+      border-bottom: none;
+    }
+
+    .view-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .view-row.disabled {
+      opacity: 0.5;
+    }
+
+    .time-display {
+      font-size: 14px;
+      color: var(--primary-text-color);
+      white-space: nowrap;
+    }
+
+    .row-name {
+      font-size: 13px;
+      color: var(--secondary-text-color);
+      font-style: italic;
+    }
+
+    .error-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 6px;
+      background: var(--error-color, #f44336);
+      color: white;
+      border-radius: 10px;
+      font-size: 11px;
+      gap: 4px;
+    }
+
+    .icon-button {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      color: var(--secondary-text-color);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition:
+        color 0.15s,
+        background 0.15s;
+    }
+
+    .icon-button:hover {
+      color: var(--primary-text-color);
+      background: var(--secondary-background-color, #f5f5f5);
+    }
+
+    .icon-button:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: 2px;
+    }
+
+    .icon-button.delete:hover {
+      color: var(--error-color, #f44336);
+    }
+
+    .spacer {
+      flex: 1;
+    }
+
+    /* Edit form */
+    .edit-form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 4px 0;
+    }
+
+    .form-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .form-row label {
+      font-size: 13px;
+      color: var(--secondary-text-color);
+      min-width: 60px;
+    }
+
+    .time-input {
+      padding: 4px 8px;
+      border: 1px solid var(--divider-color, #e0e0e0);
+      border-radius: 4px;
+      font-size: 14px;
+      background: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+    }
+
+    .time-input:focus {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      border-color: transparent;
+    }
+
+    .name-input {
+      padding: 4px 8px;
+      border: 1px solid var(--divider-color, #e0e0e0);
+      border-radius: 4px;
+      font-size: 14px;
+      background: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+      width: 180px;
+    }
+
+    .name-input:focus {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      border-color: transparent;
+    }
+
+    .arrow {
+      color: var(--secondary-text-color);
+      font-size: 14px;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .btn {
+      padding: 6px 14px;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn.primary {
+      background: var(--primary-color, #03a9f4);
+      color: white;
+    }
+
+    .btn.primary:hover:not(:disabled) {
+      background: var(--primary-color-dark, #0288d1);
+    }
+
+    .btn.primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn.secondary {
+      background: transparent;
+      color: var(--secondary-text-color);
+    }
+
+    .btn.secondary:hover {
+      background: var(--secondary-background-color, #f5f5f5);
+    }
+
+    .btn:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: 2px;
+    }
+
+    .validation-error {
+      font-size: 12px;
+      color: var(--error-color, #f44336);
+      padding: 2px 0;
+    }
+
+    .enable-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .enable-toggle input[type='checkbox'] {
+      cursor: pointer;
+    }
+  `,e([pe({attribute:!1})],Ce.prototype,"schedule",void 0),e([pe({type:Boolean})],Ce.prototype,"canEdit",void 0),e([ue()],Ce.prototype,"_editing",void 0),e([ue()],Ce.prototype,"_draft",void 0),e([ue()],Ce.prototype,"_error",void 0),e([ue()],Ce.prototype,"_saving",void 0),Ce=e([de("abode-schedule-row")],Ce);let Te=class extends ne{constructor(){super(...arguments),this._schedules=[],this._loading=!0,this._error=null,this._newRow=null,this._confirmDeleteId=null,this._abort=null}connectedCallback(){super.connectedCallback(),this._load()}disconnectedCallback(){this._abort?.abort(),this._abort=null,super.disconnectedCallback()}get _isAdmin(){return Boolean(this.hass.user?.is_admin)}async _load(){this._abort?.abort();const e=new AbortController;this._abort=e;const{signal:t}=e;this._loading=!0,this._error=null;try{const e=await async function(e){return(await e.callWS({type:"abode_security/schedules/list"})).schedules}(this.hass);if(t.aborted)return;this._schedules=e}catch(e){if(t.aborted)return;this._error=e instanceof Error?e.message:"Failed to load schedules"}finally{t.aborted||(this._loading=!1)}}_addNewRow(){this._newRow={id:"",name:"",weekdays:[],arm_time:"22:00",disarm_time:"06:00",enabled:!0,created_at:"",last_armed_at:null,last_disarmed_at:null,last_skip_reason:null,last_error:null}}async _onSave(e){const{id:t,data:o}=e.detail;this._error=null;try{if(t){const e=await async function(e,t){const{id:o,...i}=t;return e.callWS({type:"abode_security/schedules/update",schedule_id:o,...i})}(this.hass,{id:t,...o});this._schedules=this._schedules.map(o=>o.id===t?e:o)}else{const e=await async function(e,t){return e.callWS({type:"abode_security/schedules/create",...t})}(this.hass,o);this._schedules=[...this._schedules,e],this._newRow=null}}catch(e){this._error=e instanceof Error?e.message:"Failed to save schedule"}}_onDeleteRequest(e){const{id:t}=e.detail;this._confirmDeleteId=t}async _confirmDelete(){const e=this._confirmDeleteId;if(e){this._confirmDeleteId=null,this._error=null;try{await async function(e,t){await e.callWS({type:"abode_security/schedules/delete",schedule_id:t})}(this.hass,e),this._schedules=this._schedules.filter(t=>t.id!==e)}catch(e){this._error=e instanceof Error?e.message:"Failed to delete schedule"}}}render(){return B`
+      <section
+        aria-labelledby="schedules-heading"
+        @save=${this._onSave}
+        @delete=${this._onDeleteRequest}
+        @cancel-new=${()=>{this._newRow=null}}
+      >
+        <h2 id="schedules-heading" class="section-heading">Home schedules</h2>
+
+        ${this._loading?B`<div class="loading">Loading…</div>`:q}
+        ${this._error?B`<div role="alert" class="error-banner">${this._error}</div>`:q}
+        ${this._loading||0!==this._schedules.length||this._newRow?q:B`<p class="empty-state">No schedules yet. Add one to arm Home automatically.</p>`}
+        ${this._schedules.map(e=>B`
+            <abode-schedule-row .schedule=${e} .canEdit=${this._isAdmin}></abode-schedule-row>
+          `)}
+        ${this._newRow?B`
+              <abode-schedule-row .schedule=${this._newRow} .canEdit=${!0}></abode-schedule-row>
+            `:q}
+        ${this._isAdmin&&!this._newRow?B` <button class="add-button" @click=${this._addNewRow}>+ Add schedule</button> `:q}
+      </section>
+
+      ${this._confirmDeleteId?this._renderDeleteConfirm():q}
+    `}_renderDeleteConfirm(){return B`
+      <abode-modal
+        heading="Delete schedule?"
+        variant="alertdialog"
+        @dismiss=${()=>{this._confirmDeleteId=null}}
+      >
+        <p>
+          This will stop the automatic arming at the configured times. The action does not affect
+          the current panel state.
+        </p>
+        <button
+          slot="footer"
+          class="dialog-button cancel"
+          @click=${()=>{this._confirmDeleteId=null}}
+        >
+          Cancel
+        </button>
+        <button slot="footer" class="dialog-button danger" @click=${this._confirmDelete}>
+          Delete
+        </button>
+      </abode-modal>
+    `}};Te.styles=a`
+    :host {
+      display: block;
+      margin-top: 24px;
+    }
+
+    .section-heading {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--primary-text-color);
+      margin: 0 0 12px 0;
+    }
+
+    .loading {
+      color: var(--secondary-text-color);
+      font-size: 14px;
+    }
+
+    .error-banner {
+      padding: 10px 14px;
+      background: var(--error-color, #f44336);
+      color: white;
+      border-radius: 4px;
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+
+    .empty-state {
+      color: var(--secondary-text-color);
+      font-size: 14px;
+      font-style: italic;
+      padding: 8px 0;
+    }
+
+    .add-button {
+      margin-top: 12px;
+      padding: 6px 14px;
+      border: 1px solid var(--primary-color, #03a9f4);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--primary-color, #03a9f4);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition:
+        background 0.15s,
+        color 0.15s;
+    }
+
+    .add-button:hover {
+      background: var(--primary-color, #03a9f4);
+      color: white;
+    }
+
+    .add-button:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: 2px;
+    }
+
+    /* Confirm-delete dialog buttons */
+    .dialog-button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .dialog-button.cancel {
+      background: transparent;
+      color: var(--secondary-text-color);
+    }
+
+    .dialog-button.cancel:hover {
+      background: var(--secondary-background-color);
+    }
+
+    .dialog-button.danger {
+      background: var(--error-color, #f44336);
+      color: white;
+    }
+
+    .dialog-button.danger:hover {
+      background: var(--error-color, #f44336);
+      opacity: 0.85;
+    }
+
+    .dialog-button:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: 2px;
+    }
+  `,e([pe({attribute:!1})],Te.prototype,"hass",void 0),e([ue()],Te.prototype,"_schedules",void 0),e([ue()],Te.prototype,"_loading",void 0),e([ue()],Te.prototype,"_error",void 0),e([ue()],Te.prototype,"_newRow",void 0),e([ue()],Te.prototype,"_confirmDeleteId",void 0),Te=e([de("abode-schedules-section")],Te);const ze={disarmed:"standby",armed_home:"home",armed_away:"away"};let Me=class extends ne{constructor(){super(...arguments),this._modes=[],this._actions=[],this._loading=!0,this._error=null,this._panelEntityId=null,this._confirmMode=null,this._targetMode=null,this._setError=null,this._pendingTimer=null,this._abort=null}async connectedCallback(){super.connectedCallback(),await this._loadData()}disconnectedCallback(){this._abort?.abort(),this._abort=null,this._clearPendingTimer(),super.disconnectedCallback()}async _loadData(){this._abort?.abort();const e=new AbortController;this._abort=e;const{signal:t}=e;this._loading=!0,this._error=null;try{const[e,o]=await Promise.all([be(this.hass),me(this.hass)]);if(t.aborted)return;this._modes=e.modes,this._panelEntityId=e.panel_entity_id??null,this._actions=o}catch(e){if(t.aborted)return;this._error=e instanceof Error?e.message:"Failed to load data"}finally{t.aborted||(this._loading=!1)}}_liveActiveMode(){if(!this._panelEntityId)return null;const e=this.hass.states?.[this._panelEntityId]?.state;return e?ze[e]??null:null}_activeMode(){const e=this._liveActiveMode();return null!==e?e:this._modes.find(e=>e.active)?.id??null}_clearPendingTimer(){null!==this._pendingTimer&&(clearTimeout(this._pendingTimer),this._pendingTimer=null)}_resetPending(){this._targetMode=null,this._clearPendingTimer()}willUpdate(e){null!==this._targetMode&&this._liveActiveMode()===this._targetMode&&this._resetPending()}_getActionsForMode(e){return this._actions.filter(t=>t.modes.includes(e)).sort((e,t)=>Number(t.enabled)-Number(e.enabled))}_renderActionCountBadge(e){const t=e.action_count,o=e.disabled_action_count??0;return t>0&&o>0?B`<span class="badge">${t} active, ${o} disabled</span>`:0===t&&o>0?B`<span class="badge">${o} disabled</span>`:B`<span class="badge">${t} ${1===t?"action":"actions"}</span>`}_requestSwitch(e){this._activeMode()===e.id&&null===this._targetMode||(this._setError=null,this._confirmMode=e)}async _confirmSwitch(){if(!this._confirmMode)return;const e=this._confirmMode;this._confirmMode=null,this._targetMode=e.id,this._setError=null,this._clearPendingTimer(),this._pendingTimer=setTimeout(()=>{this._pendingTimer=null,this._targetMode=null},9e4);try{await async function(e,t){await e.callWS({type:"abode_security/modes/set",mode_id:t})}(this.hass,e.id)}catch(t){return console.error("Failed to set mode:",t),void(this._targetMode===e.id&&(this._setError="Failed to change mode",this._resetPending()))}}render(){return this._loading?B`<div class="loading">Loading modes...</div>`:this._error?B`<div class="error" role="alert">${this._error}</div>`:B`
       ${this._setError?B`
             <div class="operation-error" role="alert">
               ${this._setError}
@@ -125,17 +632,19 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
             </div>
           `:""}
 
-      <div class="modes-grid">${this._modes.map(t=>this._renderModeCard(t))}</div>
+      <div class="modes-grid">${this._modes.map(e=>this._renderModeCard(e))}</div>
+
+      <abode-schedules-section .hass=${this.hass}></abode-schedules-section>
 
       ${this._confirmMode?this._renderConfirmDialog(this._confirmMode):""}
-    `}_renderConfirmDialog(t){return B`
+    `}_renderConfirmDialog(e){return B`
       <abode-modal
         heading="Switch mode?"
         variant="alertdialog"
         @dismiss=${()=>this._confirmMode=null}
       >
         <p>
-          Switch the system to <strong>${t.name}</strong>? This changes the live arming state
+          Switch the system to <strong>${e.name}</strong>? This changes the live arming state
           and runs any actions configured for this mode.
         </p>
         <button
@@ -149,44 +658,44 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
           Switch
         </button>
       </abode-modal>
-    `}_renderModeCard(t){const e=this._getActionsForMode(t.id),o=this._settingModeId===t.id,i=null!==this._settingModeId;return B`
-      <div class="mode-card ${t.active?"active":""}">
+    `}_renderModeCard(e){const t=this._getActionsForMode(e.id),o=this._activeMode()===e.id,i=this._targetMode===e.id,r=o&&null===this._targetMode;return B`
+      <div class="mode-card ${o?"active":""}">
         <div class="mode-header">
           <div class="mode-icon">
-            <ha-icon icon=${t.icon}></ha-icon>
+            <ha-icon icon=${e.icon}></ha-icon>
           </div>
           <div class="mode-info">
-            <h3>${t.name}</h3>
+            <h3>${e.name}</h3>
             <div class="badges">
-              ${this._renderActionCountBadge(t)}
-              ${t.active?B`<span class="badge active">Active</span>`:""}
+              ${this._renderActionCountBadge(e)}
+              ${o?B`<span class="badge active">Active</span>`:""}
             </div>
           </div>
         </div>
 
-        ${e.length>0?B`
-              <ul class="action-list" aria-label="Actions for ${t.name} mode">
-                ${e.map(t=>B`
-                    <li class=${t.enabled?W:"disabled"}>
+        ${t.length>0?B`
+              <ul class="action-list" aria-label="Actions for ${e.name} mode">
+                ${t.map(e=>B`
+                    <li class=${e.enabled?q:"disabled"}>
                       <ha-icon icon="mdi:bell-ring"></ha-icon>
-                      ${t.name}
-                      ${t.enabled?W:B`<span class="disabled-tag">Disabled</span>`}
+                      ${e.name}
+                      ${e.enabled?q:B`<span class="disabled-tag">Disabled</span>`}
                     </li>
                   `)}
               </ul>
             `:B`<div class="empty-actions">No actions configured</div>`}
-        ${t.active?B`<div class="current-mode-label">Current mode</div>`:B`
+        ${r?B`<div class="current-mode-label">Current mode</div>`:B`
               <button
                 class="switch-button"
                 ?disabled=${i}
-                aria-label=${`Switch to ${t.name} mode`}
-                @click=${()=>this._requestSwitch(t)}
+                aria-label=${`Switch to ${e.name} mode`}
+                @click=${()=>this._requestSwitch(e)}
               >
-                ${o?"Switching…":`Switch to ${t.name}`}
+                ${i?`Switching to ${e.name}…`:`Switch to ${e.name}`}
               </button>
             `}
       </div>
-    `}};wt.styles=a`
+    `}};Me.styles=a`
     :host {
       display: block;
     }
@@ -419,7 +928,7 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
     .dialog-button.primary:hover {
       background: var(--primary-color-dark, #0288d1);
     }
-  `,t([pt({attribute:!1})],wt.prototype,"hass",void 0),t([ut()],wt.prototype,"_modes",void 0),t([ut()],wt.prototype,"_actions",void 0),t([ut()],wt.prototype,"_loading",void 0),t([ut()],wt.prototype,"_error",void 0),t([ut()],wt.prototype,"_confirmMode",void 0),t([ut()],wt.prototype,"_settingModeId",void 0),t([ut()],wt.prototype,"_setError",void 0),wt=t([ct("abode-modes-tab")],wt);const kt=2;let At=class{constructor(t){}get _$AU(){return this._$AM._$AU}_$AT(t,e,o){this._$Ct=t,this._$AM=e,this._$Ci=o}_$AS(t,e){return this.update(t,e)}update(t,e){return this.render(...e)}};const{I:St}=rt,Et=t=>t,Ct=()=>document.createComment(""),Tt=(t,e,o)=>{const i=t._$AA.parentNode,r=void 0===e?t._$AB:e._$AA;if(void 0===o){const e=i.insertBefore(Ct(),r),s=i.insertBefore(Ct(),r);o=new St(e,s,t,t.options)}else{const e=o._$AB.nextSibling,s=o._$AM,a=s!==t;if(a){let e;o._$AQ?.(t),o._$AM=t,void 0!==o._$AP&&(e=t._$AU)!==s._$AU&&o._$AP(e)}if(e!==r||a){let t=o._$AA;for(;t!==e;){const e=Et(t).nextSibling;Et(i).insertBefore(t,r),t=e}}}return o},Mt=(t,e,o=t)=>(t._$AI(e,o),t),zt={},It=(t,e=zt)=>t._$AH=e,Pt=t=>{t._$AR(),t._$AA.remove()},Ot=(t,e,o)=>{const i=new Map;for(let r=e;r<=o;r++)i.set(t[r],r);return i},Dt=(t=>(...e)=>({_$litDirective$:t,values:e}))(class extends At{constructor(t){if(super(t),t.type!==kt)throw Error("repeat() can only be used in text expressions")}dt(t,e,o){let i;void 0===o?o=e:void 0!==e&&(i=e);const r=[],s=[];let a=0;for(const e of t)r[a]=i?i(e,a):a,s[a]=o(e,a),a++;return{values:s,keys:r}}render(t,e,o){return this.dt(t,e,o).values}update(t,[e,o,i]){const r=(t=>t._$AH)(t),{values:s,keys:a}=this.dt(e,o,i);if(!Array.isArray(r))return this.ut=a,s;const n=this.ut??=[],l=[];let c,d,h=0,p=r.length-1,u=0,g=s.length-1;for(;h<=p&&u<=g;)if(null===r[h])h++;else if(null===r[p])p--;else if(n[h]===a[u])l[u]=Mt(r[h],s[u]),h++,u++;else if(n[p]===a[g])l[g]=Mt(r[p],s[g]),p--,g--;else if(n[h]===a[g])l[g]=Mt(r[h],s[g]),Tt(t,l[g+1],r[h]),h++,g--;else if(n[p]===a[u])l[u]=Mt(r[p],s[u]),Tt(t,r[h],r[p]),p--,u++;else if(void 0===c&&(c=Ot(a,u,g),d=Ot(n,h,p)),c.has(n[h]))if(c.has(n[p])){const e=d.get(a[u]),o=void 0!==e?r[e]:null;if(null===o){const e=Tt(t,r[h]);Mt(e,s[u]),l[u]=e}else l[u]=Mt(o,s[u]),Tt(t,r[h],o),r[e]=null;u++}else Pt(r[p]),p--;else Pt(r[h]),h++;for(;u<=g;){const e=Tt(t,l[g+1]);Mt(e,s[u]),l[u++]=e}for(;h<=p;){const t=r[h++];null!==t&&Pt(t)}return this.ut=a,It(t,l),q}});function Rt(t,e,o="unavailable"){return t.states?.[e]?.state??o}function Ft(t){return"unavailable"===t||"unknown"===t}const Ut=["standby","home","away"];function Nt(t,e){return t.includes(e)?t.filter(t=>t!==e):[...t,e]}const jt=new Map(["door","window","motion","person","vehicle","animal","object","package","face","visitor","smoke_alarm","co_alarm","speaking","barking","baby_cry","glass_break","siren","smoke","gas","carbon_monoxide","moisture"].map((t,e)=>[t,e]));function Ht(t,e){return(jt.get(t)??Number.MAX_SAFE_INTEGER)-(jt.get(e)??Number.MAX_SAFE_INTEGER)||t.localeCompare(e)}const Lt={door:{on:"open",off:"closed"},window:{on:"open",off:"closed"},garage_door:{on:"open",off:"closed"},opening:{on:"open",off:"closed"},motion:{on:"detected",off:"clear"},occupancy:{on:"detected",off:"clear"},presence:{on:"detected",off:"clear"},moisture:{on:"wet",off:"dry"},smoke:{on:"detected",off:"clear"},gas:{on:"detected",off:"clear"},carbon_monoxide:{on:"detected",off:"clear"},person:{on:"detected",off:"clear"},vehicle:{on:"detected",off:"clear"},animal:{on:"detected",off:"clear"},object:{on:"detected",off:"clear"},package:{on:"detected",off:"clear"},face:{on:"detected",off:"clear"},visitor:{on:"detected",off:"clear"},smoke_alarm:{on:"detected",off:"clear"},co_alarm:{on:"detected",off:"clear"},speaking:{on:"detected",off:"clear"},barking:{on:"detected",off:"clear"},baby_cry:{on:"detected",off:"clear"},glass_break:{on:"detected",off:"clear"},siren:{on:"detected",off:"clear"}},Bt={person:"Person detected",vehicle:"Vehicle detected",animal:"Animal detected",object:"Object detected",package:"Package detected",face:"Face detected",visitor:"Visitor",smoke_alarm:"Smoke alarm detected",co_alarm:"CO alarm detected",speaking:"Speaking detected",barking:"Barking detected",baby_cry:"Baby cry detected",glass_break:"Glass break detected",siren:"Siren detected"};let qt=class extends nt{constructor(){super(...arguments),this.action=null,this._name="",this._modes=[],this._delaySeconds=0,this._selectedSensors=[],this._selectedAlarms=[],this._sensors=null,this._alarms=[],this._errors={},this._saving=!1,this._loading=!0,this._loadError=null,this._expandedCategories=new Set,this._sensorSearch="",this._abort=null}async connectedCallback(){super.connectedCallback(),this.action&&this._populateForm(),await this._loadEntities()}disconnectedCallback(){this._abort?.abort(),this._abort=null,super.disconnectedCallback()}async _loadEntities(){this._abort?.abort();const t=new AbortController;this._abort=t;const{signal:e}=t;this._loading=!0,this._loadError=null;try{const[t,o]=await Promise.all([bt(this.hass),ft(this.hass)]);if(e.aborted)return;if(this._sensors=t,this._alarms=o,this.action&&this._selectedSensors.length>0){const e=new Set;for(const[o,i]of Object.entries(t))(i??[]).some(t=>this._selectedSensors.includes(t.entity_id))&&e.add(o);this._expandedCategories=e}}catch(t){if(e.aborted)return;this._loadError=t instanceof Error?t.message:"Failed to load sensors and alarms"}finally{e.aborted||(this._loading=!1)}}_populateForm(){this.action&&(this._name=this.action.name,this._modes=[...this.action.modes],this._delaySeconds=this.action.delay_seconds,this._selectedSensors=[...this.action.sensor_entity_ids],this._selectedAlarms=this.action.alarm_entity_ids.slice(0,1))}_toggleMode(t){this._modes=Nt(this._modes,t),this._clearError("modes")}_toggleSensor(t){this._selectedSensors=Nt(this._selectedSensors,t),this._clearError("sensors")}_openMoreInfo(t,e){e.stopPropagation(),this.dispatchEvent(new CustomEvent("hass-more-info",{detail:{entityId:t},bubbles:!0,composed:!0}))}_selectAlarm(t){this._selectedAlarms=[t],this._clearError("alarms")}_clearAlarmSelection(){this._selectedAlarms=[],this._clearError("alarms")}_isCategorySelected(t,e){if(!this._sensors)return!1;const o=e??this._sensors[t]??[];return 0!==o.length&&o.every(t=>this._selectedSensors.includes(t.entity_id))}_isCategoryPartial(t,e){if(!this._sensors)return!1;const o=e??this._sensors[t]??[];if(0===o.length)return!1;const i=o.filter(t=>this._selectedSensors.includes(t.entity_id));return i.length>0&&i.length<o.length}_toggleCategory(t,e){if(!this._sensors)return;const o=e??this._sensors[t]??[],i=o.map(t=>t.entity_id);if(this._isCategorySelected(t,o))this._selectedSensors=this._selectedSensors.filter(t=>!i.includes(t));else{const t=i.filter(t=>!this._selectedSensors.includes(t));this._selectedSensors=[...this._selectedSensors,...t]}this._clearError("sensors")}_toggleCategoryExpanded(t){const e=new Set(this._expandedCategories);e.has(t)?e.delete(t):e.add(t),this._expandedCategories=e}_clearError(t){if(this._errors[t]){const{[t]:e,...o}=this._errors;this._errors=o}}_validate(){return this._errors={},this._name.trim()||(this._errors={...this._errors,name:"Name is required"}),0===this._modes.length&&(this._errors={...this._errors,modes:"Select at least one mode"}),0===this._selectedSensors.length&&(this._errors={...this._errors,sensors:"Select at least one sensor"}),0===Object.keys(this._errors).length}async _handleSave(){if(!this._saving&&this._validate()){this._saving=!0;try{const t={name:this._name.trim(),modes:this._modes,delay_seconds:this._delaySeconds,sensor_entity_ids:this._selectedSensors,alarm_entity_ids:this._selectedAlarms};this.action?await _t(this.hass,this.action.id,t):await async function(t,e){return t.callWS({type:"abode_security/actions/create",...e})}(this.hass,t),this.dispatchEvent(new CustomEvent("save"))}catch(t){console.error("Failed to save action:",t),this._errors={...this._errors,form:t instanceof Error?t.message:"Failed to save"}}finally{this._saving=!1}}}_handleCancel(){this.dispatchEvent(new CustomEvent("cancel"))}render(){return B`
+  `,e([pe({attribute:!1})],Me.prototype,"hass",void 0),e([ue()],Me.prototype,"_modes",void 0),e([ue()],Me.prototype,"_actions",void 0),e([ue()],Me.prototype,"_loading",void 0),e([ue()],Me.prototype,"_error",void 0),e([ue()],Me.prototype,"_panelEntityId",void 0),e([ue()],Me.prototype,"_confirmMode",void 0),e([ue()],Me.prototype,"_targetMode",void 0),e([ue()],Me.prototype,"_setError",void 0),Me=e([de("abode-modes-tab")],Me);const De=2;let Ie=class{constructor(e){}get _$AU(){return this._$AM._$AU}_$AT(e,t,o){this._$Ct=e,this._$AM=t,this._$Ci=o}_$AS(e,t){return this.update(e,t)}update(e,t){return this.render(...t)}};const{I:Pe}=re,Re=e=>e,Oe=()=>document.createComment(""),Fe=(e,t,o)=>{const i=e._$AA.parentNode,r=void 0===t?e._$AB:t._$AA;if(void 0===o){const t=i.insertBefore(Oe(),r),s=i.insertBefore(Oe(),r);o=new Pe(t,s,e,e.options)}else{const t=o._$AB.nextSibling,s=o._$AM,a=s!==e;if(a){let t;o._$AQ?.(e),o._$AM=e,void 0!==o._$AP&&(t=e._$AU)!==s._$AU&&o._$AP(t)}if(t!==r||a){let e=o._$AA;for(;e!==t;){const t=Re(e).nextSibling;Re(i).insertBefore(e,r),e=t}}}return o},Ne=(e,t,o=e)=>(e._$AI(t,o),e),Ue={},je=(e,t=Ue)=>e._$AH=t,He=e=>{e._$AR(),e._$AA.remove()},Le=(e,t,o)=>{const i=new Map;for(let r=t;r<=o;r++)i.set(e[r],r);return i},Be=(e=>(...t)=>({_$litDirective$:e,values:t}))(class extends Ie{constructor(e){if(super(e),e.type!==De)throw Error("repeat() can only be used in text expressions")}dt(e,t,o){let i;void 0===o?o=t:void 0!==t&&(i=t);const r=[],s=[];let a=0;for(const t of e)r[a]=i?i(t,a):a,s[a]=o(t,a),a++;return{values:s,keys:r}}render(e,t,o){return this.dt(e,t,o).values}update(e,[t,o,i]){const r=(e=>e._$AH)(e),{values:s,keys:a}=this.dt(t,o,i);if(!Array.isArray(r))return this.ut=a,s;const n=this.ut??=[],l=[];let d,c,h=0,p=r.length-1,u=0,m=s.length-1;for(;h<=p&&u<=m;)if(null===r[h])h++;else if(null===r[p])p--;else if(n[h]===a[u])l[u]=Ne(r[h],s[u]),h++,u++;else if(n[p]===a[m])l[m]=Ne(r[p],s[m]),p--,m--;else if(n[h]===a[m])l[m]=Ne(r[h],s[m]),Fe(e,l[m+1],r[h]),h++,m--;else if(n[p]===a[u])l[u]=Ne(r[p],s[u]),Fe(e,r[h],r[p]),p--,u++;else if(void 0===d&&(d=Le(a,u,m),c=Le(n,h,p)),d.has(n[h]))if(d.has(n[p])){const t=c.get(a[u]),o=void 0!==t?r[t]:null;if(null===o){const t=Fe(e,r[h]);Ne(t,s[u]),l[u]=t}else l[u]=Ne(o,s[u]),Fe(e,r[h],o),r[t]=null;u++}else He(r[p]),p--;else He(r[h]),h++;for(;u<=m;){const t=Fe(e,l[m+1]);Ne(t,s[u]),l[u++]=t}for(;h<=p;){const e=r[h++];null!==e&&He(e)}return this.ut=a,je(e,l),W}});function We(e,t){return e.includes(t)?e.filter(e=>e!==t):[...e,t]}const qe=new Map(["door","window","motion","person","vehicle","animal","object","package","face","visitor","smoke_alarm","co_alarm","speaking","barking","baby_cry","glass_break","siren","smoke","gas","carbon_monoxide","moisture"].map((e,t)=>[e,t]));function Ve(e,t){return(qe.get(e)??Number.MAX_SAFE_INTEGER)-(qe.get(t)??Number.MAX_SAFE_INTEGER)||e.localeCompare(t)}const Ke={door:{on:"open",off:"closed"},window:{on:"open",off:"closed"},garage_door:{on:"open",off:"closed"},opening:{on:"open",off:"closed"},motion:{on:"detected",off:"clear"},occupancy:{on:"detected",off:"clear"},presence:{on:"detected",off:"clear"},moisture:{on:"wet",off:"dry"},smoke:{on:"detected",off:"clear"},gas:{on:"detected",off:"clear"},carbon_monoxide:{on:"detected",off:"clear"},person:{on:"detected",off:"clear"},vehicle:{on:"detected",off:"clear"},animal:{on:"detected",off:"clear"},object:{on:"detected",off:"clear"},package:{on:"detected",off:"clear"},face:{on:"detected",off:"clear"},visitor:{on:"detected",off:"clear"},smoke_alarm:{on:"detected",off:"clear"},co_alarm:{on:"detected",off:"clear"},speaking:{on:"detected",off:"clear"},barking:{on:"detected",off:"clear"},baby_cry:{on:"detected",off:"clear"},glass_break:{on:"detected",off:"clear"},siren:{on:"detected",off:"clear"}},Ge={person:"Person detected",vehicle:"Vehicle detected",animal:"Animal detected",object:"Object detected",package:"Package detected",face:"Face detected",visitor:"Visitor",smoke_alarm:"Smoke alarm detected",co_alarm:"CO alarm detected",speaking:"Speaking detected",barking:"Barking detected",baby_cry:"Baby cry detected",glass_break:"Glass break detected",siren:"Siren detected"};let Je=class extends ne{constructor(){super(...arguments),this.action=null,this._name="",this._modes=[],this._delaySeconds=0,this._selectedSensors=[],this._selectedAlarms=[],this._sensors=null,this._alarms=[],this._errors={},this._saving=!1,this._loading=!0,this._loadError=null,this._expandedCategories=new Set,this._sensorSearch="",this._abort=null}async connectedCallback(){super.connectedCallback(),this.action&&this._populateForm(),await this._loadEntities()}disconnectedCallback(){this._abort?.abort(),this._abort=null,super.disconnectedCallback()}async _loadEntities(){this._abort?.abort();const e=new AbortController;this._abort=e;const{signal:t}=e;this._loading=!0,this._loadError=null;try{const[e,o]=await Promise.all([ge(this.hass),_e(this.hass)]);if(t.aborted)return;if(this._sensors=e,this._alarms=o,this.action&&this._selectedSensors.length>0){const t=new Set;for(const[o,i]of Object.entries(e))(i??[]).some(e=>this._selectedSensors.includes(e.entity_id))&&t.add(o);this._expandedCategories=t}}catch(e){if(t.aborted)return;this._loadError=e instanceof Error?e.message:"Failed to load sensors and alarms"}finally{t.aborted||(this._loading=!1)}}_populateForm(){this.action&&(this._name=this.action.name,this._modes=[...this.action.modes],this._delaySeconds=this.action.delay_seconds,this._selectedSensors=[...this.action.sensor_entity_ids],this._selectedAlarms=this.action.alarm_entity_ids.slice(0,1))}_toggleMode(e){this._modes=We(this._modes,e),this._clearError("modes")}_toggleSensor(e){this._selectedSensors=We(this._selectedSensors,e),this._clearError("sensors")}_openMoreInfo(e,t){t.stopPropagation(),this.dispatchEvent(new CustomEvent("hass-more-info",{detail:{entityId:e},bubbles:!0,composed:!0}))}_selectAlarm(e){this._selectedAlarms=[e],this._clearError("alarms")}_clearAlarmSelection(){this._selectedAlarms=[],this._clearError("alarms")}_isCategorySelected(e,t){if(!this._sensors)return!1;const o=t??this._sensors[e]??[];return 0!==o.length&&o.every(e=>this._selectedSensors.includes(e.entity_id))}_isCategoryPartial(e,t){if(!this._sensors)return!1;const o=t??this._sensors[e]??[];if(0===o.length)return!1;const i=o.filter(e=>this._selectedSensors.includes(e.entity_id));return i.length>0&&i.length<o.length}_toggleCategory(e,t){if(!this._sensors)return;const o=t??this._sensors[e]??[],i=o.map(e=>e.entity_id);if(this._isCategorySelected(e,o))this._selectedSensors=this._selectedSensors.filter(e=>!i.includes(e));else{const e=i.filter(e=>!this._selectedSensors.includes(e));this._selectedSensors=[...this._selectedSensors,...e]}this._clearError("sensors")}_toggleCategoryExpanded(e){const t=new Set(this._expandedCategories);t.has(e)?t.delete(e):t.add(e),this._expandedCategories=t}_clearError(e){if(this._errors[e]){const{[e]:t,...o}=this._errors;this._errors=o}}_validate(){return this._errors={},this._name.trim()||(this._errors={...this._errors,name:"Name is required"}),0===this._modes.length&&(this._errors={...this._errors,modes:"Select at least one mode"}),0===this._selectedSensors.length&&(this._errors={...this._errors,sensors:"Select at least one sensor"}),0===Object.keys(this._errors).length}async _handleSave(){if(!this._saving&&this._validate()){this._saving=!0;try{const e={name:this._name.trim(),modes:this._modes,delay_seconds:this._delaySeconds,sensor_entity_ids:this._selectedSensors,alarm_entity_ids:this._selectedAlarms};this.action?await fe(this.hass,this.action.id,e):await async function(e,t){return e.callWS({type:"abode_security/actions/create",...t})}(this.hass,e),this.dispatchEvent(new CustomEvent("save"))}catch(e){console.error("Failed to save action:",e),this._errors={...this._errors,form:e instanceof Error?e.message:"Failed to save"}}finally{this._saving=!1}}}_handleCancel(){this.dispatchEvent(new CustomEvent("cancel"))}render(){return B`
       <abode-modal
         heading=${this.action?"Edit Action":"New Action"}
         size="lg"
@@ -440,7 +949,7 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
           id="action-name"
           type="text"
           .value=${this._name}
-          @input=${t=>{this._name=t.target.value,this._clearError("name")}}
+          @input=${e=>{this._name=e.target.value,this._clearError("name")}}
           class=${this._errors.name?"error":""}
           placeholder="Enter action name"
         />
@@ -450,14 +959,14 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
       <div class="form-group">
         <label>Modes (at least one required)</label>
         <div class="checkbox-group">
-          ${Ut.map(t=>B`
+          ${Ae.map(e=>B`
               <label>
                 <input
                   type="checkbox"
-                  .checked=${this._modes.includes(t)}
-                  @change=${()=>this._toggleMode(t)}
+                  .checked=${this._modes.includes(e)}
+                  @change=${()=>this._toggleMode(e)}
                 />
-                ${t.charAt(0).toUpperCase()+t.slice(1)}
+                ${e.charAt(0).toUpperCase()+e.slice(1)}
               </label>
             `)}
         </div>
@@ -472,7 +981,7 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
             min="0"
             max="60"
             .value=${String(this._delaySeconds)}
-            @input=${t=>{this._delaySeconds=Number(t.target.value)}}
+            @input=${e=>{this._delaySeconds=Number(e.target.value)}}
           />
           <span class="delay-value">${this._delaySeconds}s</span>
         </div>
@@ -496,7 +1005,7 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
       <button slot="footer" class="primary" @click=${this._handleSave} ?disabled=${this._saving}>
         ${this._saving?"Saving...":"Save"}
       </button>
-    `}_renderSensorSelection(){const t=this._sensors;if(!t)return B`<div class="loading">Loading sensors...</div>`;const e=Object.keys(t).filter(e=>(t[e]??[]).length>0).sort(Ht);if(0===e.length)return B`<div class="loading">No sensors available</div>`;const o=this._sensorSearch.trim().toLowerCase(),i=o.length>0,r=t=>Ft(Rt(this.hass,t.entity_id,t.state)),s=e.map(e=>{const s=t[e]??[],a=i?s.filter(t=>t.name.toLowerCase().includes(o)):s,n=a.filter(t=>!r(t)),l=a.filter(t=>r(t)),c=[...n,...l],d=s.filter(r).length;return{category:e,sensors:s,filtered:a,ordered:c,unavailableTotal:d}}).filter(({filtered:t})=>!i||t.length>0),a=B`
+    `}_renderSensorSelection(){const e=this._sensors;if(!e)return B`<div class="loading">Loading sensors...</div>`;const t=Object.keys(e).filter(t=>(e[t]??[]).length>0).sort(Ve);if(0===t.length)return B`<div class="loading">No sensors available</div>`;const o=this._sensorSearch.trim().toLowerCase(),i=o.length>0,r=e=>ke(we(this.hass,e.entity_id,e.state)),s=t.map(t=>{const s=e[t]??[],a=i?s.filter(e=>e.name.toLowerCase().includes(o)):s,n=a.filter(e=>!r(e)),l=a.filter(e=>r(e)),d=[...n,...l],c=s.filter(r).length;return{category:t,sensors:s,filtered:a,ordered:d,unavailableTotal:c}}).filter(({filtered:e})=>!i||e.length>0),a=B`
       <input
         type="search"
         class="sensor-search"
@@ -505,7 +1014,7 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
         autocomplete="off"
         spellcheck="false"
         .value=${this._sensorSearch}
-        @input=${t=>{this._sensorSearch=t.target.value}}
+        @input=${e=>{this._sensorSearch=e.target.value}}
       />
     `;return 0===s.length?B`
         ${a}
@@ -513,50 +1022,50 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
       `:B`
       ${a}
       <div class="sensor-categories">
-        ${s.map(({category:t,sensors:e,filtered:o,ordered:r,unavailableTotal:s},a)=>{const n=`sensor-cat-${a}-${t.replace(/[^A-Za-z0-9_-]/g,"-")}`,l=Bt[t]??t.replace(/_/g," "),c=i||this._expandedCategories.has(t),d=o.length===e.length?`(${e.length})`:`(${o.length}/${e.length})`,h=s>0?B` <span class="unavailable-count">${s} unavailable</span>`:W;return B`
+        ${s.map(({category:e,sensors:t,filtered:o,ordered:r,unavailableTotal:s},a)=>{const n=`sensor-cat-${a}-${e.replace(/[^A-Za-z0-9_-]/g,"-")}`,l=Ge[e]??e.replace(/_/g," "),d=i||this._expandedCategories.has(e),c=o.length===t.length?`(${t.length})`:`(${o.length}/${t.length})`,h=s>0?B` <span class="unavailable-count">${s} unavailable</span>`:q;return B`
               <div class="category">
                 <div
                   class="category-header"
-                  @click=${()=>this._toggleCategory(t,o)}
+                  @click=${()=>this._toggleCategory(e,o)}
                 >
                   <input
                     type="checkbox"
-                    .checked=${this._isCategorySelected(t,o)}
-                    .indeterminate=${this._isCategoryPartial(t,o)}
-                    @click=${t=>t.stopPropagation()}
-                    @change=${()=>this._toggleCategory(t,o)}
+                    .checked=${this._isCategorySelected(e,o)}
+                    .indeterminate=${this._isCategoryPartial(e,o)}
+                    @click=${e=>e.stopPropagation()}
+                    @change=${()=>this._toggleCategory(e,o)}
                   />
-                  <span>${l} ${d}${h}</span>
+                  <span>${l} ${c}${h}</span>
                   ${i?null:B`
                         <button
                           type="button"
                           class="disclosure"
-                          aria-expanded=${c?"true":"false"}
-                          aria-controls=${c?n:W}
-                          aria-label=${c?`Collapse ${l}`:`Expand ${l}`}
-                          @click=${e=>{e.stopPropagation(),this._toggleCategoryExpanded(t)}}
+                          aria-expanded=${d?"true":"false"}
+                          aria-controls=${d?n:q}
+                          aria-label=${d?`Collapse ${l}`:`Expand ${l}`}
+                          @click=${t=>{t.stopPropagation(),this._toggleCategoryExpanded(e)}}
                         >
                           <span aria-hidden="true">▸</span>
                         </button>
                       `}
                 </div>
-                ${c?B`
+                ${d?B`
                       <div id=${n} class="category-items">
-                        ${r.map(e=>this._renderSensorRow(e,t))}
+                        ${r.map(t=>this._renderSensorRow(t,e))}
                       </div>
                     `:null}
               </div>
             `})}
       </div>
-    `}_renderSensorRow(t,e){const o=Rt(this.hass,t.entity_id,t.state),i=Ft(o),r=i?"unavailable":"on"===o?"on":"off",s=function(t,e){if(Ft(t))return"unavailable";const o=Lt[e];return o?"on"===t?o.on:"off"===t?o.off:t:t}(o,e);return B`
+    `}_renderSensorRow(e,t){const o=we(this.hass,e.entity_id,e.state),i=ke(o),r=i?"unavailable":"on"===o?"on":"off",s=function(e,t){if(ke(e))return"unavailable";const o=Ke[t];return o?"on"===e?o.on:"off"===e?o.off:e:e}(o,t);return B`
       <div class="sensor-row ${i?"unavailable":""}">
         <label>
           <input
             type="checkbox"
-            .checked=${this._selectedSensors.includes(t.entity_id)}
-            @change=${()=>this._toggleSensor(t.entity_id)}
+            .checked=${this._selectedSensors.includes(e.entity_id)}
+            @change=${()=>this._toggleSensor(e.entity_id)}
           />
-          <span class="entity-name">${t.name}</span>
+          <span class="entity-name">${e.name}</span>
           <!-- Area column always rendered (even when empty) so the
                state-pill column lines up across rows that do and don't
                have an area assigned. Empty cells get aria-hidden="true"
@@ -565,25 +1074,25 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
                (string "true"/"false"), not HTML boolean attributes, so
                we set the value explicitly when needed and omit the
                attribute entirely via Lit's nothing sentinel otherwise. -->
-          <span class="entity-area" aria-hidden=${t.area?W:"true"}>
-            ${t.area??W}
+          <span class="entity-area" aria-hidden=${e.area?q:"true"}>
+            ${e.area??q}
           </span>
-          <span class="state-pill ${r}" aria-label="${t.name} state: ${s}">
-            ${i?B`<ha-icon icon="mdi:alert-circle-outline" aria-hidden="true"></ha-icon>`:W}
+          <span class="state-pill ${r}" aria-label="${e.name} state: ${s}">
+            ${i?B`<ha-icon icon="mdi:alert-circle-outline" aria-hidden="true"></ha-icon>`:q}
             ${s}
           </span>
         </label>
         <button
           type="button"
           class="info-button"
-          aria-label="More info for ${t.name}"
+          aria-label="More info for ${e.name}"
           title="More info"
-          @click=${e=>this._openMoreInfo(t.entity_id,e)}
+          @click=${t=>this._openMoreInfo(e.entity_id,t)}
         >
           <ha-icon icon="mdi:information-outline"></ha-icon>
         </button>
       </div>
-    `}_renderAlarmSelection(){if(0===this._alarms.length)return B`<div class="loading">No alarms available</div>`;const t=this._alarms.map(t=>({entity_id:t.entity_id,label:t.name.replace(/^Abode Alarm\s+/i,"")})).sort((t,e)=>t.label.localeCompare(e.label));return B`
+    `}_renderAlarmSelection(){if(0===this._alarms.length)return B`<div class="loading">No alarms available</div>`;const e=this._alarms.map(e=>({entity_id:e.entity_id,label:e.name.replace(/^Abode Alarm\s+/i,"")})).sort((e,t)=>e.label.localeCompare(t.label));return B`
       <div class="alarm-list" role="radiogroup" aria-label="Alarm to trigger">
         <label>
           <input
@@ -595,20 +1104,20 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
           />
           None (notification only)
         </label>
-        ${t.map(t=>B`
+        ${e.map(e=>B`
             <label>
               <input
                 type="radio"
                 name="abode-action-alarm"
-                value=${t.entity_id}
-                .checked=${this._selectedAlarms.includes(t.entity_id)}
-                @change=${()=>this._selectAlarm(t.entity_id)}
+                value=${e.entity_id}
+                .checked=${this._selectedAlarms.includes(e.entity_id)}
+                @change=${()=>this._selectAlarm(e.entity_id)}
               />
-              ${t.label}
+              ${e.label}
             </label>
           `)}
       </div>
-    `}};qt.styles=a`
+    `}};Je.styles=a`
     :host {
       display: block;
     }
@@ -1044,7 +1553,7 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
       outline: 2px solid var(--primary-color, #03a9f4);
       outline-offset: 2px;
     }
-  `,t([pt({attribute:!1})],qt.prototype,"hass",void 0),t([pt({attribute:!1})],qt.prototype,"action",void 0),t([ut()],qt.prototype,"_name",void 0),t([ut()],qt.prototype,"_modes",void 0),t([ut()],qt.prototype,"_delaySeconds",void 0),t([ut()],qt.prototype,"_selectedSensors",void 0),t([ut()],qt.prototype,"_selectedAlarms",void 0),t([ut()],qt.prototype,"_sensors",void 0),t([ut()],qt.prototype,"_alarms",void 0),t([ut()],qt.prototype,"_errors",void 0),t([ut()],qt.prototype,"_saving",void 0),t([ut()],qt.prototype,"_loading",void 0),t([ut()],qt.prototype,"_loadError",void 0),t([ut()],qt.prototype,"_expandedCategories",void 0),t([ut()],qt.prototype,"_sensorSearch",void 0),qt=t([ct("abode-action-editor")],qt);let Wt=class extends nt{constructor(){super(...arguments),this._actions=[],this._loading=!0,this._error=null,this._editingAction=null,this._showEditor=!1,this._confirm=null,this._togglingIds=new Set,this._operationError=null,this._debugLogging=!1,this._copiedId=null,this._abort=null,this._copyResetTimeout=null}async connectedCallback(){super.connectedCallback(),await this._loadData()}disconnectedCallback(){this._abort?.abort(),this._abort=null,null!==this._copyResetTimeout&&(clearTimeout(this._copyResetTimeout),this._copyResetTimeout=null),super.disconnectedCallback()}async _loadData(){this._abort?.abort();const t=new AbortController;this._abort=t;const{signal:e}=t;this._loading=!0,this._error=null;try{const t=await gt(this.hass);if(e.aborted)return;this._actions=t,async function(t){return t.callWS({type:"abode_security/config/get"})}(this.hass).then(t=>{e.aborted||(this._debugLogging=!0===t.debug_logging)}).catch(()=>{})}catch(t){if(e.aborted)return;this._error=t instanceof Error?t.message:"Failed to load actions"}finally{e.aborted||(this._loading=!1)}}async _copyActionId(t){try{await navigator.clipboard.writeText(t.id),this._copiedId=t.id,null!==this._copyResetTimeout&&clearTimeout(this._copyResetTimeout),this._copyResetTimeout=setTimeout(()=>{this._copyResetTimeout=null,this._copiedId===t.id&&(this._copiedId=null)},1500)}catch(t){console.error("Failed to copy action ID:",t),this._operationError="Failed to copy action ID"}}_getRecentTriggers(){return this._actions.filter(t=>t.last_triggered).sort((t,e)=>new Date(e.last_triggered).getTime()-new Date(t.last_triggered).getTime()).slice(0,5)}_formatTime(t){if(!t)return"";const e=new Date(t),o=(new Date).getTime()-e.getTime(),i=Math.floor(o/6e4),r=Math.floor(o/36e5),s=Math.floor(o/864e5);return i<1?"Just now":i<60?`${i}m ago`:r<24?`${r}h ago`:s<7?`${s}d ago`:e.toLocaleDateString()}_addAction(){this._editingAction=null,this._showEditor=!0}_editAction(t){this._editingAction=t,this._showEditor=!0}async _toggleAction(t){const e=t.id;this._togglingIds=new Set([...this._togglingIds,e]),this._operationError=null;try{const o=await _t(this.hass,e,{enabled:!t.enabled});this._actions=this._actions.map(t=>t.id===e?o:t)}catch(e){console.error("Failed to toggle action:",e),this._operationError=`Failed to ${t.enabled?"disable":"enable"} action`}finally{this._togglingIds=new Set([...this._togglingIds].filter(t=>t!==e))}}_requestDelete(t){this._confirm={kind:"delete",action:t}}async _confirmDelete(){if("delete"!==this._confirm?.kind)return;const{action:t}=this._confirm;this._confirm=null,this._operationError=null;try{await async function(t,e){await t.callWS({type:"abode_security/actions/delete",action_id:e})}(this.hass,t.id),this._actions=this._actions.filter(e=>e.id!==t.id)}catch(t){console.error("Failed to delete action:",t),this._operationError="Failed to delete action"}}_requestTest(t){this._confirm={kind:"test",action:t}}async _confirmTest(){if("test"!==this._confirm?.kind)return;const{action:t}=this._confirm;this._confirm=null,this._operationError=null;try{await async function(t,e){await t.callWS({type:"abode_security/actions/test",action_id:e})}(this.hass,t.id)}catch(t){console.error("Failed to test action:",t),this._operationError="Failed to test action"}}_closeEditor(){this._showEditor=!1,this._editingAction=null}async _handleSave(){this._closeEditor(),await this._loadData()}render(){if(this._loading)return B`<div class="loading">Loading actions...</div>`;if(this._error)return B`<div class="error" role="alert">${this._error}</div>`;const t=this._getRecentTriggers();return B`
+  `,e([pe({attribute:!1})],Je.prototype,"hass",void 0),e([pe({attribute:!1})],Je.prototype,"action",void 0),e([ue()],Je.prototype,"_name",void 0),e([ue()],Je.prototype,"_modes",void 0),e([ue()],Je.prototype,"_delaySeconds",void 0),e([ue()],Je.prototype,"_selectedSensors",void 0),e([ue()],Je.prototype,"_selectedAlarms",void 0),e([ue()],Je.prototype,"_sensors",void 0),e([ue()],Je.prototype,"_alarms",void 0),e([ue()],Je.prototype,"_errors",void 0),e([ue()],Je.prototype,"_saving",void 0),e([ue()],Je.prototype,"_loading",void 0),e([ue()],Je.prototype,"_loadError",void 0),e([ue()],Je.prototype,"_expandedCategories",void 0),e([ue()],Je.prototype,"_sensorSearch",void 0),Je=e([de("abode-action-editor")],Je);let Xe=class extends ne{constructor(){super(...arguments),this._actions=[],this._loading=!0,this._error=null,this._editingAction=null,this._showEditor=!1,this._confirm=null,this._togglingIds=new Set,this._operationError=null,this._debugLogging=!1,this._copiedId=null,this._abort=null,this._copyResetTimeout=null}async connectedCallback(){super.connectedCallback(),await this._loadData()}disconnectedCallback(){this._abort?.abort(),this._abort=null,null!==this._copyResetTimeout&&(clearTimeout(this._copyResetTimeout),this._copyResetTimeout=null),super.disconnectedCallback()}async _loadData(){this._abort?.abort();const e=new AbortController;this._abort=e;const{signal:t}=e;this._loading=!0,this._error=null;try{const e=await me(this.hass);if(t.aborted)return;this._actions=e,async function(e){return e.callWS({type:"abode_security/config/get"})}(this.hass).then(e=>{t.aborted||(this._debugLogging=!0===e.debug_logging)}).catch(()=>{})}catch(e){if(t.aborted)return;this._error=e instanceof Error?e.message:"Failed to load actions"}finally{t.aborted||(this._loading=!1)}}async _copyActionId(e){try{await navigator.clipboard.writeText(e.id),this._copiedId=e.id,null!==this._copyResetTimeout&&clearTimeout(this._copyResetTimeout),this._copyResetTimeout=setTimeout(()=>{this._copyResetTimeout=null,this._copiedId===e.id&&(this._copiedId=null)},1500)}catch(e){console.error("Failed to copy action ID:",e),this._operationError="Failed to copy action ID"}}_getRecentTriggers(){return this._actions.filter(e=>e.last_triggered).sort((e,t)=>new Date(t.last_triggered).getTime()-new Date(e.last_triggered).getTime()).slice(0,5)}_formatTime(e){if(!e)return"";const t=new Date(e),o=(new Date).getTime()-t.getTime(),i=Math.floor(o/6e4),r=Math.floor(o/36e5),s=Math.floor(o/864e5);return i<1?"Just now":i<60?`${i}m ago`:r<24?`${r}h ago`:s<7?`${s}d ago`:t.toLocaleDateString()}_addAction(){this._editingAction=null,this._showEditor=!0}_editAction(e){this._editingAction=e,this._showEditor=!0}async _toggleAction(e){const t=e.id;this._togglingIds=new Set([...this._togglingIds,t]),this._operationError=null;try{const o=await fe(this.hass,t,{enabled:!e.enabled});this._actions=this._actions.map(e=>e.id===t?o:e)}catch(t){console.error("Failed to toggle action:",t),this._operationError=`Failed to ${e.enabled?"disable":"enable"} action`}finally{this._togglingIds=new Set([...this._togglingIds].filter(e=>e!==t))}}_requestDelete(e){this._confirm={kind:"delete",action:e}}async _confirmDelete(){if("delete"!==this._confirm?.kind)return;const{action:e}=this._confirm;this._confirm=null,this._operationError=null;try{await async function(e,t){await e.callWS({type:"abode_security/actions/delete",action_id:t})}(this.hass,e.id),this._actions=this._actions.filter(t=>t.id!==e.id)}catch(e){console.error("Failed to delete action:",e),this._operationError="Failed to delete action"}}_requestTest(e){this._confirm={kind:"test",action:e}}async _confirmTest(){if("test"!==this._confirm?.kind)return;const{action:e}=this._confirm;this._confirm=null,this._operationError=null;try{await async function(e,t){await e.callWS({type:"abode_security/actions/test",action_id:t})}(this.hass,e.id)}catch(e){console.error("Failed to test action:",e),this._operationError="Failed to test action"}}_closeEditor(){this._showEditor=!1,this._editingAction=null}async _handleSave(){this._closeEditor(),await this._loadData()}render(){if(this._loading)return B`<div class="loading">Loading actions...</div>`;if(this._error)return B`<div class="error" role="alert">${this._error}</div>`;const e=this._getRecentTriggers();return B`
       ${this._operationError?B`
             <div class="operation-error" role="alert">
               ${this._operationError}
@@ -1076,18 +1585,18 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
             </div>
           `:B`
             <div class="actions-list" role="list">
-              ${Dt(this._actions,t=>t.id,t=>this._renderActionRow(t))}
+              ${Be(this._actions,e=>e.id,e=>this._renderActionRow(e))}
             </div>
           `}
 
       <div class="recent-triggers">
         <h3>Recent Triggers</h3>
-        ${0===t.length?B`<div class="empty-state" style="padding: 24px;">No recent triggers</div>`:B`
+        ${0===e.length?B`<div class="empty-state" style="padding: 24px;">No recent triggers</div>`:B`
               <div class="trigger-list">
-                ${t.map(t=>B`
+                ${e.map(e=>B`
                     <div class="trigger-item">
-                      <span class="trigger-name">${t.name}</span>
-                      <span class="trigger-time">${this._formatTime(t.last_triggered)}</span>
+                      <span class="trigger-name">${e.name}</span>
+                      <span class="trigger-time">${this._formatTime(e.last_triggered)}</span>
                     </div>
                   `)}
               </div>
@@ -1104,13 +1613,13 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
           `:""}
       ${"delete"===this._confirm?.kind?this._renderDeleteDialog():""}
       ${"test"===this._confirm?.kind?this._renderTestDialog():""}
-    `}_renderActionRow(t){const e=this._togglingIds.has(t.id),o=t.sensor_entity_ids.filter(t=>Ft(Rt(this.hass,t))).length,i=t.sensor_entity_ids.length;return B`
-      <div class="action-row ${t.enabled?"":"disabled"}" role="listitem">
+    `}_renderActionRow(e){const t=this._togglingIds.has(e.id),o=e.sensor_entity_ids.filter(e=>ke(we(this.hass,e))).length,i=e.sensor_entity_ids.length;return B`
+      <div class="action-row ${e.enabled?"":"disabled"}" role="listitem">
         <div class="action-info">
-          <div class="action-name">${t.name}</div>
+          <div class="action-name">${e.name}</div>
           <div class="action-meta">
             <div class="modes-list">
-              ${t.modes.map(t=>B`<span class="mode-chip">${t}</span>`)}
+              ${e.modes.map(e=>B`<span class="mode-chip">${e}</span>`)}
             </div>
             ${o>0?B`
                   <span
@@ -1128,28 +1637,28 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
           <label class="toggle-switch">
             <input
               type="checkbox"
-              .checked=${t.enabled}
-              .disabled=${e}
-              @change=${()=>this._toggleAction(t)}
-              aria-label="${t.enabled?"Disable":"Enable"} action"
+              .checked=${e.enabled}
+              .disabled=${t}
+              @change=${()=>this._toggleAction(e)}
+              aria-label="${e.enabled?"Disable":"Enable"} action"
             />
             <span class="toggle-slider"></span>
           </label>
           ${this._debugLogging?B`
                 <button
                   class="icon-button"
-                  @click=${()=>this._copyActionId(t)}
-                  title=${this._copiedId===t.id?"Copied!":`Copy action ID (${t.id})`}
+                  @click=${()=>this._copyActionId(e)}
+                  title=${this._copiedId===e.id?"Copied!":`Copy action ID (${e.id})`}
                   aria-label="Copy action ID"
                 >
                   <ha-icon
-                    icon=${this._copiedId===t.id?"mdi:check":"mdi:content-copy"}
+                    icon=${this._copiedId===e.id?"mdi:check":"mdi:content-copy"}
                   ></ha-icon>
                 </button>
               `:""}
           <button
             class="icon-button"
-            @click=${()=>this._requestTest(t)}
+            @click=${()=>this._requestTest(e)}
             title="Test"
             aria-label="Test action"
           >
@@ -1157,7 +1666,7 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
           </button>
           <button
             class="icon-button"
-            @click=${()=>this._editAction(t)}
+            @click=${()=>this._editAction(e)}
             title="Edit"
             aria-label="Edit action"
           >
@@ -1165,7 +1674,7 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
           </button>
           <button
             class="icon-button delete"
-            @click=${()=>this._requestDelete(t)}
+            @click=${()=>this._requestDelete(e)}
             title="Delete"
             aria-label="Delete action"
           >
@@ -1204,7 +1713,7 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
           Test
         </button>
       </abode-modal>
-    `}};Wt.styles=a`
+    `}};Xe.styles=a`
     :host {
       display: block;
     }
@@ -1540,7 +2049,7 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
       outline: 2px solid var(--primary-color);
       outline-offset: 2px;
     }
-  `,t([pt({attribute:!1})],Wt.prototype,"hass",void 0),t([ut()],Wt.prototype,"_actions",void 0),t([ut()],Wt.prototype,"_loading",void 0),t([ut()],Wt.prototype,"_error",void 0),t([ut()],Wt.prototype,"_editingAction",void 0),t([ut()],Wt.prototype,"_showEditor",void 0),t([ut()],Wt.prototype,"_confirm",void 0),t([ut()],Wt.prototype,"_togglingIds",void 0),t([ut()],Wt.prototype,"_operationError",void 0),t([ut()],Wt.prototype,"_debugLogging",void 0),t([ut()],Wt.prototype,"_copiedId",void 0),Wt=t([ct("abode-actions-tab")],Wt);let Vt=class extends nt{constructor(){super(...arguments),this.selectedCameraEntityId=null,this._cameras=[],this._loading=!0,this._error=null,this._unauthorized=!1,this._abort=null,this._highlightTimeout=null,this._autoOpenedFor=null}connectedCallback(){super.connectedCallback(),this._loadCameras()}disconnectedCallback(){this._abort?.abort(),this._abort=null,null!==this._highlightTimeout&&(clearTimeout(this._highlightTimeout),this._highlightTimeout=null),super.disconnectedCallback()}updated(t){t.has("selectedCameraEntityId")&&(this._autoOpenedFor=null);(t.has("selectedCameraEntityId")||t.has("_cameras"))&&this.selectedCameraEntityId&&(this._scrollToSelected(),this._maybeAutoOpenMoreInfo())}async _loadCameras(){this._abort?.abort();const t=new AbortController;this._abort=t;const{signal:e}=t;this._loading=!0,this._error=null,this._unauthorized=!1;try{const t=await async function(t){return(await t.callWS({type:"abode_security/entities/cameras"})).cameras}(this.hass);if(e.aborted)return;this._cameras=t}catch(t){if(e.aborted)return;null!==t&&"object"==typeof t&&"code"in t&&"unauthorized"===t.code?this._unauthorized=!0:this._error=t instanceof Error?t.message:"Failed to load cameras"}finally{e.aborted||(this._loading=!1)}}_scrollToSelected(){requestAnimationFrame(()=>{if(!this.selectedCameraEntityId)return;const t=this.shadowRoot?.querySelector(`[data-entity-id="${CSS.escape(this.selectedCameraEntityId)}"]`);t&&(t.scrollIntoView({behavior:"smooth",block:"nearest"}),t.classList.add("highlight"),null!==this._highlightTimeout&&clearTimeout(this._highlightTimeout),this._highlightTimeout=setTimeout(()=>{t.classList.remove("highlight"),this._highlightTimeout=null},1500))})}_maybeAutoOpenMoreInfo(){const t=this.selectedCameraEntityId;t&&this._autoOpenedFor!==t&&this._cameras.some(e=>e.entity_id===t)&&(this._autoOpenedFor=t,this._openMoreInfo(t))}_openMoreInfo(t){this.dispatchEvent(new CustomEvent("hass-more-info",{detail:{entityId:t},bubbles:!0,composed:!0}))}render(){return this._loading?B`<div class="loading">Loading cameras…</div>`:this._unauthorized?B`
+  `,e([pe({attribute:!1})],Xe.prototype,"hass",void 0),e([ue()],Xe.prototype,"_actions",void 0),e([ue()],Xe.prototype,"_loading",void 0),e([ue()],Xe.prototype,"_error",void 0),e([ue()],Xe.prototype,"_editingAction",void 0),e([ue()],Xe.prototype,"_showEditor",void 0),e([ue()],Xe.prototype,"_confirm",void 0),e([ue()],Xe.prototype,"_togglingIds",void 0),e([ue()],Xe.prototype,"_operationError",void 0),e([ue()],Xe.prototype,"_debugLogging",void 0),e([ue()],Xe.prototype,"_copiedId",void 0),Xe=e([de("abode-actions-tab")],Xe);let Ze=class extends ne{constructor(){super(...arguments),this.selectedCameraEntityId=null,this._cameras=[],this._loading=!0,this._error=null,this._unauthorized=!1,this._abort=null,this._highlightTimeout=null,this._autoOpenedFor=null}connectedCallback(){super.connectedCallback(),this._loadCameras()}disconnectedCallback(){this._abort?.abort(),this._abort=null,null!==this._highlightTimeout&&(clearTimeout(this._highlightTimeout),this._highlightTimeout=null),super.disconnectedCallback()}updated(e){e.has("selectedCameraEntityId")&&(this._autoOpenedFor=null);(e.has("selectedCameraEntityId")||e.has("_cameras"))&&this.selectedCameraEntityId&&(this._scrollToSelected(),this._maybeAutoOpenMoreInfo())}async _loadCameras(){this._abort?.abort();const e=new AbortController;this._abort=e;const{signal:t}=e;this._loading=!0,this._error=null,this._unauthorized=!1;try{const e=await async function(e){return(await e.callWS({type:"abode_security/entities/cameras"})).cameras}(this.hass);if(t.aborted)return;this._cameras=e}catch(e){if(t.aborted)return;null!==e&&"object"==typeof e&&"code"in e&&"unauthorized"===e.code?this._unauthorized=!0:this._error=e instanceof Error?e.message:"Failed to load cameras"}finally{t.aborted||(this._loading=!1)}}_scrollToSelected(){requestAnimationFrame(()=>{if(!this.selectedCameraEntityId)return;const e=this.shadowRoot?.querySelector(`[data-entity-id="${CSS.escape(this.selectedCameraEntityId)}"]`);e&&(e.scrollIntoView({behavior:"smooth",block:"nearest"}),e.classList.add("highlight"),null!==this._highlightTimeout&&clearTimeout(this._highlightTimeout),this._highlightTimeout=setTimeout(()=>{e.classList.remove("highlight"),this._highlightTimeout=null},1500))})}_maybeAutoOpenMoreInfo(){const e=this.selectedCameraEntityId;e&&this._autoOpenedFor!==e&&this._cameras.some(t=>t.entity_id===e)&&(this._autoOpenedFor=e,this._openMoreInfo(e))}_openMoreInfo(e){this.dispatchEvent(new CustomEvent("hass-more-info",{detail:{entityId:e},bubbles:!0,composed:!0}))}render(){return this._loading?B`<div class="loading">Loading cameras…</div>`:this._unauthorized?B`
         <div class="empty-state">Admin permissions are required to view the Cameras tab.</div>
       `:this._error?B`
         <div class="error">
@@ -1550,29 +2059,29 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
           </div>
         </div>
       `:0===this._cameras.length?B`<div class="empty-state">No cameras found in Home Assistant.</div>`:B`
-      <div class="camera-list">${this._cameras.map(t=>this._renderCard(t))}</div>
-    `}_renderCard(t){const e=this.hass.states?.[t.entity_id];return B`
+      <div class="camera-list">${this._cameras.map(e=>this._renderCard(e))}</div>
+    `}_renderCard(e){const t=this.hass.states?.[e.entity_id];return B`
       <div
         class="camera-card"
-        data-entity-id=${t.entity_id}
+        data-entity-id=${e.entity_id}
         role="button"
         tabindex="0"
-        @click=${()=>this._openMoreInfo(t.entity_id)}
-        @keydown=${e=>{"Enter"!==e.key&&" "!==e.key||(e.preventDefault(),this._openMoreInfo(t.entity_id))}}
+        @click=${()=>this._openMoreInfo(e.entity_id)}
+        @keydown=${t=>{"Enter"!==t.key&&" "!==t.key||(t.preventDefault(),this._openMoreInfo(e.entity_id))}}
       >
         <div class="camera-card-header">
-          <span class="camera-name">${t.name}</span>
-          ${t.area?B`<span class="area-chip">${t.area}</span>`:""}
+          <span class="camera-name">${e.name}</span>
+          ${e.area?B`<span class="area-chip">${e.area}</span>`:""}
         </div>
         <ha-camera-stream
           class="camera-stream"
           allow-exoplayer
           muted
           .hass=${this.hass}
-          .stateObj=${e}
+          .stateObj=${t}
         ></ha-camera-stream>
       </div>
-    `}};var Kt;Vt.styles=a`
+    `}};var Qe;Ze.styles=a`
     :host {
       display: block;
     }
@@ -1658,7 +2167,7 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
       min-height: 160px;
       background: #000;
     }
-  `,t([pt({attribute:!1})],Vt.prototype,"hass",void 0),t([pt({attribute:!1})],Vt.prototype,"selectedCameraEntityId",void 0),t([ut()],Vt.prototype,"_cameras",void 0),t([ut()],Vt.prototype,"_loading",void 0),t([ut()],Vt.prototype,"_error",void 0),t([ut()],Vt.prototype,"_unauthorized",void 0),Vt=t([ct("abode-cameras-tab")],Vt);let Gt=Kt=class extends nt{constructor(){super(...arguments),this._activeTab=Kt._initialTabFromUrl(),this._initialCameraSelection=Kt._initialCameraFromUrl()}static _initialTabFromUrl(){const t=new URLSearchParams(window.location.search).get("tab");return"cameras"===t||"actions"===t?t:"modes"}static _initialCameraFromUrl(){return new URLSearchParams(window.location.search).get("camera")}_switchTab(t){"cameras"===this._activeTab&&"cameras"!==t&&(this._initialCameraSelection=null),this._activeTab=t}render(){const t="modes"===this._activeTab?"modes-panel":"actions"===this._activeTab?"actions-panel":"cameras-panel",e="modes"===this._activeTab?"modes-tab":"actions"===this._activeTab?"actions-tab":"cameras-tab";return B`
+  `,e([pe({attribute:!1})],Ze.prototype,"hass",void 0),e([pe({attribute:!1})],Ze.prototype,"selectedCameraEntityId",void 0),e([ue()],Ze.prototype,"_cameras",void 0),e([ue()],Ze.prototype,"_loading",void 0),e([ue()],Ze.prototype,"_error",void 0),e([ue()],Ze.prototype,"_unauthorized",void 0),Ze=e([de("abode-cameras-tab")],Ze);let Ye=Qe=class extends ne{constructor(){super(...arguments),this._activeTab=Qe._initialTabFromUrl(),this._initialCameraSelection=Qe._initialCameraFromUrl()}static _initialTabFromUrl(){const e=new URLSearchParams(window.location.search).get("tab");return"cameras"===e||"actions"===e?e:"modes"}static _initialCameraFromUrl(){return new URLSearchParams(window.location.search).get("camera")}_switchTab(e){"cameras"===this._activeTab&&"cameras"!==e&&(this._initialCameraSelection=null),this._activeTab=e}render(){const e="modes"===this._activeTab?"modes-panel":"actions"===this._activeTab?"actions-panel":"cameras-panel",t="modes"===this._activeTab?"modes-tab":"actions"===this._activeTab?"actions-tab":"cameras-tab";return B`
       <div class="panel-content">
         <div class="header">
           <h1>Abode Configuration</h1>
@@ -1700,8 +2209,8 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
         <div
           class="tab-content"
           role="tabpanel"
-          id=${t}
-          aria-labelledby=${e}
+          id=${e}
+          aria-labelledby=${t}
         >
           ${"modes"===this._activeTab?B`<abode-modes-tab .hass=${this.hass}></abode-modes-tab>`:"actions"===this._activeTab?B`<abode-actions-tab .hass=${this.hass}></abode-actions-tab>`:B`<abode-cameras-tab
                   .hass=${this.hass}
@@ -1709,7 +2218,7 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
                 ></abode-cameras-tab>`}
         </div>
       </div>
-    `}};Gt.styles=a`
+    `}};Ye.styles=a`
     :host {
       display: block;
       background-color: var(--primary-background-color);
@@ -1780,4 +2289,4 @@ function t(t,e,o,i){var r,s=arguments.length,a=s<3?e:null===i?i=Object.getOwnPro
     .tab-content {
       min-height: 400px;
     }
-  `,t([pt({attribute:!1})],Gt.prototype,"hass",void 0),t([ut()],Gt.prototype,"_activeTab",void 0),t([ut()],Gt.prototype,"_initialCameraSelection",void 0),Gt=Kt=t([ct("abode-configuration-panel")],Gt);export{Gt as AbodeConfigurationPanel};
+  `,e([pe({attribute:!1})],Ye.prototype,"hass",void 0),e([ue()],Ye.prototype,"_activeTab",void 0),e([ue()],Ye.prototype,"_initialCameraSelection",void 0),Ye=Qe=e([de("abode-configuration-panel")],Ye);export{Ye as AbodeConfigurationPanel};
