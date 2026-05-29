@@ -24,7 +24,12 @@ jobs:
         # against uv.lock, including provisioning the Python interpreter
         # declared by `requires-python` — no separate setup-python step
         # needed.
-        run: uv sync --extra dev
+        #
+        # `--locked` makes CI fail if uv.lock is out of sync with
+        # pyproject.toml instead of silently re-resolving. Guards against the
+        # drift in #151, where a dependency bump edited pyproject.toml without
+        # regenerating the lockfile.
+        run: uv sync --locked --extra dev
 
       - name: Lint with ruff
         run: |
@@ -71,7 +76,8 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        # --locked: fail on lockfile/manifest drift rather than re-resolving (see #151).
+        run: uv sync --locked --extra dev
 
       - name: Run integration tests
         # Override pyproject's `addopts = "... -m 'not integration'"` explicitly.

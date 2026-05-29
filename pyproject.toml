@@ -66,7 +66,7 @@ dev = [
     # Home Assistant camera component dependencies. Not imported directly;
     # installed so the HA `camera`/`stream` integrations can be imported
     # during tests. Pin matches HA's own constraint to avoid dev/prod drift.
-    "PyTurboJPEG==2.2.0",
+    "PyTurboJPEG==1.8.3",
 ]
 
 [tool.pytest.ini_options]
