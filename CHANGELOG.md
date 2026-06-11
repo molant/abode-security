@@ -174,6 +174,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixes
 -  disarm never fires due to derive_state boundary
 
+## v1.2.2 (2026-06-11)
+
+### Fixes
+-  bump pip 26.1.1 -> 26.1.2 to clear PYSEC-2026-196
+-  stop pinning logger level so logger.set_level works
+-  add dark-mode icon variant (fixes #153)
+
 ## [1.0.0] - 2024-11-23
 
 ### ✨ Initial Release
