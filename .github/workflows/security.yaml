@@ -84,7 +84,6 @@ jobs:
         #   CVE-2026-34993       — aiohttp 3.13.5 (HA pins; fix 3.14.0)
         #   CVE-2026-47265       — aiohttp 3.13.5 (HA pins; fix 3.14.0)
         #   PYSEC-2026-175/177/178/179 — pyjwt 2.12.1 (HA pins; fix 2.13.0)
-        #   PYSEC-2026-196       — pip 26.1.1 (env tool; fix 26.1.2)
         run: |
           uvx pip-audit --requirement /tmp/requirements-locked.txt --strict \
             --ignore-vuln CVE-2026-4539 \
@@ -98,8 +97,7 @@ jobs:
             --ignore-vuln PYSEC-2026-175 \
             --ignore-vuln PYSEC-2026-177 \
             --ignore-vuln PYSEC-2026-178 \
-            --ignore-vuln PYSEC-2026-179 \
-            --ignore-vuln PYSEC-2026-196
+            --ignore-vuln PYSEC-2026-179
 
   npm-audit-frontend:
     name: npm audit (frontend)
