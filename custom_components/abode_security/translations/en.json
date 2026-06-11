@@ -41,13 +41,13 @@
           "polling_interval": "Polling Interval (seconds)",
           "enable_events": "Enable Events",
           "retry_count": "Retry Count",
-          "debug_logging": "Debug Logging"
+          "debug_logging": "Diagnostics Mode"
         },
         "data_description": {
           "polling_interval": "How often to check Abode for updates. Lower values check more frequently but use more resources.",
           "enable_events": "Receive real-time event notifications from Abode when available",
           "retry_count": "Number of times to retry failed API requests before giving up",
-          "debug_logging": "Enable detailed logging for troubleshooting"
+          "debug_logging": "Unlock diagnostic tools such as the test-notification service. For detailed logs, use Settings → System → Logs or the logger.set_level service on custom_components.abode_security."
         }
       }
     }

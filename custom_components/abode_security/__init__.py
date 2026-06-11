@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
@@ -29,7 +28,6 @@ from homeassistant.util import dt as dt_util
 
 from . import snapshot
 from .const import (
-    CONF_DEBUG_LOGGING,
     CONF_ENABLE_EVENTS,
     CONF_POLLING,
     CONF_POLLING_INTERVAL,
@@ -127,14 +125,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     polling_interval = entry.data.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL)
     enable_events = entry.data.get(CONF_ENABLE_EVENTS, DEFAULT_ENABLE_EVENTS)
     retry_count = entry.data.get(CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT)
-
-    # Apply debug logging if enabled
-    if entry.options.get(CONF_DEBUG_LOGGING, False):
-        logging.getLogger("custom_components.abode_security").setLevel(logging.DEBUG)
-        logging.getLogger("custom_components.abode_security.abode").setLevel(
-            logging.DEBUG
-        )
-        LOGGER.info("Debug logging enabled for Abode integration")
 
     # Configure abode library to use config directory for storing data
     abode.config.paths.override(user_data=Path(hass.config.path("Abode")))
