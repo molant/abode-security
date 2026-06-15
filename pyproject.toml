@@ -32,25 +32,25 @@ dev = [
     # compatibility issues against HA's entity base classes (issue #70). Pinned
     # to match the locally-validated version; bump deliberately with the next
     # pyright release.
-    "pyright==1.1.409",
+    "pyright==1.1.410",
 
     # Testing
-    "pytest==9.0.3",
+    "pytest==9.1.0",
     # pytest-homeassistant-custom-component pins homeassistant exactly (and
     # therefore all of HA's transitive deps: aiohttp, aiodns, pycares, etc.).
     # Keep this current with the latest HA to avoid transitive-version drift.
     "pytest-homeassistant-custom-component==0.13.331",
     "pytest-cov==7.1.0",
-    "pytest-asyncio==1.3.0",
-    "pytest-aiohttp==1.1.0",
+    "pytest-asyncio==1.4.0",
+    "pytest-aiohttp==1.1.1",
     "aioresponses==0.7.8",
 
     # Code quality
-    "ruff==0.15.14",
+    "ruff==0.15.17",
 
     # Mock server dependencies (for running locally outside Docker)
-    "fastapi==0.136.3",
-    "uvicorn[standard]==0.48.0",
+    "fastapi==0.137.0",
+    "uvicorn[standard]==0.49.0",
 
     # Used directly by config_flow.py, conftest.py, and the mock server.
     # Lower-bound only: homeassistant pins requests to a specific patch version
@@ -66,7 +66,7 @@ dev = [
     # Home Assistant camera component dependencies. Not imported directly;
     # installed so the HA `camera`/`stream` integrations can be imported
     # during tests. Pin matches HA's own constraint to avoid dev/prod drift.
-    "PyTurboJPEG==1.8.3",
+    "PyTurboJPEG==2.2.0",
 
     # Imported directly by tests/test_brand_assets.py to validate brand image
     # content. Available transitively via homeassistant, but declared here so
