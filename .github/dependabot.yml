@@ -19,10 +19,14 @@ updates:
       # PyTurboJPEG is not imported by this project; it ships in [dev] only
       # so HA's camera/stream integrations can load during tests. We pin to
       # HA's exact version (currently 1.8.3) to avoid dev/prod drift, so
-      # Dependabot must not propose its own bumps to 2.x. Revisit when HA
+      # Dependabot must not propose its own bumps past 1.x. Revisit when HA
       # bumps past 1.x.
+      #
+      # pip ignore conditions take PEP 440 specifiers, not the `2.x` wildcard
+      # form npm/bundler accept — Dependabot rejects the whole config file if
+      # you use the wildcard here.
       - dependency-name: "pyturbojpeg"
-        versions: ["2.x"]
+        versions: [">=2.0"]
     groups:
       dev-deps:
         patterns:
