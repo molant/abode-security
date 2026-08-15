@@ -40,6 +40,14 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 10
+    ignore:
+      # Prettier 3.9 reformats multi-line ternaries inside `lit` templates,
+      # which inserts newlines into rendered DOM text and breaks tests that
+      # assert on textContent. We pin `~3.8.3` deliberately; taking 3.9+ means
+      # reformatting the panel sources and relaxing those assertions, which
+      # wants its own commit. Drop this once that happens.
+      - dependency-name: "prettier"
+        versions: ["3.9.x"]
     groups:
       lit:
         patterns:

@@ -24,8 +24,8 @@ export PYTHONPATH="$PROJECT_ROOT/custom_components:$PYTHONPATH"
 
 # Lint with ruff
 echo "Linting with ruff..."
-uv run ruff check custom_components/abode_security tests
-uv run ruff format --check custom_components/abode_security tests
+uv run ruff check custom_components/abode_security tests conftest.py
+uv run ruff format --check custom_components/abode_security tests conftest.py
 
 # Type check with mypy
 echo ""

@@ -18,7 +18,8 @@ This guide covers local development, testing, and contribution workflows for the
 
 ### Prerequisites
 - **Docker** and Docker Compose (or Colima on macOS)
-- **Node.js 20+** (see `frontend/.nvmrc`)
+- **Node.js 24+** (see `frontend/.nvmrc`; `frontend/.npmrc` sets
+  `engine-strict=true`, so an older Node fails `npm ci` rather than warning)
 - **Python 3.14.2+** (pinned by `pytest-homeassistant-custom-component`'s
   bundled `homeassistant` release; `uv` will install a matching interpreter
   automatically if your system Python is older)

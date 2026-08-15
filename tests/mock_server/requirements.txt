@@ -1,5 +1,5 @@
-fastapi==0.136.1
-uvicorn[standard]==0.47.0
+fastapi==0.141.1
+uvicorn[standard]==0.52.3
 # Latest v3-compatible majors so the mock server speaks Engine.IO v3,
 # matching the vendored Abode SocketIO client (and real Abode). See #105.
 # Pinned exactly to keep the Docker build reproducible.
