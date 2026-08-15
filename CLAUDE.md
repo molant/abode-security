@@ -28,6 +28,9 @@ Quality gates (`ruff`, `mypy`, `pyright`, `pytest`) are enforced by `.githooks/p
 ### Testing gotchas
 
 - **Frontend tests** — `cd frontend && npm test` runs `web-test-runner` against `frontend/src/__tests__/*.test.ts` (Playwright-backed, `@open-wc/testing`). CI runs them via `npm test` in `tests.yaml` alongside lint, format, typecheck, and build.
+- **Prettier is pinned to `~3.8.3`, not `^`** — 3.9 reformats multi-line ternaries inside `lit` templates, which inserts newlines into *rendered* DOM text and breaks tests asserting on `textContent`. Taking 3.9+ means reformatting ~6 files and relaxing those assertions; do it as its own commit, not inside a dependency bump.
+- **Node version comes from `frontend/.nvmrc`** — every CI job reads it, and `frontend/.npmrc` sets `engine-strict=true` so a too-old Node fails the install instead of warning. The `@web/*` 1.x line needs Node >=22 and `errorstacks` needs >=24.
+- **`aioresponses` is monkeypatched** for aiohttp 3.14 via `tests/aioresponses_compat.py` (applied from the root `conftest.py`). Upstream has been quiet since April 2026; delete the shim once a release ships support — `apply()` raises at startup when the installed version moves past the shimmed one, so the next bump forces a deliberate decision.
 
 ## Abode API quirks
 

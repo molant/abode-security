@@ -251,7 +251,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register frontend panel for configuration
     # Note: This may fail in test environments where http/frontend aren't available
     try:
-        from homeassistant.components.http import StaticPathConfig
+        # HA 2026.8.0 moved this into `homeassistant.components.http.server` and
+        # re-exports it here. Keep importing the package path: it is the only
+        # one that resolves on the HA versions this integration supports
+        # (`minimum_home_assistant_version` is 2024.1.0, and `http.server`
+        # doesn't exist before 2026.8.0). pyright reads the re-export as
+        # private, hence the ignore.
+        from homeassistant.components.http import (
+            StaticPathConfig,  # pyright: ignore[reportPrivateImportUsage]
+        )
 
         panel_url = "/abode_security_panel"
 

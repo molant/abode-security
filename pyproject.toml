@@ -7,8 +7,8 @@ name = "abode-security"
 version = "0.1.0"
 description = "Custom Home Assistant integration for Abode Security Systems"
 readme = "README.md"
-# Constrained by pytest-homeassistant-custom-component==0.13.331, which pins
-# homeassistant==2026.5.2 (requires Python 3.14.2+). Bump in lock-step with
+# Constrained by pytest-homeassistant-custom-component==0.13.356, which pins
+# homeassistant==2026.8.2 (requires Python 3.14.2+). Bump in lock-step with
 # the pinned HA version. The HA *runtime* version target is governed by
 # `minimum_home_assistant_version` in manifest.json, not this field.
 requires-python = ">=3.14.2"
@@ -26,31 +26,34 @@ dependencies = [
 # requirements-dev.txt; pyproject.toml + uv.lock is authoritative now.
 dev = [
     # Type checking
-    "mypy==2.1.0",
-    "types-requests==2.33.0.20260518",
+    "mypy==2.3.1",
+    "types-requests==2.33.0.20260712",
     # Pyright complements mypy by catching cached_property / variable-override
     # compatibility issues against HA's entity base classes (issue #70). Pinned
     # to match the locally-validated version; bump deliberately with the next
     # pyright release.
-    "pyright==1.1.409",
+    "pyright==1.1.411",
 
     # Testing
+    # pytest, pytest-cov, pytest-asyncio and pytest-aiohttp are pinned exactly
+    # by pytest-homeassistant-custom-component — match its pins rather than
+    # PyPI's latest, or uv resolution conflicts.
     "pytest==9.0.3",
     # pytest-homeassistant-custom-component pins homeassistant exactly (and
     # therefore all of HA's transitive deps: aiohttp, aiodns, pycares, etc.).
     # Keep this current with the latest HA to avoid transitive-version drift.
-    "pytest-homeassistant-custom-component==0.13.331",
+    "pytest-homeassistant-custom-component==0.13.356",
     "pytest-cov==7.1.0",
-    "pytest-asyncio==1.3.0",
-    "pytest-aiohttp==1.1.0",
-    "aioresponses==0.7.8",
+    "pytest-asyncio==1.4.0",
+    "pytest-aiohttp==1.1.1",
+    "aioresponses==0.7.9",
 
     # Code quality
-    "ruff==0.15.14",
+    "ruff==0.16.3",
 
     # Mock server dependencies (for running locally outside Docker)
-    "fastapi==0.136.3",
-    "uvicorn[standard]==0.48.0",
+    "fastapi==0.141.1",
+    "uvicorn[standard]==0.52.3",
 
     # Used directly by config_flow.py, conftest.py, and the mock server.
     # Lower-bound only: homeassistant pins requests to a specific patch version
@@ -72,7 +75,19 @@ dev = [
     # content. Available transitively via homeassistant, but declared here so
     # the test dependency is explicit. Pin matches HA's own constraint to avoid
     # dev/prod drift.
-    "pillow==12.2.0",
+    "pillow==12.3.0",
+
+    # Imported directly by the aioresponses shim and its test
+    # (tests/aioresponses_compat.py, tests/test_aioresponses_compat.py) to
+    # compare the installed aioresponses against the release it was written
+    # for. Floor is 22.0, the release that dropped LegacyVersion so that
+    # Version() is strictly PEP 440-or-InvalidVersion — which is the behaviour
+    # the shim's error handling relies on.
+    # Available transitively via aioresponses (and homeassistant, pytest), but
+    # declared here so the test dependency is explicit — and so it survives
+    # the removal of that shim, whose own dependency is otherwise its closest
+    # guarantor. Lower-bound only: nothing here needs a specific patch.
+    "packaging>=22.0",
 ]
 
 [tool.pytest.ini_options]
@@ -89,15 +104,16 @@ where = ["custom_components"]
 
 [tool.ruff]
 line-length = 88
-# One minor behind `requires-python = ">=3.14.2"` because pyright 1.1.409
-# (latest on PyPI as of this commit) doesn't parse PEP 758 yet — its
-# formatter at py314 would strip parens from multi-exception `except`
-# clauses, then pyright would reject the file with "Multiple exception
-# types must be parenthesized prior to Python 3.14". py313 still gives us
-# UP043 (`Generator[T, None, None]` → `Generator[T]`) and the rest of the
-# 3.12/3.13 pyupgrade lints we want. Bump to py314 when pyright ships PEP
-# 758 support; keep `mypy.python_version` and `pyright.pythonVersion`
-# tracking `requires-python` independently for stub selection.
+# One minor behind `requires-python = ">=3.14.2"`. This started as a
+# workaround for pyright not parsing PEP 758 (its formatter at py314 strips
+# parens from multi-exception `except` clauses, which pyright then rejected).
+# pyright 1.1.411 parses PEP 758, so that blocker is gone — but switching to
+# py314 now reformats 20 files, so it wants its own commit rather than riding
+# along with a dependency bump. py313 still gives us UP043
+# (`Generator[T, None, None]` → `Generator[T]`) and the rest of the
+# 3.12/3.13 pyupgrade lints we want. Keep `mypy.python_version` and
+# `pyright.pythonVersion` tracking `requires-python` independently for stub
+# selection.
 target-version = "py313"
 exclude = [
     "custom_components/abode_security/abode",  # Vendored library
@@ -131,9 +147,9 @@ exclude = [
 [tool.pyright]
 # Matches `requires-python = ">=3.14.2"` so pyright resolves against the
 # 3.14 typeshed stubs rather than whatever interpreter it auto-detects.
-# Note: pyright 1.1.409 still doesn't *parse* PEP 758 (parenless multi-
-# exception `except`) regardless of this setting — that's why the ruff
-# block above stays on py313. Bump both when pyright catches up.
+# Note: pyright 1.1.411 does now parse PEP 758 (parenless multi-exception
+# `except`). The ruff block above stays on py313 only to keep the resulting
+# reformat out of this bump — see the comment there.
 pythonVersion = "3.14"
 exclude = [
     "custom_components/abode_security/abode",  # Vendored library

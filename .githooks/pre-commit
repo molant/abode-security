@@ -19,8 +19,8 @@ export PYTHONPATH="$(cd "$(dirname "$0")/../custom_components" && pwd):$PYTHONPA
 # `python3 -m`, which resolved against the user's system site-packages and
 # could drift from .venv whenever pyproject.toml changed.
 echo "Linting with ruff..."
-uv run ruff check custom_components/abode_security tests
-uv run ruff format --check custom_components/abode_security tests
+uv run ruff check custom_components/abode_security tests conftest.py
+uv run ruff format --check custom_components/abode_security tests conftest.py
 
 # Type check with mypy
 echo "Type checking with mypy..."
