@@ -3,8 +3,12 @@ blueprint:
   description: >
     Sends a mobile notification whenever an Abode action fires. When the triggering sensor's
     device exposes a co-located camera and the system is in home or away mode, the notification
-    includes a snapshot image. Optionally filter to a single action by its ID, and optionally
-    send as a critical alert (iOS: bypasses Do Not Disturb; Android: high-priority channel).
+    includes a snapshot image.
+
+    Severity is decided by the integration, not here: an action that armed an alarm — or one
+    whose alarm *failed* to arm — is announced as a critical alert, an away-mode trip is
+    time-sensitive, and everything else is a normal notification. Set "Critical alerts" to
+    always or never to override.
   domain: automation
   source_url: https://github.com/molant/abode-security/blob/main/blueprints/abode_security_notification.yaml
   input:
@@ -29,15 +33,27 @@ blueprint:
         text:
           multiline: false
 
-    critical:
-      name: Critical alert
+    critical_mode:
+      name: Critical alerts
       description: >
-        iOS: sends a critical alert that bypasses Do Not Disturb (requires the
-        HA Companion app permission to be granted in iOS Settings).
-        Android: sets a high-priority notification channel.
-      default: false
+        `auto` (recommended) escalates from the event's own `severity`: critical when an
+        alarm was armed or failed to arm, time-sensitive in away mode, normal otherwise.
+        `always` makes every notification critical. `never` disables escalation entirely.
+
+        iOS: critical alerts bypass Do Not Disturb but require the Critical Alerts
+        permission — grant it in the Home Assistant app under Settings → Notifications,
+        or they are silently delivered as ordinary alerts.
+        Android: the `critical` notification channel takes its importance from the value
+        set the first time it is used. If you previously received a non-critical
+        notification on that channel, clear the app's notification channels (app info →
+        Notifications) so it is recreated at high importance.
+      default: auto
       selector:
-        boolean:
+        select:
+          options:
+            - auto
+            - always
+            - never
 
 trigger:
   - platform: event
@@ -45,7 +61,7 @@ trigger:
 
 variables:
   action_filter: !input action_filter
-  critical: !input critical
+  critical_mode: !input critical_mode
 
 condition:
   - condition: template
@@ -55,126 +71,79 @@ condition:
 
 action:
   - variables:
-      title_text: "{{ trigger.event.data.action_name }}"
+      # `severity` and `alarm_outcome` are computed by the integration
+      # (action_trigger._severity / _alarm_outcome) so that custom automations
+      # get the same escalation as this blueprint. Older payloads predate both
+      # keys, hence the defaults.
+      severity: "{{ trigger.event.data.get('severity', 'normal') }}"
+      alarm_outcome: "{{ trigger.event.data.get('alarm_outcome', 'none') }}"
+      # Resolved to a *string* rather than a boolean on purpose. A template
+      # variable that renders "False" is a non-empty string, and therefore
+      # truthy in Jinja — a bug this blueprint has carried a warning about
+      # since the original `choose` matrix. Comparing strings sidesteps it.
+      push_mode: >-
+        {% if critical_mode == 'always' or (critical_mode == 'auto' and severity == 'critical') %}
+        critical
+        {%- elif critical_mode == 'auto' and severity == 'high' %}
+        time_sensitive
+        {%- else %}
+        none
+        {%- endif %}
+
+      title_text: >-
+        {{ '⚠️ ALARM FAILED — ' if alarm_outcome in ['failed', 'partial'] else '' }}{{ trigger.event.data.action_name }}
       message_text: >-
         {{ trigger.event.data.sensor_friendly_name or trigger.event.data.triggered_by }}
         {{ 'opened' if trigger.event.data.sensor_device_class in ['door', 'window']
            else 'detected motion' if trigger.event.data.sensor_device_class == 'motion'
            else 'triggered' }}
-        ({{ trigger.event.data.mode }})
-  # `trigger.event.data.snapshot_path is not none` is inlined in each branch
-  # rather than stored as a `has_snapshot` variable, because a templated string
-  # stored as a variable can render as the literal strings "True"/"False" —
-  # both of which are truthy in Jinja and would mis-route the choose. The
-  # inline form returns a real Python bool every time.
-  #
-  # Branch matrix: (snapshot, camera, critical). `snapshot` implies `camera`
-  # (snapshot capture only runs when resolve_co_located_camera returns one),
-  # so there's no "snapshot but no camera" cell. The deep-link is set on
-  # `camera_entity_id is not none` independent of `snapshot_path` — if the
-  # snapshot timed out (or we're in standby) but the camera is known, the
-  # notification still lets the user tap through to the live stream.
-  - choose:
-      # snapshot + critical (camera implied)
-      - conditions:
-          - condition: template
-            value_template: "{{ (trigger.event.data.snapshot_path is not none) and critical }}"
-        sequence:
-          - service: !input notify_target
-            data:
-              title: "{{ title_text }}"
-              message: "{{ message_text }}"
-              data:
-                image: "{{ trigger.event.data.snapshot_path }}"
-                # Tap → Abode Security panel's Cameras tab, scrolled/highlighted on
-                # the triggering camera. The URL works the same on iOS Companion
-                # (`url`) and Android Companion (`clickAction`); set both so the
-                # blueprint is platform-agnostic.
-                url: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
-                clickAction: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
-                push:
-                  interruption-level: critical
-                  sound:
-                    name: default
-                    critical: 1
-                    volume: 1.0
-                channel: critical
-                priority: high
-                ttl: 0
-      # snapshot + non-critical (camera implied)
-      - conditions:
-          - condition: template
-            value_template: "{{ (trigger.event.data.snapshot_path is not none) and not critical }}"
-        sequence:
-          - service: !input notify_target
-            data:
-              title: "{{ title_text }}"
-              message: "{{ message_text }}"
-              data:
-                image: "{{ trigger.event.data.snapshot_path }}"
-                url: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
-                clickAction: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
-      # no snapshot but camera known + critical
-      - conditions:
-          - condition: template
-            value_template: >-
-              {{ (trigger.event.data.snapshot_path is none)
-                 and (trigger.event.data.camera_entity_id is not none)
-                 and critical }}
-        sequence:
-          - service: !input notify_target
-            data:
-              title: "{{ title_text }}"
-              message: "{{ message_text }}"
-              data:
-                url: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
-                clickAction: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
-                push:
-                  interruption-level: critical
-                  sound:
-                    name: default
-                    critical: 1
-                    volume: 1.0
-                channel: critical
-                priority: high
-                ttl: 0
-      # no snapshot but camera known + non-critical
-      - conditions:
-          - condition: template
-            value_template: >-
-              {{ (trigger.event.data.snapshot_path is none)
-                 and (trigger.event.data.camera_entity_id is not none)
-                 and not critical }}
-        sequence:
-          - service: !input notify_target
-            data:
-              title: "{{ title_text }}"
-              message: "{{ message_text }}"
-              data:
-                url: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
-                clickAction: "/abode_security?tab=cameras&camera={{ trigger.event.data.camera_entity_id }}"
-      # no camera + critical
-      - conditions:
-          - condition: template
-            value_template: "{{ (trigger.event.data.camera_entity_id is none) and critical }}"
-        sequence:
-          - service: !input notify_target
-            data:
-              title: "{{ title_text }}"
-              message: "{{ message_text }}"
-              data:
-                push:
-                  interruption-level: critical
-                  sound:
-                    name: default
-                    critical: 1
-                    volume: 1.0
-                channel: critical
-                priority: high
-                ttl: 0
-    default:
-      # no camera + non-critical
-      - service: !input notify_target
-        data:
-          title: "{{ title_text }}"
-          message: "{{ message_text }}"
+        ({{ trigger.event.data.mode }}){%- if alarm_outcome == 'failed' %}
+
+        No alarm was raised and monitoring was NOT contacted.
+        {%- elif alarm_outcome == 'partial' %}
+
+        Some alarms failed to arm — monitoring may not have been contacted.
+        {%- elif alarm_outcome == 'armed' %}
+
+        Alarm raised.
+        {%- endif %}
+        {%- if trigger.event.data.get('snapshot_error') %}
+
+        (snapshot unavailable: {{ trigger.event.data.snapshot_error }})
+        {%- endif %}
+
+      # Built as merged dicts rather than a `choose` matrix over
+      # (snapshot × camera × severity), which would need ~12 branches with the
+      # push block repeated six times. A template that evaluates to a dict
+      # yields a real dict, not the "True"/"False" strings that make bare
+      # boolean-valued template *strings* unusable in conditions.
+      link_data: >-
+        {% set cam = trigger.event.data.camera_entity_id %}
+        {% set url = '/abode_security?tab=cameras' ~ ('&camera=' ~ cam if cam else '') %}
+        {{ {'url': url, 'clickAction': url} }}
+      image_data: >-
+        {{ {'image': trigger.event.data.snapshot_path}
+           if trigger.event.data.snapshot_path else {} }}
+      push_data: >-
+        {% if push_mode | trim == 'critical' %}
+        {{ {'push': {'interruption-level': 'critical',
+                     'sound': {'name': 'default', 'critical': 1, 'volume': 1.0}},
+            'channel': 'critical', 'priority': 'high', 'ttl': 0} }}
+        {%- elif push_mode | trim == 'time_sensitive' %}
+        {{ {'push': {'interruption-level': 'time-sensitive'},
+            'channel': 'alerts', 'priority': 'high', 'ttl': 0} }}
+        {%- else %}
+        {{ {} }}
+        {%- endif %}
+
+  - service: !input notify_target
+    data:
+      title: "{{ title_text }}"
+      message: "{{ message_text }}"
+      # Merged with dict(pairs) rather than HA's `combine` filter, which only
+      # exists on 2024.10+ — this blueprint has to work on the version floor
+      # the integration declares in manifest.json.
+      data: >-
+        {{ dict(link_data.items() | list
+                + image_data.items() | list
+                + push_data.items() | list) }}

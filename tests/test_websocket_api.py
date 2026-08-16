@@ -7,6 +7,7 @@ from custom_components.abode_security.action_manager import (
     MAX_NAME_LENGTH,
     ActionManager,
 )
+from custom_components.abode_security.action_trigger import ActionTriggerCoordinator
 from custom_components.abode_security.config_store import ConfigStore
 from custom_components.abode_security.const import CONTEXT_ID_PREFIX, DOMAIN
 from custom_components.abode_security.scheduling.mode_changer import HAModeChanger
@@ -39,6 +40,10 @@ async def setup_websocket_api(hass, action_manager, config_store):
     hass.data[DOMAIN]["config_store"] = config_store
     hass.data[DOMAIN]["config"] = config_store.get_config()
     hass.data[DOMAIN]["mode_changer"] = HAModeChanger(hass)
+    # `actions/test` arms alarms through the coordinator's verified helper
+    # rather than its own copy of the service call, so the fixture has to
+    # provide one — as integration setup does in __init__.py.
+    hass.data[DOMAIN]["action_trigger"] = ActionTriggerCoordinator(hass, action_manager)
     async_register_websocket_commands(hass)
     return action_manager
 
@@ -552,6 +557,71 @@ class TestWebSocketActionsAPI:
         assert response["error"]["code"] == "not_found"
 
     # --- Test Action (Manual Trigger) ---
+
+    async def test_ws_actions_test_reports_failure_as_a_protocol_error(
+        self, hass, hass_ws_client
+    ) -> None:
+        """The Test button must not show success when no alarm was raised.
+
+        A nested `result.success: false` is still a successful WS response,
+        and the panel's `testAction()` discards the result body — so the user
+        saw nothing at all. Fail the call instead.
+        """
+        manager = _get_manager(hass)
+        action = await manager.async_create(
+            name="Call the police",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.gone_missing"],
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {"id": 1, "type": "abode_security/actions/test", "action_id": action.id}
+        )
+        response = await client.receive_json()
+
+        assert response["success"] is False
+        assert response["error"]["code"] == "alarm_failed"
+        assert "switch.gone_missing" in response["error"]["message"]
+        assert "No alarm was raised" in response["error"]["message"]
+
+    async def test_ws_actions_test_partial_failure_does_not_claim_total_failure(
+        self, hass, hass_ws_client
+    ) -> None:
+        """When one alarm arms and another fails, say so precisely.
+
+        Reporting "No alarm was raised" while one actually did is the same
+        class of inaccuracy this change set removes, just in the other
+        direction — and the operator needs to know what fired so they can
+        dismiss it.
+        """
+        hass.states.async_set("switch.works", "off")
+
+        async def mock_service(_call):
+            hass.states.async_set("switch.works", "on")
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        manager = _get_manager(hass)
+        action = await manager.async_create(
+            name="Two alarms",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.door"],
+            alarm_entity_ids=["switch.works", "switch.gone_missing"],
+        )
+
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {"id": 1, "type": "abode_security/actions/test", "action_id": action.id}
+        )
+        response = await client.receive_json()
+
+        assert response["success"] is False
+        message = response["error"]["message"]
+        assert "No alarm was raised" not in message, message
+        assert "1 of 2 alarms failed" in message
+        assert "switch.works" in message, "must name what did fire"
 
     async def test_ws_actions_test(self, hass, hass_ws_client) -> None:
         """Test manually triggering an action."""
@@ -1713,40 +1783,144 @@ class TestWebSocketAlarmsAPI:
         assert response["success"]
         assert response["result"]["alarms"] == []
 
+    @staticmethod
+    def _register_manual_alarm(hass, alarm_type: str, object_id: str, name: str) -> str:
+        """Register a manual alarm switch the way switch.py does.
+
+        The picker resolves alarms through the entity registry by unique_id
+        (``{alarm_id}-manual-alarm-{type}``), not by entity_id pattern, so
+        tests have to register rather than just set a state.
+        """
+        registry = er.async_get(hass)
+        entry = registry.async_get_or_create(
+            domain="switch",
+            platform=DOMAIN,
+            unique_id=f"1-manual-alarm-{alarm_type}",
+            suggested_object_id=object_id,
+        )
+        hass.states.async_set(entry.entity_id, "off", {"friendly_name": name})
+        return entry.entity_id
+
     async def test_ws_entities_alarms_filters_abode_alarms(
         self, hass, hass_ws_client
     ) -> None:
-        """Test only Abode alarm switches are returned."""
-        # Abode alarm switches
-        hass.states.async_set(
-            "switch.abode_panic_alarm", "off", {"friendly_name": "Panic Alarm"}
+        """Test only Abode manual alarm switches are returned."""
+        panic = self._register_manual_alarm(
+            hass, "panic", "abode_alarm_panic_alarm", "Abode Alarm Panic Alarm"
         )
-        hass.states.async_set(
-            "switch.abode_medical_alarm", "off", {"friendly_name": "Medical Alarm"}
+        medical = self._register_manual_alarm(
+            hass, "medical", "abode_alarm_medical_alarm", "Abode Alarm Medical Alarm"
         )
-        # Non-alarm switches (should be excluded)
-        hass.states.async_set("switch.living_room_light", "on")
-        hass.states.async_set("switch.abode_automation", "on")
+
+        # Another integration's switch, and one of ours that isn't a manual
+        # alarm — both must be excluded.
+        registry = er.async_get(hass)
+        registry.async_get_or_create(
+            domain="switch",
+            platform="demo",
+            unique_id="not-ours",
+            suggested_object_id="living_room_light",
+        )
+        registry.async_get_or_create(
+            domain="switch",
+            platform=DOMAIN,
+            unique_id="1-cms-dispatch_police",
+            suggested_object_id="abode_alarm_dispatch_police",
+        )
 
         client = await hass_ws_client(hass)
         await client.send_json({"id": 1, "type": "abode_security/entities/alarms"})
         response = await client.receive_json()
 
         assert response["success"]
-        alarms = response["result"]["alarms"]
-        assert len(alarms) == 2
+        entity_ids = {a["entity_id"] for a in response["result"]["alarms"]}
+        assert entity_ids == {panic, medical}
 
-        entity_ids = {a["entity_id"] for a in alarms}
-        assert "switch.abode_panic_alarm" in entity_ids
-        assert "switch.abode_medical_alarm" in entity_ids
+    async def test_ws_entities_alarms_excludes_untriggerable_types(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Alarm types Abode rejects on /panel/alarm must not be offered.
+
+        Regression test for the incident where a "Call the police" action was
+        wired to the BURGLAR switch and failed with 400 errorCode 16013 on
+        every one of its ten triggers.
+        """
+        panic = self._register_manual_alarm(
+            hass, "panic", "abode_alarm_panic_alarm", "Abode Alarm Panic Alarm"
+        )
+        for untriggerable in ("burglar", "co", "smoke", "smoke_co"):
+            self._register_manual_alarm(
+                hass,
+                untriggerable,
+                f"abode_alarm_{untriggerable}_alarm",
+                f"Abode Alarm {untriggerable.title()} Alarm",
+            )
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/alarms"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        entity_ids = {a["entity_id"] for a in response["result"]["alarms"]}
+        assert entity_ids == {panic}
+
+    async def test_ws_entities_alarms_excludes_disabled_but_keeps_hidden(
+        self, hass, hass_ws_client
+    ) -> None:
+        """Disabled entities are unusable; hidden ones are perfectly fine.
+
+        A disabled entity survives in the registry but is never added to hass
+        ("Not adding entity ... because it's disabled"), so offering it yields
+        an action that fails immediately as `entity_missing`.
+
+        `hidden_by` is different: it only affects auto-dashboard visibility.
+        The entity is set up and `switch.turn_on` works, so hiding the alarm
+        switches to declutter must not silently remove the ability to build an
+        alarm-raising action.
+        """
+        registry = er.async_get(hass)
+        live = self._register_manual_alarm(
+            hass, "panic", "abode_alarm_panic_alarm", "Abode Alarm Panic Alarm"
+        )
+        disabled = registry.async_get_or_create(
+            domain="switch",
+            platform=DOMAIN,
+            unique_id="1-manual-alarm-medical",
+            suggested_object_id="abode_alarm_medical_alarm",
+        )
+        registry.async_update_entity(
+            disabled.entity_id, disabled_by=er.RegistryEntryDisabler.USER
+        )
+
+        hidden = registry.async_get_or_create(
+            domain="switch",
+            platform=DOMAIN,
+            unique_id="1-manual-alarm-silent_panic",
+            suggested_object_id="abode_alarm_silent_panic_alarm",
+        )
+        registry.async_update_entity(
+            hidden.entity_id, hidden_by=er.RegistryEntryHider.USER
+        )
+        hass.states.async_set(hidden.entity_id, "off")
+
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "abode_security/entities/alarms"})
+        response = await client.receive_json()
+
+        assert response["success"]
+        entity_ids = {a["entity_id"] for a in response["result"]["alarms"]}
+        assert entity_ids == {live, hidden.entity_id}
+        assert disabled.entity_id not in entity_ids
 
     async def test_ws_entities_alarms_includes_type(self, hass, hass_ws_client) -> None:
-        """Test alarm info includes type."""
-        hass.states.async_set(
-            "switch.abode_panic_alarm", "off", {"friendly_name": "Panic Alarm"}
+        """Test alarm info includes type, and survives a renamed entity_id."""
+        panic = self._register_manual_alarm(
+            hass, "panic", "abode_alarm_panic_alarm", "Abode Alarm Panic Alarm"
         )
-        hass.states.async_set(
-            "switch.abode_fire_alarm", "off", {"friendly_name": "Fire Alarm"}
+        # Simulate a user renaming the panel device (and its entity_ids): the
+        # old entity_id-prefix match would have dropped this from the picker.
+        renamed = self._register_manual_alarm(
+            hass, "silent_panic", "house_quiet_alert", "House Quiet Alert"
         )
 
         client = await hass_ws_client(hass)
@@ -1754,14 +1928,11 @@ class TestWebSocketAlarmsAPI:
         response = await client.receive_json()
 
         assert response["success"]
-        alarms = response["result"]["alarms"]
+        alarms = {a["entity_id"]: a for a in response["result"]["alarms"]}
 
-        panic = next(a for a in alarms if a["entity_id"] == "switch.abode_panic_alarm")
-        assert panic["type"] == "panic"
-        assert panic["name"] == "Panic Alarm"
-
-        fire = next(a for a in alarms if a["entity_id"] == "switch.abode_fire_alarm")
-        assert fire["type"] == "fire"
+        assert alarms[panic]["type"] == "panic"
+        assert alarms[panic]["name"] == "Abode Alarm Panic Alarm"
+        assert alarms[renamed]["type"] == "silent_panic"
 
 
 # --- Sub-Phase C: Config Endpoints ---

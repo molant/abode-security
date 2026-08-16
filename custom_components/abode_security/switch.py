@@ -9,6 +9,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -16,7 +17,7 @@ from .abode.devices.alarm import Alarm
 from .abode.devices.switch import Switch
 from .abode.exceptions import Exception as AbodeException
 from .abode.helpers.timeline import Groups as TimelineGroups
-from .const import LOGGER
+from .const import DOMAIN, LOGGER, TRIGGERABLE_ALARM_TYPES
 from .decorators import handle_abode_errors
 from .entity import AbodeAlarmAttachedEntity, AbodeAutomation, AbodeDevice
 from .models import AbodeSystem
@@ -25,7 +26,8 @@ PARALLEL_UPDATES = 1
 
 DEVICE_TYPES = ["switch", "valve"]
 
-# Manual alarm types
+# Alarm types that get a switch entity. All seven reflect inbound alarm state
+# from the timeline, but only a subset can be *triggered* — see below.
 MANUAL_ALARM_TYPES = [
     "PANIC",
     "SILENT_PANIC",
@@ -35,6 +37,9 @@ MANUAL_ALARM_TYPES = [
     "SMOKE",
     "BURGLAR",
 ]
+
+# Which of the above can actually be raised on demand lives in const.py as
+# TRIGGERABLE_ALARM_TYPES — the other four fail with 400 errorCode 16013.
 
 # Map alarm types to their event codes
 # These codes are from .abode.helpers.events.csv
@@ -140,12 +145,36 @@ class AbodeAutomationSwitch(AbodeAutomation, SwitchEntity):
 
         signal = f"abode_trigger_automation_{self.entity_id}"
 
+        async def _trigger_and_log() -> None:
+            """Run the trigger, logging any failure rather than dropping it.
+
+            `add_job` fire-and-forgets, so a failure here has no caller to
+            reach: it would escape as an unretrieved task exception, which
+            reaches the user as an anonymous asyncio traceback with no mention
+            of which automation failed. Naming the entity is the most this path
+            can do — `abode_security.trigger_automation` fans out over the
+            dispatcher, so the service call itself cannot report per-entity
+            failure. See `features/pending.md`.
+
+            The catch is deliberately broad. `handle_abode_errors` only
+            converts `AbodeException`, but the embedded client re-raises bare
+            `TimeoutError` / `aiohttp.ClientError` once its retries are
+            exhausted (`abode/client.py`), and a network blip is the likelier
+            real-world failure of the two. Anything narrower leaks exactly the
+            traceback this exists to prevent. `exception()` keeps the stack for
+            the cases the decorator never annotated.
+            """
+            try:
+                await self.trigger()
+            except Exception:  # noqa: BLE001 - no caller to re-raise to
+                LOGGER.exception("Automation %s failed to trigger", self.entity_id)
+
         # Create a synchronous wrapper for the async trigger callback
         # Use add_job() instead of async_create_task() for thread safety -
         # the callback may be invoked from a thread pool executor
         def _trigger_wrapper() -> None:
             """Wrapper to schedule async trigger as a task."""
-            self.hass.add_job(self.trigger())
+            self.hass.add_job(_trigger_and_log())
 
         self.async_on_remove(
             async_dispatcher_connect(self.hass, signal, _trigger_wrapper)
@@ -310,15 +339,23 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
         )
         self.schedule_update_ha_state()
 
-    @handle_abode_errors("trigger manual alarm")
     async def async_turn_on(self, **_kwargs: Any) -> None:
-        """Trigger the manual alarm."""
-        if self._attr_is_on:
-            LOGGER.debug(
-                "Alarm %s already triggered, ignoring duplicate trigger",
-                self._alarm_type,
+        """Trigger the manual alarm.
+
+        Errors are deliberately *not* swallowed: the caller (the actions
+        executor, or a user's automation) has to be able to tell a raised
+        alarm from a no-op, otherwise a security action that failed looks
+        exactly like one that worked.
+        """
+        if self._alarm_type not in TRIGGERABLE_ALARM_TYPES:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="alarm_type_not_triggerable",
+                translation_placeholders={
+                    "alarm_type": self._alarm_type,
+                    "supported": ", ".join(sorted(TRIGGERABLE_ALARM_TYPES)),
+                },
             )
-            return
 
         response = await self._alarm.trigger_manual_alarm(self._alarm_type)
         # Safely extract event_id from response, handling non-dict responses
@@ -601,7 +638,8 @@ class AbodeTestModeSwitch(AbodeCMSSettingSwitch):
         """Enable test mode and remember the user enabled it."""
         await super().async_turn_on(**kwargs)
         # Mirror parent's success signal: _attr_is_on flips True only if the
-        # API call didn't raise (handle_abode_errors swallows AbodeError).
+        # API call didn't raise. (handle_abode_errors re-raises as
+        # HomeAssistantError, so a failure never reaches this line at all.)
         if self._attr_is_on:
             self._user_enabled = True
 

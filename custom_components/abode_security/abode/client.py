@@ -1057,7 +1057,12 @@ class Client:
                 )
                 if result is not None:
                     return result
-                return {}
+
+            # A non-empty, non-JSON body used to fall through to the log line
+            # below with `response_data` never assigned, raising
+            # UnboundLocalError out of the whole CMS read. Bail out the same
+            # way _fetch_cms_from_security_panel does.
+            return {}
 
         log.debug("Get CMS Settings URL (get): %s", urls.CMS_SETTINGS)
         log.debug("Get CMS Settings Response (parsed): %s", _redact(response_data))

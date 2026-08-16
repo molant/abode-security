@@ -14,7 +14,6 @@ from homeassistant.components.websocket_api.decorators import (
     websocket_command,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -26,7 +25,7 @@ from .action_manager import (
     VALID_MODES,
 )
 from .const import CONF_DEBUG_LOGGING, DOMAIN
-from .helpers import find_abode_alarm_panel
+from .helpers import MANUAL_ALARM_UNIQUE_ID_MARKER, find_abode_alarm_panel
 from .scheduling.mode_changer import ModeChangeFailed, ModeChanger
 from .scheduling.models import ChangeSource
 from .websocket_schedules import (
@@ -189,6 +188,7 @@ if TYPE_CHECKING:
     from homeassistant.components.websocket_api.connection import ActiveConnection
 
     from .action_manager import ActionManager
+    from .action_trigger import ActionTriggerCoordinator
     from .config_store import ConfigStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -251,6 +251,14 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
 def _get_action_manager(hass: HomeAssistant) -> ActionManager | None:
     """Get the ActionManager from hass.data."""
     return cast("ActionManager | None", hass.data.get(DOMAIN, {}).get("action_manager"))
+
+
+def _get_trigger_coordinator(hass: HomeAssistant) -> ActionTriggerCoordinator | None:
+    """Get the ActionTriggerCoordinator from hass.data."""
+    return cast(
+        "ActionTriggerCoordinator | None",
+        hass.data.get(DOMAIN, {}).get("action_trigger"),
+    )
 
 
 def _get_mode_changer(hass: HomeAssistant) -> ModeChanger | None:
@@ -532,23 +540,53 @@ async def websocket_actions_test(
 
     _LOGGER.info("Action %s tested by user %s", action_id, connection.user.id)
 
-    # Trigger each alarm switch
-    alarms_triggered = []
+    # Reuse the coordinator's arming helper rather than re-implementing the
+    # service call: this path used to report every entity as triggered as long
+    # as `switch.turn_on` didn't raise, which is not the same thing as an alarm
+    # having been raised. A "test" that reports success while doing nothing is
+    # worse than no test at all.
+    coordinator = _get_trigger_coordinator(hass)
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_ready", "Trigger coordinator not ready")
+        return
+
+    alarms_triggered: list[str] = []
+    alarms_failed: dict[str, str] = {}
     for alarm_entity_id in action.alarm_entity_ids:
-        try:
-            await hass.services.async_call(
-                "switch",
-                "turn_on",
-                {"entity_id": alarm_entity_id},
-                blocking=True,
-            )
+        failure = await coordinator.async_arm_alarm(alarm_entity_id, action.name)
+        if failure is None:
             alarms_triggered.append(alarm_entity_id)
-        except (HomeAssistantError, ServiceNotFound, ValueError) as err:
-            _LOGGER.warning("Failed to trigger alarm %s: %s", alarm_entity_id, err)
+        else:
+            alarms_failed[alarm_entity_id] = failure
+
+    if alarms_failed:
+        # A protocol error, not a nested `success: false`. The panel's
+        # testAction() discards the result body, so a nested flag showed the
+        # user a silent success while every alarm failed — the same class of
+        # lie this whole change set exists to remove. `_confirmTest` already
+        # catches a rejected call and surfaces it.
+        detail = "; ".join(f"{k} ({v})" for k, v in alarms_failed.items())
+        if alarms_triggered:
+            # Don't claim nothing fired when something did — that's the same
+            # inaccuracy in the other direction. Name what did arm, because
+            # the operator may need to dismiss it.
+            message = (
+                f"{len(alarms_failed)} of "
+                f"{len(alarms_failed) + len(alarms_triggered)} alarms failed: "
+                f"{detail}. Raised: {', '.join(alarms_triggered)}"
+            )
+        else:
+            message = f"No alarm was raised: {detail}"
+        connection.send_error(msg["id"], "alarm_failed", message)
+        return
 
     connection.send_result(
         msg["id"],
-        {"success": True, "alarms_triggered": alarms_triggered},
+        {
+            "success": True,
+            "alarms_triggered": alarms_triggered,
+            "alarms_failed": {},
+        },
     )
 
 
@@ -770,10 +808,12 @@ async def websocket_entities_sensors(
     connection.send_result(msg["id"], {"sensors": sensors_by_class})
 
 
-# Alarm types based on entity_id patterns
+# Display labels for the alarm types Abode will actually let us trigger.
+# Keyed by the lowercased type embedded in the switch's unique_id
+# (see AbodeManualAlarmSwitch.__init__: "{alarm.id}-manual-alarm-{type}").
 ALARM_TYPES = {
     "panic": "Panic",
-    "fire": "Fire",
+    "silent_panic": "Silent Panic",
     "medical": "Medical",
 }
 
@@ -790,36 +830,63 @@ async def websocket_entities_alarms(
     connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Handle listing Abode alarm switches."""
+    """Handle listing the Abode alarm switches an action can actually trigger.
+
+    Resolved through the entity registry rather than by matching
+    `switch.abode_*_alarm` on the entity_id: renaming the panel device (which
+    HA offers to do to the entity_ids too) used to empty this picker while
+    stored actions kept pointing at the old ids.
+
+    Only triggerable types are offered. The CO / SMOKE / SMOKE_CO / BURGLAR
+    switches exist to reflect inbound alarm state, but Abode rejects them on
+    `POST /panel/alarm` with 400 errorCode 16013, so offering them here only
+    produces actions that silently fail.
+    """
+    entity_reg = er.async_get(hass)
     alarms = []
 
-    for state in hass.states.async_all("switch"):
-        entity_id = state.entity_id
-
-        # Match Abode alarm switches: switch.abode_*_alarm
-        if not entity_id.startswith("switch.abode_") or not entity_id.endswith(
-            "_alarm"
-        ):
+    for entry in entity_reg.entities.values():
+        if entry.domain != "switch" or entry.platform != DOMAIN:
+            continue
+        # Disabled only — a disabled entity stays in the registry but is never
+        # added to hass (`entity_platform`: "Not adding entity ... because
+        # it's disabled"), so offering it produces an action that fails
+        # immediately as `entity_missing`.
+        #
+        # Hidden entities are deliberately still offered. `hidden_by` only
+        # affects auto-dashboard visibility; the entity is set up and
+        # `switch.turn_on` works normally. Hiding the seven alarm switches to
+        # declutter is common when they're driven from this panel, and
+        # filtering them here would silently remove the user's ability to
+        # build an alarm-raising action. (The camera picker filters both, but
+        # that list is for display rather than for arming something.)
+        if entry.disabled_by is not None:
+            continue
+        unique_id = entry.unique_id or ""
+        marker_at = unique_id.find(MANUAL_ALARM_UNIQUE_ID_MARKER)
+        if marker_at == -1:
             continue
 
-        # Extract alarm type from entity_id
-        # e.g., switch.abode_panic_alarm -> panic
-        alarm_type = "unknown"
-        for type_key in ALARM_TYPES:
-            if type_key in entity_id:
-                alarm_type = type_key
-                break
+        alarm_type = unique_id[marker_at + len(MANUAL_ALARM_UNIQUE_ID_MARKER) :]
+        if alarm_type not in ALARM_TYPES:
+            continue
 
-        friendly_name = state.attributes.get("friendly_name", entity_id)
+        # Prefer the live friendly_name; fall back to the curated label rather
+        # than a raw entity_id when the entity hasn't written state yet.
+        state = hass.states.get(entry.entity_id)
+        friendly_name = ALARM_TYPES[alarm_type]
+        if state is not None:
+            friendly_name = state.attributes.get("friendly_name", friendly_name)
 
         alarms.append(
             {
-                "entity_id": entity_id,
+                "entity_id": entry.entity_id,
                 "name": friendly_name,
                 "type": alarm_type,
             }
         )
 
+    alarms.sort(key=lambda a: (a["name"] or "").lower())
     connection.send_result(msg["id"], {"alarms": alarms})
 
 

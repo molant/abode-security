@@ -178,3 +178,6 @@ frontend/*.log
 
 # Root node_modules (for Playwright)
 /node_modules/
+
+# Tokens
+*.token

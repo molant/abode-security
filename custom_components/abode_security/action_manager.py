@@ -11,7 +11,13 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
 
-from .const import DOMAIN
+from .action_repair import (
+    async_clear_alarm_failed_issue,
+    async_clear_untriggerable_alarm_issue,
+    async_raise_untriggerable_alarm_issue,
+)
+from .const import ALARM_SWITCH_DOMAIN, DOMAIN, TRIGGERABLE_ALARM_TYPES
+from .helpers import manual_alarm_type_for_entity
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -27,6 +33,11 @@ VALID_MODES = {"standby", "home", "away"}
 REPAIR_ISSUE_CORRUPT_ACTIONS = "corrupt_action_records"
 MAX_DELAY_SECONDS = 60
 MAX_NAME_LENGTH = 100
+
+# Alarm outcomes the panel knows how to render. Anything else read from
+# storage is normalised to None rather than shown, since the UI treats an
+# unrecognised value as a failure.
+VALID_OUTCOMES = frozenset({"armed", "partial", "failed", "none"})
 
 
 @dataclass
@@ -46,6 +57,10 @@ class AbodeAction:
     delay_seconds: int = 0
     last_triggered: datetime | None = None
     trigger_count: int = 0
+    # Alarm outcome of the most recent execution: "armed", "partial",
+    # "failed", "none" (notification-only), or None for actions that predate
+    # this field / have never fired.
+    last_outcome: str | None = None
 
     def to_dict(self) -> dict:
         """Serialize action to dictionary for JSON storage.
@@ -64,6 +79,7 @@ class AbodeAction:
             if self.last_triggered
             else None,
             "trigger_count": self.trigger_count,
+            "last_outcome": self.last_outcome,
         }
 
     @classmethod
@@ -154,6 +170,21 @@ class AbodeAction:
         else:
             raise ValueError("last_triggered must be null or an ISO 8601 string")
 
+        # Tolerated rather than validated strictly: an unknown or absent
+        # outcome is display metadata, and dropping the whole action over it
+        # would lose a working security rule. But it must be *normalised*, not
+        # merely type-checked — the panel renders any value outside the known
+        # set as a red "alarm failed" badge, so a corrupt or future-version
+        # string would invent a failure that never happened.
+        last_outcome = data.get("last_outcome")
+        if last_outcome is not None and last_outcome not in VALID_OUTCOMES:
+            _LOGGER.debug(
+                "Ignoring unrecognised last_outcome %r for action %s",
+                last_outcome,
+                action_id,
+            )
+            last_outcome = None
+
         return cls(
             id=action_id,
             name=name,
@@ -164,6 +195,7 @@ class AbodeAction:
             delay_seconds=delay_seconds,
             last_triggered=last_triggered,
             trigger_count=trigger_count,
+            last_outcome=last_outcome,
         )
 
 
@@ -383,6 +415,65 @@ class ActionManager:
                     "Entity %s not found, action may not trigger correctly", entity_id
                 )
 
+    def _alarm_target_always_fails(self, entity_id: str) -> bool:
+        """Is this alarm target guaranteed to fail every time the action fires?
+
+        Two distinct causes, one consequence:
+
+        - Outside the `switch` domain. Actions arm via `switch.turn_on`, and HA
+          drops out-of-domain entities from an entity service call without
+          raising, so the arm is a silent no-op. `cv.entity_id` on the
+          WebSocket schemas only checks the `domain.object_id` shape, so a
+          stored action can name `light.porch`.
+        - An Abode manual-alarm switch of a type Abode refuses to raise on
+          request (CO / SMOKE / SMOKE_CO / BURGLAR → 400 errorCode 16013).
+
+        A third-party `switch.*` is deliberately *not* flagged:
+        `manual_alarm_type_for_entity` returns None for it, and arming someone
+        else's switch is a legitimate thing for an action to do.
+        """
+        if entity_id.split(".")[0] != ALARM_SWITCH_DOMAIN:
+            return True
+        alarm_type = manual_alarm_type_for_entity(self._hass, entity_id)
+        return alarm_type is not None and alarm_type not in TRIGGERABLE_ALARM_TYPES
+
+    def async_audit_alarm_targets(self) -> dict[str, list[str]]:
+        """Flag stored actions whose alarm target will fail on every trigger.
+
+        Returns a mapping of "{name} ({id-prefix})" → offending entity_ids —
+        labelled rather than keyed by name alone, since action names aren't
+        unique — and raises or
+        clears the corresponding repair issue. Called after load and after any
+        create/update so the problem surfaces before the sensor does — an
+        action wired to a BURGLAR switch (or to something that isn't a switch
+        at all) fails on every single trigger, and prior to this it was visible
+        only as a log warning during the incident it was supposed to escalate.
+        """
+        offenders: dict[str, list[str]] = {}
+        for action in self._store.get_all():
+            bad = [
+                entity_id
+                for entity_id in action.alarm_entity_ids
+                if self._alarm_target_always_fails(entity_id)
+            ]
+            if bad:
+                # Keyed by id, not name: action names aren't unique, and two
+                # broken actions sharing one would have hidden each other from
+                # the repair issue. The label carries the name for display.
+                offenders[f"{action.name} ({action.id[:8]})"] = bad
+                _LOGGER.error(
+                    "Action '%s' targets alarm(s) that cannot be raised: %s. "
+                    "It will fail every time it fires",
+                    action.name,
+                    ", ".join(bad),
+                )
+
+        if offenders:
+            async_raise_untriggerable_alarm_issue(self._hass, offenders)
+        else:
+            async_clear_untriggerable_alarm_issue(self._hass)
+        return offenders
+
     async def async_create(
         self,
         name: str,
@@ -424,6 +515,10 @@ class ActionManager:
             enabled=enabled,
         )
         await self._store.async_add(action)
+        # The websocket schema doesn't check alarm_entity_ids against
+        # TRIGGERABLE_ALARM_TYPES, so a bad target created via the API would
+        # otherwise go unflagged until the next restart.
+        self.async_audit_alarm_targets()
         return action
 
     async def async_get(self, action_id: str) -> AbodeAction | None:
@@ -475,12 +570,21 @@ class ActionManager:
             delay_seconds=delay_seconds,
             last_triggered=action.last_triggered,
             trigger_count=action.trigger_count,
+            # Carried over with the other run-history fields. Dropping it here
+            # meant a rename — or a disable/enable via async_toggle — silently
+            # cleared the "alarm failed" badge while the misconfiguration and
+            # its repair issue remained.
+            last_outcome=action.last_outcome,
         )
         await self._store.async_add(updated_action)
 
         # Cancel pending delays if action was disabled
         if self._trigger_coordinator and not enabled and action.enabled:
             self._trigger_coordinator.cancel_pending_for_action(action_id)
+
+        # Re-audit: the user may have just fixed (or introduced) an alarm
+        # target Abode won't trigger.
+        self.async_audit_alarm_targets()
 
         return updated_action
 
@@ -493,7 +597,13 @@ class ActionManager:
         if self._trigger_coordinator:
             self._trigger_coordinator.cancel_pending_for_action(action_id)
 
-        return await self._store.async_remove(action_id)
+        removed = await self._store.async_remove(action_id)
+        if removed:
+            # Otherwise a permanent, non-fixable ERROR repair issue is left
+            # behind naming an action that no longer exists.
+            async_clear_alarm_failed_issue(self._hass, action_id)
+            self.async_audit_alarm_targets()
+        return removed
 
     async def async_get_by_mode(self, mode: str) -> list[AbodeAction]:
         """Get enabled actions that include the given mode.
@@ -525,10 +635,15 @@ class ActionManager:
 
         return await self.async_update(action_id, enabled=not action.enabled)
 
-    async def async_record_trigger(self, action_id: str) -> None:
+    async def async_record_trigger(
+        self, action_id: str, outcome: str | None = None
+    ) -> None:
         """Record that an action was triggered.
 
-        Updates last_triggered to current UTC time and increments trigger_count.
+        Updates last_triggered to current UTC time, increments trigger_count,
+        and stores the alarm outcome. Persisting the outcome is what lets the
+        Actions panel distinguish "fired ten times" from "failed ten times" —
+        previously both rendered as a healthy trigger_count.
         """
         action = self._store.get(action_id)
         if action is None:
@@ -544,5 +659,6 @@ class ActionManager:
             delay_seconds=action.delay_seconds,
             last_triggered=datetime.now(UTC),
             trigger_count=action.trigger_count + 1,
+            last_outcome=outcome if outcome is not None else action.last_outcome,
         )
         await self._store.async_add(updated_action)

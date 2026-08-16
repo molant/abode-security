@@ -156,6 +156,28 @@ export class ActionsTab extends LitElement {
       --mdc-icon-size: 16px;
     }
 
+    .outcome-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+    }
+
+    .outcome-badge ha-icon {
+      --mdc-icon-size: 16px;
+    }
+
+    /* A security action that promised an alarm and didn't deliver is the
+       loudest state this list can show — error red, not warning amber. */
+    .outcome-badge.failed {
+      color: var(--error-color, #db4437);
+      font-weight: 500;
+    }
+
+    .outcome-badge.notification-only {
+      color: var(--secondary-text-color, #727272);
+    }
+
     .action-controls {
       display: flex;
       align-items: center;
@@ -532,7 +554,13 @@ export class ActionsTab extends LitElement {
       await testAction(this.hass, action.id);
     } catch (err) {
       console.error('Failed to test action:', err);
-      this._operationError = 'Failed to test action';
+      // Surface the backend's reason rather than a generic string. A test
+      // that raises no alarm must say so — "Failed to test action" reads like
+      // a UI glitch, not "your alarm did not fire".
+      const message = (err as { message?: string } | undefined)?.message;
+      this._operationError = message
+        ? `Failed to test action: ${message}`
+        : 'Failed to test action';
     }
   }
 
@@ -634,6 +662,38 @@ export class ActionsTab extends LitElement {
     `;
   }
 
+  // The outcome of the last execution. Without this, an action whose alarm
+  // failed on every one of its triggers rendered identically to one that
+  // worked — the failure existed only as a log line.
+  private _renderOutcomeBadge(action: AbodeAction) {
+    if (!action.last_outcome || action.last_outcome === 'armed') return '';
+
+    if (action.last_outcome === 'none') {
+      return html`
+        <span
+          class="outcome-badge notification-only"
+          title="This action only sends a notification. It does not raise an alarm or contact monitoring."
+        >
+          <ha-icon icon="mdi:bell-outline" aria-hidden="true"></ha-icon>
+          notification only
+        </span>
+      `;
+    }
+
+    const partial = action.last_outcome === 'partial';
+    return html`
+      <span
+        class="outcome-badge failed"
+        title=${partial
+          ? 'Some alarms failed to arm the last time this action fired. Monitoring may not have been contacted.'
+          : 'The alarm did NOT fire the last time this action ran. Monitoring was not contacted. Check the alarm assigned to this action.'}
+      >
+        <ha-icon icon="mdi:alert-octagon" aria-hidden="true"></ha-icon>
+        ${partial ? 'alarm partly failed' : 'alarm failed'}
+      </span>
+    `;
+  }
+
   private _renderActionRow(action: AbodeAction) {
     const isToggling = this._togglingIds.has(action.id);
     // A stored sensor entity_id that isn't in hass.states (renamed, deleted,
@@ -668,6 +728,7 @@ export class ActionsTab extends LitElement {
                   </span>
                 `
               : ''}
+            ${this._renderOutcomeBadge(action)}
           </div>
         </div>
         <div class="action-controls">

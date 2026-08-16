@@ -18,8 +18,11 @@ All keys are always present in the payload; values are `null` when they cannot b
 | `action_name` | str | never | `"Front Door Motion"` |
 | `triggered_by` | str (entity_id) | never | `"binary_sensor.front_door_motion"` |
 | `mode` | str | never | `"home"`, `"away"`, or `"standby"` |
-| `alarms_triggered` | list[str] | empty list, never null | `["switch.panic_alarm"]` |
+| `alarms_triggered` | list[str] | empty list, never null | `["switch.abode_alarm_panic_alarm"]` |
 | `alarms_failed` | list[str] | empty list, never null | `[]` |
+| `alarm_outcome` | str | never | `"armed"`, `"partial"`, `"failed"`, `"none"` — see below |
+| `alarm_failures` | dict[str, str] | empty dict, never null | `{"switch.abode_alarm_burglar_alarm": "api_error: (400, ...)"}` |
+| `severity` | str | never | `"critical"`, `"high"`, `"normal"` — see below |
 | `timestamp` | str (ISO 8601 UTC) | never | `"2026-05-21T18:42:01.234567+00:00"` |
 | `sensor_friendly_name` | str | sensor has no friendly_name attribute | `"Front Door"` |
 | `sensor_device_class` | str | sensor has no device_class | `"motion"`, `"door"`, `"window"` |
@@ -30,6 +33,45 @@ All keys are always present in the payload; values are `null` when they cannot b
 | `camera_entity_id` | str (entity_id) | no co-located camera on the sensor's device | `"camera.front_door"` |
 | `snapshot_path` | str (URL) | `standby` mode, no co-located camera, OR snapshot failed | `"/local/abode_security_snapshots/20260521T184201_123_7f3b6a2c_binary_sensor_front_door.jpg"` |
 | `snapshot_error` | str | snapshot succeeded or was not attempted | `"timeout"`, `"service_error: ..."` |
+
+### `alarm_outcome` — did the alarm actually fire?
+
+| Value | Meaning |
+|---|---|
+| `armed` | Every configured alarm was dispatched successfully. For an Abode manual alarm switch that means the panel accepted it and monitoring was notified; for a third-party switch used as an alarm target it only means `switch.turn_on` succeeded. |
+| `partial` | Some raised, some failed. Monitoring may not have been contacted. |
+| `failed` | None raised. **No alarm, and your monitoring service was not contacted.** |
+| `none` | Notification-only action — no alarm is configured. |
+
+`alarm_failures` maps each failed entity to a reason:
+
+| Reason | Meaning |
+|---|---|
+| `entity_missing` | The stored entity_id no longer exists. |
+| `entity_unavailable` | The switch was unavailable, so Home Assistant never dispatched to it — commonly a dropped Abode SocketIO connection. |
+| `entity_wrong_domain` | The stored entity_id is not a `switch.*`, so `switch.turn_on` had nothing to dispatch to. |
+| `api_error: …` | Abode rejected the request — e.g. an alarm type it will not raise on demand, see [Manual alarm types](./ARCHITECTURE.md#manual-alarm-types). |
+
+**Always branch on `alarm_outcome` in your automation.** An action whose alarm failed
+is otherwise indistinguishable from one that worked, which is exactly how a
+"Call the police" action can fire ten times and summon nobody.
+
+### `severity` — how loudly to announce it
+
+Computed by the integration so every automation escalates consistently:
+
+| Value | When |
+|---|---|
+| `critical` | An alarm was armed, **or** an alarm failed to arm. |
+| `high` | `away` mode with no alarm involved. |
+| `normal` | Everything else (standby, home-mode notification-only). |
+
+Test fires via `fire_test_notification` are scored the same way as real ones —
+pass `mode: away` and you get `high`, which is deliberate: it lets you verify
+your escalation setup end to end.
+
+A *failed* alarm is deliberately `critical`, not lesser — you need to know
+immediately that the escalation you were counting on did not happen.
 
 ---
 
@@ -119,6 +161,45 @@ For Android, use `channel` and `priority` instead:
 ```
 
 HA passes these through to the Companion app; unsupported keys on the other platform are silently ignored.
+
+Gate them on `severity` so a standby-mode test trip isn't as loud as a real break-in:
+
+```yaml
+      push:
+        interruption-level: >-
+          {{ 'critical' if trigger.event.data.severity == 'critical'
+             else 'time-sensitive' if trigger.event.data.severity == 'high'
+             else 'active' }}
+```
+
+> ⚠️ **Upgrading from an earlier blueprint**: the `critical` yes/no input was
+> replaced by `critical_mode` (`auto` / `always` / `never`). Home Assistant
+> ignores stored inputs it no longer recognises rather than erroring, so an
+> automation that had `critical: true` silently falls back to `auto` — away-mode
+> trips become time-sensitive instead of critical. **If you deliberately wanted
+> every notification critical, re-open the automation and set
+> `critical_mode: always`.** Under `auto`, an alarm that armed *or failed to
+> arm* is still critical.
+
+### These two steps are required, or critical alerts silently downgrade
+
+Both platforms accept the keys above and then quietly deliver an ordinary
+notification unless you do this once per device:
+
+- **iOS** — grant the Critical Alerts permission: Home Assistant app → Settings →
+  Notifications → enable critical alerts. Without it the `critical: 1` sound is
+  accepted and ignored, and the alert will not bypass Do Not Disturb or the
+  ringer switch.
+- **Android** — a notification channel takes its importance from the moment it is
+  first created, and never changes afterwards. If you have already received a
+  non-critical notification on the `critical` channel, `priority: high` will not
+  raise it. Fix it in Android Settings → Apps → Home Assistant → Notifications by
+  setting that channel's importance manually, or by clearing the app's channels so
+  it is recreated.
+
+Verify with `abode_security.fire_test_notification` (requires the `debug_logging`
+option) rather than by walking past a sensor — it exercises the whole path without
+arming the panel.
 
 ---
 

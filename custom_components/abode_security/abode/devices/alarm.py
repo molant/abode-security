@@ -1,12 +1,17 @@
 """Abode alarm device."""
 
 import asyncio
+import builtins
 import copy
 import json
 import logging
 import time
 
 
+# NOTE: this shadows the builtin `Exception` for the whole module, so a bare
+# `except Exception` here catches ONLY Abode API errors — not TimeoutError,
+# aiohttp errors, or ValueError. Use `builtins.Exception` when the intent is
+# "catch everything".
 from ..exceptions import Exception
 from ..helpers import errors as ERROR
 from ..helpers import urls
@@ -39,7 +44,12 @@ class Alarm(Switch):
 
     tags = ('alarm',)
     all_modes = 'away', 'standby', 'home'
-    all_alarm_types = 'PANIC', 'SILENT_PANIC', 'MEDICAL', 'CO', 'SMOKE_CO', 'SMOKE', 'BURGLAR'
+    # Only these three are accepted by POST /integrations/v1/panel/alarm. The
+    # other alarm types Abode defines (CO, SMOKE, SMOKE_CO, BURGLAR) are
+    # inbound classifications reported by sensors, and the API rejects them
+    # with 400 errorCode 16013 "invalid {{param}} value". Matches the official
+    # Android app, which only ever triggers Panic / Silent Panic / Medical.
+    all_alarm_types = 'PANIC', 'SILENT_PANIC', 'MEDICAL'
     timeline_event_retry_delays = (0, 2, 5, 10, 20, 30)  # Exponential backoff in seconds
 
     def __init__(self, json_obj, abode, area='1'):
@@ -119,8 +129,22 @@ class Alarm(Switch):
 
         log.info('Triggered manual alarm %s of type: %s', self.id, alarm_type)
 
-        # Fetch timeline events to find the alarm event ID
-        event_id = await self._find_timeline_alarm_event()
+        # The alarm is raised and the monitoring service has been notified.
+        # Everything below is best-effort metadata for later dismissal, and
+        # must never be able to turn a raised alarm into a reported failure:
+        # callers (the actions executor) treat an exception from this method
+        # as "no alarm was raised" and escalate accordingly. The lookup polls
+        # for up to ~67s, so a transient network error inside it is entirely
+        # plausible. Note the module-level `from ..exceptions import Exception`
+        # shadows the builtin, so the guard inside _find_timeline_alarm_event
+        # does NOT catch TimeoutError/aiohttp errors — hence builtins here.
+        try:
+            event_id = await self._find_timeline_alarm_event()
+        except builtins.Exception as exc:
+            log.warning(
+                'Alarm %s was raised, but the timeline lookup failed: %s', alarm_type, exc
+            )
+            event_id = None
 
         if event_id:
             response_object['event_id'] = event_id

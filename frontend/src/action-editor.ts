@@ -153,6 +153,11 @@ export class ActionEditor extends LitElement {
   @state() private _saving = false;
   @state() private _loading = true;
   @state() private _loadError: string | null = null;
+  // Set when Save is pressed on an action with no alarm selected. The second
+  // press goes through. An action named "Call the police" that is silently
+  // notification-only is the single most dangerous thing this editor can
+  // produce, so it takes an explicit acknowledgement.
+  @state() private _confirmNotificationOnly = false;
   // Sensor categories collapse by default to keep the form scannable
   // (#113). Edit mode seeds this with categories that already contain
   // selected sensors so the user can see what they've picked.
@@ -496,6 +501,29 @@ export class ActionEditor extends LitElement {
      * without a media-query breakpoint. The row gap is tighter than the
      * column gap so columns read as paired up rather than as a single
      * wall of text. */
+    /* Sits above the footer buttons and spans the full row so the warning
+       reads before the Save button it is guarding. */
+    .notify-only-confirm {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      flex: 1 1 100%;
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--error-color, #db4437);
+      background: var(--error-color, #db4437);
+      background: color-mix(in srgb, var(--error-color, #db4437) 8%, transparent);
+      border: 1px solid var(--error-color, #db4437);
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+    }
+
+    .notify-only-confirm ha-icon {
+      --mdc-icon-size: 18px;
+      flex-shrink: 0;
+    }
+
     .alarm-list {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -606,6 +634,11 @@ export class ActionEditor extends LitElement {
 
   async connectedCallback() {
     super.connectedCallback();
+    // Each open must re-ask for confirmation. Today the parent conditionally
+    // renders this element so lit recreates it every time and the field
+    // initializer would suffice, but resetting here keeps the guard correct
+    // if that ever becomes a persistent element toggled by an attribute.
+    this._confirmNotificationOnly = false;
     // Populate from `this.action` synchronously *before* the async load so a
     // disconnect mid-fetch can't mutate _name/_modes/etc. on a detached
     // element. _populateForm only depends on the `action` prop, not on the
@@ -717,6 +750,9 @@ export class ActionEditor extends LitElement {
   // fires the abode_security.action_triggered event.
   private _clearAlarmSelection() {
     this._selectedAlarms = [];
+    // Re-arm the confirmation: switching back to notification-only after
+    // having picked an alarm is exactly the change worth double-checking.
+    this._confirmNotificationOnly = false;
     this._clearError('alarms');
   }
 
@@ -801,6 +837,14 @@ export class ActionEditor extends LitElement {
     // a no-op (closes #27).
     if (this._saving) return;
     if (!this._validate()) return;
+
+    // Notification-only is a legitimate configuration, but it must be a
+    // deliberate one: confirm before the first save, then remember the
+    // acknowledgement for this editing session.
+    if (this._selectedAlarms.length === 0 && !this._confirmNotificationOnly) {
+      this._confirmNotificationOnly = true;
+      return;
+    }
 
     this._saving = true;
     try {
@@ -934,10 +978,23 @@ export class ActionEditor extends LitElement {
   }
 
   private _renderFooter() {
+    const needsConfirm = this._confirmNotificationOnly && this._selectedAlarms.length === 0;
     return html`
+      ${needsConfirm
+        ? html`
+            <div slot="footer" class="notify-only-confirm" role="alert">
+              <ha-icon icon="mdi:alert" aria-hidden="true"></ha-icon>
+              <span>
+                No alarm selected — this action will only send a notification. It will
+                <strong>not</strong> raise an alarm or contact your monitoring service. Press Save
+                again to confirm.
+              </span>
+            </div>
+          `
+        : ''}
       <button slot="footer" class="cancel" @click=${this._handleCancel}>Cancel</button>
       <button slot="footer" class="primary" @click=${this._handleSave} ?disabled=${this._saving}>
-        ${this._saving ? 'Saving...' : 'Save'}
+        ${this._saving ? 'Saving...' : needsConfirm ? 'Save anyway' : 'Save'}
       </button>
     `;
   }

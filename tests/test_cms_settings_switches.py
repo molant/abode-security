@@ -15,12 +15,15 @@ from homeassistant.const import (
     STATE_ON,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.abode_security import DOMAIN
+from custom_components.abode_security.abode.exceptions import (
+    Exception as AbodeException,
+)
 from custom_components.abode_security.const import CONF_POLLING
-from custom_components.abode_security.exceptions import AbodeError
 
 from .test_constants import (
     DISPATCH_FIRE_ENTITY_ID,
@@ -322,18 +325,20 @@ async def test_monitoring_active_error_handling(
         await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Mock set method to raise exception
+        # `handle_abode_errors` logs and re-raises as HomeAssistantError so a
+        # failed CMS write reaches the user; it does not swallow the failure.
         with patch(
             "custom_components.abode_security.models.AbodeSystem.set_monitoring_active",
             new_callable=AsyncMock,
         ) as mock_set:
-            mock_set.side_effect = AbodeError("API Error")
-            await hass.services.async_call(
-                SWITCH_DOMAIN,
-                SERVICE_TURN_ON,
-                {ATTR_ENTITY_ID: MONITORING_ACTIVE_ENTITY_ID},
-                blocking=True,
-            )
+            mock_set.side_effect = AbodeException((500, "API Error"))
+            with pytest.raises(HomeAssistantError, match="enable CMS setting"):
+                await hass.services.async_call(
+                    SWITCH_DOMAIN,
+                    SERVICE_TURN_ON,
+                    {ATTR_ENTITY_ID: MONITORING_ACTIVE_ENTITY_ID},
+                    blocking=True,
+                )
             await hass.async_block_till_done()
 
             # Entity should still exist despite error
@@ -632,18 +637,20 @@ async def test_send_media_error_handling(
         await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Mock set method to raise exception
+        # `handle_abode_errors` logs and re-raises as HomeAssistantError so a
+        # failed CMS write reaches the user; it does not swallow the failure.
         with patch(
             "custom_components.abode_security.models.AbodeSystem.set_send_media",
             new_callable=AsyncMock,
         ) as mock_set:
-            mock_set.side_effect = AbodeError("API Error")
-            await hass.services.async_call(
-                SWITCH_DOMAIN,
-                SERVICE_TURN_ON,
-                {ATTR_ENTITY_ID: SEND_MEDIA_ENTITY_ID},
-                blocking=True,
-            )
+            mock_set.side_effect = AbodeException((500, "API Error"))
+            with pytest.raises(HomeAssistantError, match="enable CMS setting"):
+                await hass.services.async_call(
+                    SWITCH_DOMAIN,
+                    SERVICE_TURN_ON,
+                    {ATTR_ENTITY_ID: SEND_MEDIA_ENTITY_ID},
+                    blocking=True,
+                )
             await hass.async_block_till_done()
 
             # Entity should still exist despite error
@@ -948,18 +955,20 @@ async def test_dispatch_without_verification_error_handling(
         await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Mock set method to raise exception
+        # `handle_abode_errors` logs and re-raises as HomeAssistantError so a
+        # failed CMS write reaches the user; it does not swallow the failure.
         with patch(
             "custom_components.abode_security.models.AbodeSystem.set_dispatch_without_verification",
             new_callable=AsyncMock,
         ) as mock_set:
-            mock_set.side_effect = AbodeError("API Error")
-            await hass.services.async_call(
-                SWITCH_DOMAIN,
-                SERVICE_TURN_ON,
-                {ATTR_ENTITY_ID: DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID},
-                blocking=True,
-            )
+            mock_set.side_effect = AbodeException((500, "API Error"))
+            with pytest.raises(HomeAssistantError, match="enable CMS setting"):
+                await hass.services.async_call(
+                    SWITCH_DOMAIN,
+                    SERVICE_TURN_ON,
+                    {ATTR_ENTITY_ID: DISPATCH_WITHOUT_VERIFICATION_ENTITY_ID},
+                    blocking=True,
+                )
             await hass.async_block_till_done()
 
             # Entity should still exist despite error
@@ -1259,18 +1268,20 @@ async def test_dispatch_police_error_handling(
         await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Mock set method to raise exception
+        # `handle_abode_errors` logs and re-raises as HomeAssistantError so a
+        # failed CMS write reaches the user; it does not swallow the failure.
         with patch(
             "custom_components.abode_security.models.AbodeSystem.set_dispatch_police",
             new_callable=AsyncMock,
         ) as mock_set:
-            mock_set.side_effect = AbodeError("API Error")
-            await hass.services.async_call(
-                SWITCH_DOMAIN,
-                SERVICE_TURN_ON,
-                {ATTR_ENTITY_ID: DISPATCH_POLICE_ENTITY_ID},
-                blocking=True,
-            )
+            mock_set.side_effect = AbodeException((500, "API Error"))
+            with pytest.raises(HomeAssistantError, match="enable CMS setting"):
+                await hass.services.async_call(
+                    SWITCH_DOMAIN,
+                    SERVICE_TURN_ON,
+                    {ATTR_ENTITY_ID: DISPATCH_POLICE_ENTITY_ID},
+                    blocking=True,
+                )
             await hass.async_block_till_done()
 
             # Entity should still exist despite error
@@ -1570,18 +1581,20 @@ async def test_dispatch_fire_error_handling(
         await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Mock set method to raise exception
+        # `handle_abode_errors` logs and re-raises as HomeAssistantError so a
+        # failed CMS write reaches the user; it does not swallow the failure.
         with patch(
             "custom_components.abode_security.models.AbodeSystem.set_dispatch_fire",
             new_callable=AsyncMock,
         ) as mock_set:
-            mock_set.side_effect = AbodeError("API Error")
-            await hass.services.async_call(
-                SWITCH_DOMAIN,
-                SERVICE_TURN_ON,
-                {ATTR_ENTITY_ID: DISPATCH_FIRE_ENTITY_ID},
-                blocking=True,
-            )
+            mock_set.side_effect = AbodeException((500, "API Error"))
+            with pytest.raises(HomeAssistantError, match="enable CMS setting"):
+                await hass.services.async_call(
+                    SWITCH_DOMAIN,
+                    SERVICE_TURN_ON,
+                    {ATTR_ENTITY_ID: DISPATCH_FIRE_ENTITY_ID},
+                    blocking=True,
+                )
             await hass.async_block_till_done()
 
             # Entity should still exist despite error
@@ -1881,18 +1894,20 @@ async def test_dispatch_medical_error_handling(
         await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Mock set method to raise exception
+        # `handle_abode_errors` logs and re-raises as HomeAssistantError so a
+        # failed CMS write reaches the user; it does not swallow the failure.
         with patch(
             "custom_components.abode_security.models.AbodeSystem.set_dispatch_medical",
             new_callable=AsyncMock,
         ) as mock_set:
-            mock_set.side_effect = AbodeError("API Error")
-            await hass.services.async_call(
-                SWITCH_DOMAIN,
-                SERVICE_TURN_ON,
-                {ATTR_ENTITY_ID: DISPATCH_MEDICAL_ENTITY_ID},
-                blocking=True,
-            )
+            mock_set.side_effect = AbodeException((500, "API Error"))
+            with pytest.raises(HomeAssistantError, match="enable CMS setting"):
+                await hass.services.async_call(
+                    SWITCH_DOMAIN,
+                    SERVICE_TURN_ON,
+                    {ATTR_ENTITY_ID: DISPATCH_MEDICAL_ENTITY_ID},
+                    blocking=True,
+                )
             await hass.async_block_till_done()
 
             # Entity should still exist despite error
