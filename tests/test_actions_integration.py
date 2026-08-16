@@ -419,6 +419,45 @@ class TestActionsIntegration:
         response = await client.receive_json()
         assert not response["success"]
 
+    async def test_untriggerable_alarm_target_is_rejected_over_websocket(
+        self,
+        hass: HomeAssistant,
+        hass_ws_client,
+        integration_setup,  # noqa: ARG002
+    ) -> None:
+        """The picker can't offer BURGLAR, but a raw WS call could still ask.
+
+        The frontend filter, the `ServiceValidationError` at arm time, and the
+        audit repair issue all leave the record creatable. This is the check
+        that makes it unreachable through the supported API (#193).
+        """
+        burglar = _register_manual_alarm(
+            hass, "burglar", "front_hall_panel_burglar", "Front Hall Panel Burglar"
+        )
+        client = await hass_ws_client(hass)
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "abode_security/actions/create",
+                "name": "Call the police",
+                "modes": ["away"],
+                "sensor_entity_ids": ["binary_sensor.door"],
+                "alarm_entity_ids": [burglar],
+            }
+        )
+        response = await client.receive_json()
+
+        assert not response["success"]
+        assert response["error"]["code"] == "validation_error"
+        assert "BURGLAR" in response["error"]["message"]
+
+        # And nothing was stored.
+        await client.send_json({"id": 2, "type": "abode_security/actions/list"})
+        response = await client.receive_json()
+        assert response["success"]
+        assert response["result"]["actions"] == []
+
     async def test_modes_action_count_updates(
         self,
         hass: HomeAssistant,

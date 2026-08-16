@@ -18,6 +18,32 @@ from custom_components.abode_security.action_manager import (
 from custom_components.abode_security.const import DOMAIN
 
 
+async def _inject_stored_action(
+    manager: ActionManager,
+    *,
+    id: str,  # noqa: A002 - matches the AbodeAction field name
+    name: str,
+    alarm_entity_ids: list[str],
+) -> None:
+    """Write a record straight to the store, bypassing manager validation.
+
+    `async_create` rejects alarm targets that can never fire (#193), so the
+    only way to get one into storage is the way a real one gets there: a
+    restored backup, a hand-edited `.storage/abode_security_actions.json`, or
+    a record written before the check existed. Kept in one place so the
+    private-attribute reach isn't scattered across tests.
+    """
+    await manager._store.async_add(
+        AbodeAction(
+            id=id,
+            name=name,
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=alarm_entity_ids,
+        )
+    )
+
+
 class TestAbodeAction:
     """Tests for AbodeAction dataclass."""
 
@@ -376,6 +402,10 @@ class TestActionManager:
 
         Keying the summary by name alone meant two broken actions sharing one
         hid each other from the repair issue.
+
+        The records are injected through the store rather than created through
+        the manager because `async_create` now rejects them (#193) — this is
+        what a restored backup or a hand-edited storage file looks like.
         """
         registry = er.async_get(hass)
         entry = registry.async_get_or_create(
@@ -388,11 +418,11 @@ class TestActionManager:
 
         manager = ActionManager(hass)
         await manager.async_setup()
-        for _ in range(2):
-            await manager.async_create(
+        for index in range(2):
+            await _inject_stored_action(
+                manager,
+                id=f"uuid-{index}",
                 name="Call the police",
-                modes=["away"],
-                sensor_entity_ids=["binary_sensor.motion"],
                 alarm_entity_ids=[entry.entity_id],
             )
 
@@ -415,10 +445,10 @@ class TestActionManager:
 
         manager = ActionManager(hass)
         await manager.async_setup()
-        await manager.async_create(
+        await _inject_stored_action(
+            manager,
+            id="uuid-not-a-switch",
             name="Not a switch",
-            modes=["away"],
-            sensor_entity_ids=["binary_sensor.motion"],
             alarm_entity_ids=["light.porch"],
         )
 
@@ -445,6 +475,182 @@ class TestActionManager:
         )
 
         assert manager.async_audit_alarm_targets() == {}
+
+    # --- #193: reject untriggerable targets at write time ---
+
+    async def _burglar_switch(self, hass) -> str:
+        """Register an Abode manual-alarm switch of an untriggerable type."""
+        registry = er.async_get(hass)
+        entry = registry.async_get_or_create(
+            domain="switch",
+            platform=DOMAIN,
+            unique_id="1-manual-alarm-burglar",
+            suggested_object_id="abode_alarm_burglar_alarm",
+        )
+        hass.states.async_set(entry.entity_id, "off")
+        return entry.entity_id
+
+    async def test_create_rejects_an_untriggerable_alarm_type(self, hass) -> None:
+        """Abode refuses BURGLAR on request, so the action can never fire.
+
+        Before #193 this was only *detected* — the action was stored, flagged
+        by the audit, and failed on every trigger for the rest of its life.
+        """
+        entity_id = await self._burglar_switch(hass)
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        with pytest.raises(ValueError, match="BURGLAR") as excinfo:
+            await manager.async_create(
+                name="Call the police",
+                modes=["away"],
+                sensor_entity_ids=["binary_sensor.motion"],
+                alarm_entity_ids=[entity_id],
+            )
+
+        assert "PANIC" in str(excinfo.value), "the message must name what to use"
+        assert await manager.async_get_all() == [], "nothing may be persisted"
+
+    async def test_create_rejects_a_target_outside_the_switch_domain(
+        self, hass
+    ) -> None:
+        """`switch.turn_on` silently drops out-of-domain entities."""
+        hass.states.async_set("light.porch", "off")
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        with pytest.raises(ValueError, match="not a switch"):
+            await manager.async_create(
+                name="Not a switch",
+                modes=["away"],
+                sensor_entity_ids=["binary_sensor.motion"],
+                alarm_entity_ids=["light.porch"],
+            )
+
+        assert await manager.async_get_all() == []
+
+    async def test_create_reports_every_bad_target_at_once(self, hass) -> None:
+        """One round-trip per bad target would make a fix a guessing game."""
+        entity_id = await self._burglar_switch(hass)
+        hass.states.async_set("light.porch", "off")
+        manager = ActionManager(hass)
+        await manager.async_setup()
+
+        with pytest.raises(ValueError) as excinfo:
+            await manager.async_create(
+                name="Everything wrong",
+                modes=["away"],
+                sensor_entity_ids=["binary_sensor.motion"],
+                alarm_entity_ids=[entity_id, "light.porch"],
+            )
+
+        message = str(excinfo.value)
+        assert entity_id in message
+        assert "light.porch" in message
+
+    async def test_create_accepts_triggerable_and_third_party_switches(
+        self, hass
+    ) -> None:
+        """The guard must not narrow what legitimately works.
+
+        A PANIC switch is triggerable, and arming someone else's switch is a
+        supported thing for an action to do.
+        """
+        registry = er.async_get(hass)
+        panic = registry.async_get_or_create(
+            domain="switch",
+            platform=DOMAIN,
+            unique_id="1-manual-alarm-panic",
+            suggested_object_id="abode_alarm_panic_alarm",
+        )
+        hass.states.async_set(panic.entity_id, "off")
+        hass.states.async_set("switch.siren_relay", "off")
+
+        manager = ActionManager(hass)
+        await manager.async_setup()
+        action = await manager.async_create(
+            name="Panic",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=[panic.entity_id, "switch.siren_relay"],
+        )
+
+        assert action.alarm_entity_ids == [panic.entity_id, "switch.siren_relay"]
+        assert manager.async_audit_alarm_targets() == {}
+
+    async def test_update_rejects_swapping_in_an_untriggerable_alarm(
+        self, hass
+    ) -> None:
+        """A working action must not be editable into a broken one."""
+        entity_id = await self._burglar_switch(hass)
+        manager = ActionManager(hass)
+        await manager.async_setup()
+        action = await manager.async_create(
+            name="Panic",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.siren_relay"],
+        )
+
+        with pytest.raises(ValueError, match="BURGLAR"):
+            await manager.async_update(action.id, alarm_entity_ids=[entity_id])
+
+        stored = await manager.async_get(action.id)
+        assert stored is not None
+        assert stored.alarm_entity_ids == ["switch.siren_relay"], "no partial write"
+
+    async def test_update_rejects_a_non_list_alarm_entity_ids(self, hass) -> None:
+        """`None` must not be a back door around the target check.
+
+        Absence of the key means "leave the targets alone"; an explicit `None`
+        is a caller mistake. Without this it skipped validation and then blew
+        up inside `_warn_missing_entities` with a TypeError.
+        """
+        manager = ActionManager(hass)
+        await manager.async_setup()
+        action = await manager.async_create(
+            name="Panic",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.siren_relay"],
+        )
+
+        with pytest.raises(ValueError, match="must be a list"):
+            await manager.async_update(action.id, alarm_entity_ids=None)
+
+        stored = await manager.async_get(action.id)
+        assert stored is not None
+        assert stored.alarm_entity_ids == ["switch.siren_relay"]
+
+    async def test_stored_bad_action_can_still_be_disabled(self, hass) -> None:
+        """A restored backup's dud must stay defusable.
+
+        Validating the *stored* targets on every update would trap the user:
+        the Actions panel's enable/disable switch sends `enabled` alone, so a
+        bad record could not even be turned off without hand-editing
+        `.storage/abode_security_actions.json`. Only updates that actually
+        supply `alarm_entity_ids` are checked — which the panel's *editor*
+        always does, so saving from there still requires fixing the target.
+        """
+        entity_id = await self._burglar_switch(hass)
+        manager = ActionManager(hass)
+        await manager.async_setup()
+        await _inject_stored_action(
+            manager,
+            id="uuid-restored",
+            name="Call the police",
+            alarm_entity_ids=[entity_id],
+        )
+
+        toggled = await manager.async_toggle("uuid-restored")
+
+        assert toggled is not None
+        assert toggled.enabled is False
+        assert toggled.alarm_entity_ids == [entity_id], "targets untouched"
+
+        renamed = await manager.async_update("uuid-restored", name="Was broken")
+        assert renamed is not None
+        assert renamed.name == "Was broken"
 
     async def test_delete_clears_the_alarm_failed_repair_issue(self, hass) -> None:
         """Otherwise a permanent ERROR issue names an action that's gone."""

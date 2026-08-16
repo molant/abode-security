@@ -371,8 +371,19 @@ class ActionManager:
         modes: list[str],
         sensor_entity_ids: list[str],
         delay_seconds: int,
+        alarm_entity_ids: list[str] | None = None,
     ) -> None:
-        """Validate action fields. Raises ValueError if invalid."""
+        """Validate action fields. Raises ValueError if invalid.
+
+        ``alarm_entity_ids`` is ``None`` when the caller isn't setting the
+        alarm targets — see :meth:`async_update`. A stored action whose targets
+        can never fire must still be disableable (`async_toggle`, and the
+        panel's enable/disable switch, which sends `enabled` alone) and
+        deletable, or a bad record left by a restored backup could only be
+        cleared by hand-editing storage. Opening it in the Actions panel's
+        editor *does* resend the targets, so saving from there requires
+        choosing a supported alarm first — which is the point.
+        """
         # Validate name
         if not name or not name.strip():
             raise ValueError("Action name cannot be empty")
@@ -398,6 +409,23 @@ class ActionManager:
         if delay_seconds < 0 or delay_seconds > MAX_DELAY_SECONDS:
             raise ValueError(f"delay_seconds must be between 0 and {MAX_DELAY_SECONDS}")
 
+        # Refuse alarm targets that fail on every single trigger. The audit
+        # (`async_audit_alarm_targets`) reports these after the fact; rejecting
+        # them here is what stops a websocket call, a script, or a hand-edited
+        # storage file from creating "Call the police" as an action that can
+        # never call anyone (#193).
+        if alarm_entity_ids is not None:
+            # Every offender in one message: the API accepts up to
+            # `_MAX_ALARM_ENTITY_IDS` targets, and reporting them one per
+            # round-trip makes fixing a multi-target action a guessing game.
+            reasons = [
+                reason
+                for entity_id in alarm_entity_ids
+                if (reason := self._alarm_target_failure_reason(entity_id)) is not None
+            ]
+            if reasons:
+                raise ValueError(" ".join(reasons))
+
     def _warn_missing_entities(
         self,
         sensor_entity_ids: list[str],
@@ -415,8 +443,8 @@ class ActionManager:
                     "Entity %s not found, action may not trigger correctly", entity_id
                 )
 
-    def _alarm_target_always_fails(self, entity_id: str) -> bool:
-        """Is this alarm target guaranteed to fail every time the action fires?
+    def _alarm_target_failure_reason(self, entity_id: str) -> str | None:
+        """Why is this alarm target guaranteed to fail? None if it isn't.
 
         Two distinct causes, one consequence:
 
@@ -431,11 +459,29 @@ class ActionManager:
         A third-party `switch.*` is deliberately *not* flagged:
         `manual_alarm_type_for_entity` returns None for it, and arming someone
         else's switch is a legitimate thing for an action to do.
+
+        The returned string is user-facing: it is both the audit's log detail
+        and the `validation_error` message the Actions panel shows when a
+        create/update is rejected, so it has to say what to do about it. The
+        repair issue keeps to entity_ids — its translated description already
+        explains both causes, and it can name several actions at once.
         """
         if entity_id.split(".")[0] != ALARM_SWITCH_DOMAIN:
-            return True
+            return (
+                f"Alarm target '{entity_id}' is not a switch entity. Actions "
+                f"raise alarms with switch.turn_on, so nothing would happen "
+                f"when this action fires."
+            )
+
         alarm_type = manual_alarm_type_for_entity(self._hass, entity_id)
-        return alarm_type is not None and alarm_type not in TRIGGERABLE_ALARM_TYPES
+        if alarm_type is not None and alarm_type not in TRIGGERABLE_ALARM_TYPES:
+            return (
+                f"Alarm target '{entity_id}' is a {alarm_type} alarm, which "
+                f"Abode refuses to raise on request. Pick one of: "
+                f"{', '.join(sorted(TRIGGERABLE_ALARM_TYPES))}."
+            )
+
+        return None
 
     def async_audit_alarm_targets(self) -> dict[str, list[str]]:
         """Flag stored actions whose alarm target will fail on every trigger.
@@ -451,21 +497,28 @@ class ActionManager:
         """
         offenders: dict[str, list[str]] = {}
         for action in self._store.get_all():
-            bad = [
-                entity_id
+            bad = {
+                entity_id: reason
                 for entity_id in action.alarm_entity_ids
-                if self._alarm_target_always_fails(entity_id)
-            ]
+                if (reason := self._alarm_target_failure_reason(entity_id)) is not None
+            }
             if bad:
                 # Keyed by id, not name: action names aren't unique, and two
                 # broken actions sharing one would have hidden each other from
                 # the repair issue. The label carries the name for display.
-                offenders[f"{action.name} ({action.id[:8]})"] = bad
+                offenders[f"{action.name} ({action.id[:8]})"] = list(bad)
+                # The log carries the *reason*, not just the entity_id: "it
+                # cannot be raised" is the finding, "it is a BURGLAR alarm" is
+                # what tells the user which end to fix. It carries the id for
+                # the same reason the repair issue does — two broken actions
+                # called "Call the police" are otherwise indistinguishable in
+                # the log.
                 _LOGGER.error(
-                    "Action '%s' targets alarm(s) that cannot be raised: %s. "
-                    "It will fail every time it fires",
+                    "Action '%s' (%s) targets alarm(s) that cannot be raised. "
+                    "It will fail every time it fires. %s",
                     action.name,
-                    ", ".join(bad),
+                    action.id[:8],
+                    " ".join(bad.values()),
                 )
 
         if offenders:
@@ -502,7 +555,9 @@ class ActionManager:
         Raises:
             ValueError: If validation fails
         """
-        self._validate_action(name, modes, sensor_entity_ids, delay_seconds)
+        self._validate_action(
+            name, modes, sensor_entity_ids, delay_seconds, alarm_entity_ids
+        )
         self._warn_missing_entities(sensor_entity_ids, alarm_entity_ids)
 
         action = AbodeAction(
@@ -515,9 +570,10 @@ class ActionManager:
             enabled=enabled,
         )
         await self._store.async_add(action)
-        # The websocket schema doesn't check alarm_entity_ids against
-        # TRIGGERABLE_ALARM_TYPES, so a bad target created via the API would
-        # otherwise go unflagged until the next restart.
+        # The new action is clean by construction — `_validate_action` above
+        # refuses a doomed target. This re-audit keeps the repair issue in
+        # sync with the store on every mutation rather than discovering
+        # anything new, which is what stops the issue text going stale.
         self.async_audit_alarm_targets()
         return action
 
@@ -555,8 +611,26 @@ class ActionManager:
         delay_seconds = kwargs.get("delay_seconds", action.delay_seconds)
         enabled = kwargs.get("enabled", action.enabled)
 
-        # Validate the updated values
-        self._validate_action(name, modes, sensor_entity_ids, delay_seconds)
+        # Absence is how a caller says "leave the targets alone" — `None` is
+        # not, and must not become a way to skip the check below. The WS
+        # schemas can't produce it, but a Python caller can, and it would
+        # otherwise reach `_warn_missing_entities` as a TypeError instead of a
+        # message anyone can act on.
+        supplies_alarms = "alarm_entity_ids" in kwargs
+        if supplies_alarms and not isinstance(alarm_entity_ids, list):
+            raise ValueError("alarm_entity_ids must be a list of entity ids")
+
+        # Validate the updated values. Alarm targets are only checked when the
+        # caller actually supplies them: an untriggerable target already in
+        # storage must not block a disable or `async_toggle` — the user has to
+        # be able to defuse a bad action, not just be told about it.
+        self._validate_action(
+            name,
+            modes,
+            sensor_entity_ids,
+            delay_seconds,
+            alarm_entity_ids if supplies_alarms else None,
+        )
         self._warn_missing_entities(sensor_entity_ids, alarm_entity_ids)
 
         # Create updated action
