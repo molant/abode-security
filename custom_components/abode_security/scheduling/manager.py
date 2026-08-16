@@ -32,9 +32,15 @@ from .models import (
     SkipReason,
     weekday_index,
 )
-from .retry import RetryExhausted, async_retry
+from .retry import RetryExhausted, async_retry_confirmed
 from .scheduler import CancelHandle, ScheduleClock
-from .state_machine import PairState, derive_state, expected_disarm_at, parse_hhmm
+from .state_machine import (
+    DISARM_WINDOW_GRACE,
+    PairState,
+    derive_state,
+    expected_disarm_at,
+    parse_hhmm,
+)
 from .store import SchedulesStore
 
 if TYPE_CHECKING:
@@ -160,12 +166,30 @@ class ScheduleManager:
         expected = expected_disarm_at(pair, last_armed_at=pair.last_armed_at, tz=tz)
         delay = (expected - now).total_seconds()
         if delay < 0:
-            _LOGGER.warning(
-                "Disarm delay for '%s' is %s s (negative); skipping timer",
+            # The anchor is the arm edge, but state confirmation can return up to
+            # 111 s later (#192), so a window shorter than that lands here with
+            # the boundary already passed.  Dropping the timer would leave the
+            # panel armed with nothing to disarm it — worse than the day-long
+            # window the edge anchor exists to prevent.
+            #
+            # `DISARM_WINDOW_GRACE` is the same tolerance `derive_state` applies,
+            # so these two branches agree with it: inside the grace it still
+            # reports ARMED and `async_disarm` will act, past the grace it
+            # reports IDLE and `async_disarm` would no-op anyway.
+            if -delay > DISARM_WINDOW_GRACE.total_seconds():
+                _LOGGER.warning(
+                    "Disarm delay for '%s' is %s s (past the grace window); "
+                    "skipping timer",
+                    pair.name or pair.id,
+                    delay,
+                )
+                return
+            _LOGGER.info(
+                "Disarm boundary for '%s' already passed by %s s; disarming now",
                 pair.name or pair.id,
-                delay,
+                -delay,
             )
-            return
+            delay = 0
         pid = pair.id
 
         @callback
@@ -331,11 +355,21 @@ class ScheduleManager:
             return
 
         # panel_str == "disarmed" — proceed with arm.
+        #
+        # Anchor the arm to when the edge fired, NOT to when confirmation
+        # returned.  `expected_disarm_at` rolls the disarm forward a full day
+        # when the anchor is already past `disarm_time`, and state confirmation
+        # can now spend up to 111 s (21 s of retries + a 90 s confirmation wait)
+        # before returning.  A legal short window — say arm 22:00 / disarm 22:01
+        # — would otherwise stamp 22:01:30, roll to the next day, and leave the
+        # panel armed for ~24 h with nothing but an info log to show for it.
+        armed_at = self._clock.utcnow()
         try:
-            await async_retry(
+            await async_retry_confirmed(
                 lambda: self._mode_changer.async_set_mode(
                     "home", ChangeSource.SCHEDULE_ARM, pair_id=pair.id
-                )
+                ),
+                lambda: self._panel_state() == "armed_home",
             )
         except RetryExhausted as err:
             pair.last_error = str(err.last_error)[:200]
@@ -355,7 +389,7 @@ class ScheduleManager:
             )
             return
 
-        pair.last_armed_at = self._clock.utcnow()
+        pair.last_armed_at = armed_at
         pair.last_error = None
         pair.last_skip_reason = None
         await self._store.async_update(pair)
@@ -420,11 +454,14 @@ class ScheduleManager:
             return
 
         # panel_str == "armed_home" — proceed with disarm.
+        # Anchored at the edge for the same reason as the arm above.
+        disarmed_at = self._clock.utcnow()
         try:
-            await async_retry(
+            await async_retry_confirmed(
                 lambda: self._mode_changer.async_set_mode(
                     "standby", source, pair_id=pair.id
-                )
+                ),
+                lambda: self._panel_state() == "disarmed",
             )
         except RetryExhausted as err:
             pair.last_error = str(err.last_error)[:200]
@@ -444,7 +481,7 @@ class ScheduleManager:
             )
             return
 
-        pair.last_disarmed_at = self._clock.utcnow()
+        pair.last_disarmed_at = disarmed_at
         pair.last_error = None
         pair.last_skip_reason = None
         await self._store.async_update(pair)

@@ -37,6 +37,18 @@ SCHEDULE_RETRY_TOTAL_ATTEMPTS = (
     4  # 1 initial + 3 retries; must equal len(SCHEDULE_RETRY_DELAYS_SECONDS) + 1
 )
 
+# Schedule state confirmation (#192).
+#
+# Arming takes ~60 s on real hardware, and Abode rejects any mode change issued
+# while one is in progress with `2104 Operation error!`.  The retry window above
+# is only 21 s, so every retry lands mid-transition and the last one's error used
+# to be reported as a total failure — for an arm that had in fact succeeded.
+# Before declaring failure, the manager waits for the panel to actually reach the
+# target mode.  The timeout must outlast the panel's arming operation, not the
+# retry window.
+SCHEDULE_CONFIRM_TIMEOUT_SECONDS = 90
+SCHEDULE_CONFIRM_POLL_SECONDS = 5  # reads hass.states only; no API traffic
+
 # Schedule HA events
 EVENT_SCHEDULE_FIRED = "abode_security.schedule_fired"
 EVENT_SCHEDULE_SKIPPED = "abode_security.schedule_skipped"

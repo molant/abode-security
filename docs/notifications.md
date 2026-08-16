@@ -331,7 +331,9 @@ When a scheduled arm or disarm fires (or is skipped/failed), the integration emi
 |---|---|---|
 | `abode_security.schedule_fired` | Arm or disarm succeeded | `schedule_id`, `schedule_name`, `action` ("arm"/"disarm"), `target_mode`, `fired_at` |
 | `abode_security.schedule_skipped` | Arm/disarm skipped (Away active, already Home, panel unavailable, or manual override) | `schedule_id`, `schedule_name`, `action`, `reason`, `skipped_at` |
-| `abode_security.schedule_failed` | All 4 retries exhausted | `schedule_id`, `schedule_name`, `action`, `error`, `attempts`, `failed_at` |
+| `abode_security.schedule_failed` | All 4 attempts failed **and** the panel never reached the target mode within the 90 s confirmation window | `schedule_id`, `schedule_name`, `action`, `error`, `attempts`, `failed_at` |
+
+> **Note on timing.** Arming takes ~60 s on real hardware, and Abode rejects a mode change issued while one is already in progress. The integration therefore waits for the panel to actually reach the target mode before reporting a failure, so `schedule_failed` can arrive up to ~111 s after the scheduled time (21 s of retries plus a 90 s confirmation window). An arm that eventually succeeds emits `schedule_fired`, never `schedule_failed` — previously a slow-but-successful arm was reported as a failure.
 
 ### Example automation — notify on arm
 
