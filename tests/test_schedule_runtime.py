@@ -9,10 +9,11 @@ mock Abode server.  Time control relies on:
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.core import Context, HomeAssistant
@@ -44,6 +45,21 @@ _PANEL = "alarm_control_panel.abode_test"
 
 def _set_panel(hass: HomeAssistant, state: str, context: Context | None = None) -> None:
     hass.states.async_set(_PANEL, state, context=context)
+
+
+@contextmanager
+def _no_retry_sleeps() -> Generator[None]:
+    """Make the retry backoff and the #192 confirmation wait instant.
+
+    Note this stubs the stdlib ``asyncio.sleep`` for the duration of the block —
+    ``retry_mod.asyncio`` is the module singleton, not a module-local alias — so
+    keep the block tight around the call under test.  ``patch.object`` restores
+    it on every exit path, including exceptions.
+    """
+    import custom_components.abode_security.scheduling.retry as retry_mod
+
+    with patch.object(retry_mod.asyncio, "sleep", AsyncMock()):
+        yield
 
 
 def _capture_events(hass: HomeAssistant, event_name: str) -> list[dict[str, Any]]:
@@ -133,6 +149,11 @@ class FakeModeChanger:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
         self._fail_times: int = 0  # how many times to fail before succeeding
+        self.attempts: int = 0  # every call, successful or not
+        # Called with the 1-based attempt number before the call resolves.  Lets
+        # a test move the panel underneath an in-flight mode change, the way a
+        # real ~60 s arm completes while retries are still firing (#192).
+        self.on_attempt: Callable[[int], None] | None = None
 
     def set_fail_count(self, n: int) -> None:
         self._fail_times = n
@@ -144,6 +165,9 @@ class FakeModeChanger:
         *,
         pair_id: str | None = None,
     ) -> None:
+        self.attempts += 1
+        if self.on_attempt is not None:
+            self.on_attempt(self.attempts)
         if self._fail_times > 0:
             self._fail_times -= 1
             raise ModeChangeFailed("transient error")
@@ -639,14 +663,8 @@ class TestRetryBehavior:
             weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
         )
 
-        import custom_components.abode_security.scheduling.retry as retry_mod
-
-        orig = retry_mod.asyncio.sleep
-        retry_mod.asyncio.sleep = AsyncMock()
-        try:
+        with _no_retry_sleeps():
             await manager.async_arm(pair.id)
-        finally:
-            retry_mod.asyncio.sleep = orig
 
         await hass.async_block_till_done()
         assert len(failed_events) == 0
@@ -670,14 +688,8 @@ class TestRetryBehavior:
             weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
         )
 
-        import custom_components.abode_security.scheduling.retry as retry_mod
-
-        orig = retry_mod.asyncio.sleep
-        retry_mod.asyncio.sleep = AsyncMock()
-        try:
+        with _no_retry_sleeps():
             await manager.async_arm(pair.id)
-        finally:
-            retry_mod.asyncio.sleep = orig
 
         await hass.async_block_till_done()
 
@@ -713,14 +725,8 @@ class TestRetryBehavior:
             weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
         )
 
-        import custom_components.abode_security.scheduling.retry as retry_mod
-
-        orig = retry_mod.asyncio.sleep
-        retry_mod.asyncio.sleep = AsyncMock()
-        try:
+        with _no_retry_sleeps():
             await manager.async_arm(pair.id)
-        finally:
-            retry_mod.asyncio.sleep = orig
 
         issue_reg = ir.async_get(hass)
         assert (
@@ -741,6 +747,276 @@ class TestRetryBehavior:
             )
             is None
         )
+
+
+class TestStateConfirmation:
+    """#192 — a successful arm must never be reported as a failure.
+
+    Abode's arm takes ~60 s and answers any mode change issued while it is in
+    progress with `2104 Operation error!`.  The retry window (1+4+16 = 21 s) is
+    shorter than that, so every retry lands mid-transition and the last one's
+    error used to be reported as a total failure — for an arm that worked.
+    """
+
+    async def test_arm_confirmed_mid_retry_is_not_a_failure(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Panel reaches armed_home while retries are still firing."""
+        _set_panel(hass, "disarmed")
+        failed = _capture_events(hass, EVENT_SCHEDULE_FAILED)
+        fired = _capture_events(hass, EVENT_SCHEDULE_FIRED)
+
+        # Every call is rejected with 2104, exactly as the live system saw.
+        fake_mode_changer.set_fail_count(999)
+        # The panel finishes arming while attempt 2 is in flight.
+        fake_mode_changer.on_attempt = lambda n: (
+            _set_panel(hass, "armed_home") if n == 2 else None
+        )
+
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+
+        with _no_retry_sleeps():
+            await manager.async_arm(pair.id)
+
+        await hass.async_block_till_done()
+
+        # No false failure.
+        assert failed == []
+        issue_reg = ir.async_get(hass)
+        assert (
+            issue_reg.async_get_issue(
+                "abode_security", f"{REPAIR_ISSUE_SCHEDULE_FIRE_FAILED}_{pair.id}"
+            )
+            is None
+        )
+
+        # Treated as the success it was: fired event, armed timestamp, no error,
+        # and the matching disarm scheduled.
+        assert len(fired) == 1
+        assert fired[0]["action"] == "arm"
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        # Anchored at the arm edge — see the dedicated anchor test below.
+        assert refreshed.last_armed_at == fake_clock.utcnow()
+        assert refreshed.last_error is None
+        assert (pair.id, "disarm") in manager._pending_handles
+
+        # Attempts stop once the panel confirms the target state rather than
+        # burning the remaining retries on more 2104s.
+        assert fake_mode_changer.attempts == 2
+
+    async def test_arm_confirmed_after_retries_exhausted_is_not_a_failure(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The whole 21 s retry window falls inside a slow arm.
+
+        All four attempts fail; the panel only settles afterwards, during the
+        post-exhaustion confirmation wait.
+        """
+        _set_panel(hass, "disarmed")
+        failed = _capture_events(hass, EVENT_SCHEDULE_FAILED)
+        fired = _capture_events(hass, EVENT_SCHEDULE_FIRED)
+
+        fake_mode_changer.set_fail_count(999)
+        fake_mode_changer.on_attempt = lambda n: (
+            _set_panel(hass, "armed_home")
+            if n == SCHEDULE_RETRY_TOTAL_ATTEMPTS
+            else None
+        )
+
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+
+        with _no_retry_sleeps():
+            await manager.async_arm(pair.id)
+
+        await hass.async_block_till_done()
+
+        assert failed == []
+        assert len(fired) == 1
+        issue_reg = ir.async_get(hass)
+        assert (
+            issue_reg.async_get_issue(
+                "abode_security", f"{REPAIR_ISSUE_SCHEDULE_FIRE_FAILED}_{pair.id}"
+            )
+            is None
+        )
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.last_armed_at is not None
+        assert fake_mode_changer.attempts == SCHEDULE_RETRY_TOTAL_ATTEMPTS
+
+    async def test_disarm_confirmed_mid_retry_is_not_a_failure(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Same confirmation applies to the disarm edge."""
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        await manager.async_arm(pair.id)
+        _set_panel(hass, "armed_home")
+
+        failed = _capture_events(hass, EVENT_SCHEDULE_FAILED)
+        fired = _capture_events(hass, EVENT_SCHEDULE_FIRED)
+
+        fake_mode_changer.set_fail_count(999)
+        fake_mode_changer.on_attempt = lambda n: (
+            _set_panel(hass, "disarmed") if n == 2 else None
+        )
+
+        with _no_retry_sleeps():
+            await manager.async_disarm(pair.id)
+
+        await hass.async_block_till_done()
+
+        assert failed == []
+        assert any(e["action"] == "disarm" for e in fired)
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.last_error is None
+
+    async def test_panel_that_never_reaches_target_still_fails(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Confirmation must not swallow a genuine failure."""
+        _set_panel(hass, "disarmed")
+        failed = _capture_events(hass, EVENT_SCHEDULE_FAILED)
+
+        fake_mode_changer.set_fail_count(999)  # panel never moves
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+
+        with _no_retry_sleeps():
+            await manager.async_arm(pair.id)
+
+        await hass.async_block_till_done()
+
+        assert len(failed) == 1
+        assert failed[0]["attempts"] == SCHEDULE_RETRY_TOTAL_ATTEMPTS
+        issue_reg = ir.async_get(hass)
+        assert (
+            issue_reg.async_get_issue(
+                "abode_security", f"{REPAIR_ISSUE_SCHEDULE_FIRE_FAILED}_{pair.id}"
+            )
+            is not None
+        )
+
+    async def test_arm_is_anchored_to_the_edge_not_the_confirmation(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """A slow confirmation must not push the auto-disarm a day out.
+
+        `expected_disarm_at` rolls forward a full day once the anchor is past
+        `disarm_time`.  Confirmation can spend up to 111 s (21 s of retries plus
+        the 90 s wait), so anchoring on the confirmation instead of the edge
+        would silently leave a short window — arm 22:00 / disarm 22:01, a legal
+        configuration — armed for ~24 h.
+        """
+        edge = datetime(2030, 1, 7, 22, 0, 0, tzinfo=UTC)
+        fake_clock.set(edge)
+
+        # Derive the HH:MM strings from the live HA tz: the runtime hass fixture
+        # is not UTC, and the pair's times are wall-clock local.
+        local = edge.astimezone(dt_util.DEFAULT_TIME_ZONE)
+        arm_time = local.strftime("%H:%M")
+        disarm_time = (local + timedelta(minutes=1)).strftime("%H:%M")
+
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time=arm_time, disarm_time=disarm_time
+        )
+
+        # Every attempt is rejected and each one burns 30 s of wall clock, so
+        # confirmation lands well past the 22:01 disarm boundary.
+        fake_mode_changer.set_fail_count(999)
+
+        def _advance(n: int) -> None:
+            fake_clock.set(edge + timedelta(seconds=30 * n))
+            if n == SCHEDULE_RETRY_TOTAL_ATTEMPTS:
+                _set_panel(hass, "armed_home")
+
+        fake_mode_changer.on_attempt = _advance
+
+        with _no_retry_sleeps():
+            await manager.async_arm(pair.id)
+        await hass.async_block_till_done()
+
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        # Anchored at the edge, not at the (much later) confirmation.
+        assert refreshed.last_armed_at == edge
+        assert fake_clock.utcnow() > edge  # the clock really did move
+
+        # The consequence that matters: disarm stays ~1 minute out, not ~24 h.
+        assert await _expected_disarm(manager, pair.id) - edge < timedelta(minutes=5)
+
+        # And the timer those values exist to produce is actually registered.
+        # Anchoring at the edge pushes this delay negative for a window shorter
+        # than the confirmation budget; dropping the timer there would leave the
+        # panel armed with nothing to disarm it.
+        assert (pair.id, "disarm") in manager._pending_handles
+
+    async def test_disarm_boundary_passed_during_confirmation_fires_immediately(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """A boundary passed inside the grace disarms now; past it, it is dropped."""
+        edge = datetime(2030, 1, 7, 22, 0, 0, tzinfo=UTC)
+        fake_clock.set(edge)
+        local = edge.astimezone(dt_util.DEFAULT_TIME_ZONE)
+
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"],
+            arm_time=local.strftime("%H:%M"),
+            disarm_time=(local + timedelta(minutes=1)).strftime("%H:%M"),
+        )
+        await manager.async_arm(pair.id)
+        assert (pair.id, "disarm") in manager._pending_handles
+
+        # 2 minutes past the edge: 1 minute past the disarm boundary, well
+        # inside DISARM_WINDOW_GRACE — the timer is registered to fire at once.
+        manager._unregister_timers(pair.id)
+        fake_clock.set(edge + timedelta(minutes=2))
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        manager._schedule_disarm(refreshed)
+        assert (pair.id, "disarm") in manager._pending_handles
+
+        # 10 minutes past the edge is past the grace — derive_state calls the
+        # pair IDLE by then, so async_disarm would no-op; skipping is correct.
+        manager._unregister_timers(pair.id)
+        fake_clock.set(edge + timedelta(minutes=10))
+        manager._schedule_disarm(refreshed)
+        assert (pair.id, "disarm") not in manager._pending_handles
 
 
 class TestOverlappingPairs:
@@ -1172,14 +1448,8 @@ class TestEventPayloads:
         pair = await manager.async_create(
             weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
         )
-        import custom_components.abode_security.scheduling.retry as retry_mod
-
-        orig = retry_mod.asyncio.sleep
-        retry_mod.asyncio.sleep = AsyncMock()
-        try:
+        with _no_retry_sleeps():
             await manager.async_arm(pair.id)
-        finally:
-            retry_mod.asyncio.sleep = orig
         await hass.async_block_till_done()
 
         assert len(failed) == 1
