@@ -24,7 +24,7 @@ from .action_manager import (
     MAX_NAME_LENGTH,
     VALID_MODES,
 )
-from .const import CONF_DEBUG_LOGGING, DOMAIN
+from .const import CONF_DEBUG_LOGGING, DOMAIN, TRIGGERABLE_ALARM_TYPES
 from .helpers import MANUAL_ALARM_UNIQUE_ID_MARKER, find_abode_alarm_panel
 from .scheduling.mode_changer import ModeChangeFailed, ModeChanger
 from .scheduling.models import ChangeSource
@@ -811,6 +811,10 @@ async def websocket_entities_sensors(
 # Display labels for the alarm types Abode will actually let us trigger.
 # Keyed by the lowercased type embedded in the switch's unique_id
 # (see AbodeManualAlarmSwitch.__init__: "{alarm.id}-manual-alarm-{type}").
+# Labels only — membership is decided by `const.TRIGGERABLE_ALARM_TYPES`, which
+# is also what `ActionManager` accepts on write. Re-declaring the set here
+# would let the picker and the validator drift: a fourth triggerable type
+# would be hidden by the picker while the API happily stored it.
 ALARM_TYPES = {
     "panic": "Panic",
     "silent_panic": "Silent Panic",
@@ -868,13 +872,17 @@ async def websocket_entities_alarms(
             continue
 
         alarm_type = unique_id[marker_at + len(MANUAL_ALARM_UNIQUE_ID_MARKER) :]
-        if alarm_type not in ALARM_TYPES:
+        if alarm_type.upper() not in TRIGGERABLE_ALARM_TYPES:
             continue
 
         # Prefer the live friendly_name; fall back to the curated label rather
-        # than a raw entity_id when the entity hasn't written state yet.
+        # than a raw entity_id when the entity hasn't written state yet. A type
+        # with no curated label still gets offered — the picker must not be the
+        # thing that decides what is triggerable.
         state = hass.states.get(entry.entity_id)
-        friendly_name = ALARM_TYPES[alarm_type]
+        friendly_name = ALARM_TYPES.get(
+            alarm_type, alarm_type.replace("_", " ").title()
+        )
         if state is not None:
             friendly_name = state.attributes.get("friendly_name", friendly_name)
 

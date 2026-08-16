@@ -9,7 +9,7 @@ import type {
   AlarmEntity,
 } from './types';
 import { MODES, getEntityState, isUnavailableState } from './types';
-import { fetchSensors, fetchAlarms, createAction, updateAction } from './api';
+import { fetchSensors, fetchAlarms, createAction, updateAction, wsErrorMessage } from './api';
 import './abode-modal';
 
 // "Toggle membership of `value` in a string array" — pure, no `this` access,
@@ -867,7 +867,11 @@ export class ActionEditor extends LitElement {
       console.error('Failed to save action:', err);
       this._errors = {
         ...this._errors,
-        form: err instanceof Error ? err.message : 'Failed to save',
+        // Not `instanceof Error`: the backend's `validation_error` message —
+        // "…is a BURGLAR alarm, which Abode refuses to raise on request" —
+        // arrives as a plain `{ code, message }` object and would otherwise
+        // be replaced by the generic fallback.
+        form: wsErrorMessage(err, 'Failed to save'),
       };
     } finally {
       this._saving = false;

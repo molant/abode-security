@@ -1103,6 +1103,53 @@ describe('ActionEditor', () => {
       // @ts-expect-error - accessing private property for testing
       expect(el._saving).to.equal(false, 'finally re-enables save button');
     });
+
+    it('surfaces the backend message when the WS rejects with a plain frame', async () => {
+      // `hass.callWS` rejects with the raw `{ code, message }` frame, not an
+      // `Error`. The backend refuses to store an action whose alarm target
+      // can never be raised, and that explanation is the entire point of the
+      // error — showing "Failed to save" instead leaves the user with a
+      // rejected save and no idea what to change (#193).
+      const hass = createMockHass({
+        callWS: ((params: { type: string }) => {
+          if (params.type === 'abode_security/entities/sensors') {
+            return Promise.resolve({ sensors: createMockSensors() });
+          }
+          if (params.type === 'abode_security/entities/alarms') {
+            return Promise.resolve({ alarms: createMockAlarms() });
+          }
+          if (params.type === 'abode_security/actions/create') {
+            return Promise.reject({
+              code: 'validation_error',
+              message:
+                "Alarm target 'switch.abode_alarm_burglar_alarm' is a BURGLAR alarm, " +
+                'which Abode refuses to raise on request. Pick one of: MEDICAL, PANIC, SILENT_PANIC.',
+            });
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await aTimeout(0);
+      await elementUpdated(el);
+      await setState(el, {
+        _name: 'Call the police',
+        _modes: ['away'],
+        _selectedSensors: ['binary_sensor.front_door'],
+        _selectedAlarms: ['switch.abode_alarm_burglar_alarm'],
+      } as Partial<ActionEditor>);
+
+      // @ts-expect-error - calling private method for testing
+      await el._handleSave();
+
+      // @ts-expect-error - accessing private property for testing
+      expect(el._errors.form).to.contain('BURGLAR');
+      // @ts-expect-error - accessing private property for testing
+      expect(el._errors.form).to.contain('PANIC');
+    });
   });
 
   describe('_populateForm (#31)', () => {

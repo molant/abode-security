@@ -140,6 +140,24 @@ before any request is made, `entities/alarms` omits them from the action picker,
 `ActionManager.async_audit_alarm_targets()` raises a repair issue at startup for any stored
 action still pointing at one.
 
+Those three narrow the ways a doomed action can be reached; `ActionManager._validate_action`
+closes the last one by refusing the write. `async_create` — and any `async_update` that
+supplies `alarm_entity_ids` — runs each target through
+`_alarm_target_failure_reason()` and raises `ValueError` (surfaced by the WebSocket layer as
+`validation_error`) when the target is a non-triggerable Abode alarm type or sits outside
+the `switch` domain. The same function backs the audit, so "what the panel refuses to
+store" and "what the audit flags" cannot drift apart.
+
+An update that *doesn't* supply `alarm_entity_ids` skips that check on purpose: a bad record
+from a restored backup or a hand-edited storage file has to stay disableable and deletable,
+or the only way out would be editing `.storage/abode_security_actions.json`. The panel's
+enable/disable switch sends `enabled` alone and so keeps working; its *editor* always
+resends the targets, so saving from there requires picking a supported alarm first.
+Such records are deliberately **not** disabled at load either — a failing action still fires
+`abode_security.action_triggered` with `alarm_outcome: failed` and `severity: critical`,
+which is the only signal the user gets during the incident; the startup repair issue makes
+sure it isn't silent.
+
 ### Actions system (`action_manager.py`, `action_trigger.py`)
 
 User-defined mappings from **sensor activation → event fire (and optionally an alarm trigger)**, gated by alarm mode.

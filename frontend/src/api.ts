@@ -16,6 +16,25 @@ import type {
 } from './types';
 
 /**
+ * Message to show for a failed `hass.callWS`.
+ *
+ * `callWS` rejects with the raw `{ code, message }` frame from
+ * home-assistant-js-websocket — a plain object, not an `Error`. An
+ * `err instanceof Error ? err.message : fallback` check therefore throws away
+ * everything the backend said and shows the generic fallback instead, which
+ * matters for `validation_error`s whose whole job is to explain what to fix
+ * (e.g. an action targeting an alarm Abode refuses to raise).
+ */
+export function wsErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error) return err.message || fallback;
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const { message } = err as { message?: unknown };
+    if (typeof message === 'string' && message) return message;
+  }
+  return fallback;
+}
+
+/**
  * Fetch all actions.
  */
 export async function fetchActions(hass: HomeAssistant): Promise<AbodeAction[]> {
