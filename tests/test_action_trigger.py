@@ -28,6 +28,20 @@ async def async_fire_time_changed_and_wait(
     await hass.async_block_till_done()
 
 
+@pytest.fixture(autouse=True)
+def seed_alarm_switches(hass):
+    """Make the alarm switches these tests target actually exist.
+
+    `_execute_action` refuses to report an alarm as raised when its entity is
+    absent — Home Assistant logs and swallows `switch.turn_on` against a
+    missing entity, so without this pre-check a stale entity_id was recorded
+    as a successful arm. In a real install the switch always exists, so the
+    tests have to model that rather than firing at a phantom entity.
+    """
+    for entity_id in ("switch.panic_alarm", "switch.medical_alarm"):
+        hass.states.async_set(entity_id, "off")
+
+
 @pytest.fixture
 async def action_manager(hass):
     """Create an ActionManager for testing."""
@@ -301,6 +315,105 @@ class TestStateChangeHandling:
 @pytest.mark.usefixtures("mock_abode", "setup_coordinator")
 class TestActionExecution:
     """Tests for action execution."""
+
+    async def test_unavailable_alarm_is_never_reported_as_armed(self, hass) -> None:
+        """An unavailable switch must be a failure, not a silent success.
+
+        Home Assistant drops unavailable entities before dispatching an entity
+        service call and only logs it (helpers/service.py filters
+        `entity_candidates` on `e.available`). Abode entities mark themselves
+        unavailable whenever the SocketIO stream is down — which happens on
+        every ~30-minute session recreation — so without this check an action
+        firing during a reconnect would report "Alarm raised." while no
+        request ever left the process.
+        """
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+
+        hass.states.async_set("switch.panic_alarm", "unavailable")
+        calls = []
+
+        async def mock_service(call):
+            calls.append(call)
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        reason = await coordinator.async_arm_alarm("switch.panic_alarm", "Test")
+
+        assert reason == "entity_unavailable"
+        assert calls == [], "must not even attempt the service call"
+
+    async def test_available_alarm_arms_cleanly(self, hass) -> None:
+        """The happy path must stay clean — no false failures."""
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+
+        hass.states.async_set("switch.panic_alarm", "off")
+
+        async def mock_service(_call):
+            hass.states.async_set("switch.panic_alarm", "on")
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        assert await coordinator.async_arm_alarm("switch.panic_alarm", "Test") is None
+
+    async def test_missing_alarm_entity_is_reported(self, hass) -> None:
+        """A stale entity_id must not count as a successful arm."""
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+
+        reason = await coordinator.async_arm_alarm("switch.does_not_exist", "Test")
+        assert reason == "entity_missing"
+
+    async def test_non_switch_entity_is_reported(self, hass) -> None:
+        """An existing entity outside the switch domain must not count as armed.
+
+        `cv.entity_id` on the create/update schemas checks the format only, so
+        a stored action can name `light.porch`. That entity exists and is
+        available, so both other guards pass — but `switch.turn_on` matches no
+        switch entity and returns without raising, which is the same silent
+        no-op as a missing entity.
+        """
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+
+        hass.states.async_set("light.porch", "off")
+        calls = []
+
+        async def mock_service(call):
+            calls.append(call)
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        reason = await coordinator.async_arm_alarm("light.porch", "Test")
+
+        assert reason == "entity_wrong_domain"
+        assert calls == [], "must not even attempt the service call"
+
+    async def test_disconnect_during_the_call_is_not_a_failure(self, hass) -> None:
+        """An alarm that WAS dispatched must never be reported as failed.
+
+        `AbodeManualAlarmSwitch.async_turn_on` blocks on an inline timeline
+        lookup whose retry delays sum to 67 seconds, and it ends in
+        `async_write_ha_state()`. If the SocketIO stream drops at any point in
+        that window, HA's `_stringify_state` stamps the entity `unavailable` —
+        for an alarm that was successfully raised. Any post-call state re-read
+        would turn that into a critical "ALARM DID NOT FIRE" notification plus
+        a repair issue. It is only safe to check availability *before* the
+        call, so this must stay a success.
+        """
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+
+        hass.states.async_set("switch.panic_alarm", "off")
+
+        async def mock_service(_call):
+            # The alarm reached Abode, then the connection dropped mid-call.
+            hass.states.async_set("switch.panic_alarm", "unavailable")
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+
+        assert await coordinator.async_arm_alarm("switch.panic_alarm", "Test") is None
 
     async def test_coordinator_triggers_alarm_service(self, hass) -> None:
         """Test coordinator triggers alarm service."""

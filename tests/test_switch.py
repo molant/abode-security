@@ -15,12 +15,15 @@ from homeassistant.const import (
     STATE_ON,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.abode_security import DOMAIN
+from custom_components.abode_security.abode.exceptions import (
+    Exception as AbodeException,
+)
 from custom_components.abode_security.const import CONF_POLLING
-from custom_components.abode_security.exceptions import AbodeError
 from custom_components.abode_security.services import (
     SERVICE_ACKNOWLEDGE_ALARM,
     SERVICE_DISMISS_ALARM,
@@ -827,7 +830,11 @@ async def test_dismiss_alarm_service(
 async def test_abode_switch_error_handling(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
-    """Test that AbodeSwitch handles errors gracefully."""
+    """A failed switch_on surfaces to the caller instead of looking like success.
+
+    `handle_abode_errors` logs and re-raises as `HomeAssistantError`; it does
+    not swallow. The entity must survive the failure.
+    """
     import importlib
 
     from custom_components.abode_security.abode.helpers import urls
@@ -850,15 +857,17 @@ async def test_abode_switch_error_handling(
         await hass.async_block_till_done()
 
         with patch(
-            "custom_components.abode_security.abode.devices.switch.Switch.switch_on"
+            "custom_components.abode_security.abode.devices.switch.Switch.switch_on",
+            new_callable=AsyncMock,
         ) as mock_switch_on:
-            mock_switch_on.side_effect = AbodeError("API Error")
-            await hass.services.async_call(
-                SWITCH_DOMAIN,
-                SERVICE_TURN_ON,
-                {ATTR_ENTITY_ID: DEVICE_ID},
-                blocking=True,
-            )
+            mock_switch_on.side_effect = AbodeException((500, "API Error"))
+            with pytest.raises(HomeAssistantError, match="turn on switch device"):
+                await hass.services.async_call(
+                    SWITCH_DOMAIN,
+                    SERVICE_TURN_ON,
+                    {ATTR_ENTITY_ID: DEVICE_ID},
+                    blocking=True,
+                )
             await hass.async_block_till_done()
 
             # Entity should still exist despite error
@@ -876,7 +885,7 @@ async def test_abode_switch_error_handling(
 async def test_automation_switch_error_handling(
     hass: HomeAssistant, mock_server_client: dict[str, str]
 ) -> None:
-    """Test that AbodeAutomationSwitch turn_on handles errors gracefully."""
+    """A failed automation enable surfaces to the caller rather than being swallowed."""
     import importlib
 
     from custom_components.abode_security.abode.helpers import urls
@@ -887,9 +896,10 @@ async def test_automation_switch_error_handling(
 
     try:
         with patch(
-            "custom_components.abode_security.abode.automation.Automation.enable"
+            "custom_components.abode_security.abode.automation.Automation.enable",
+            new_callable=AsyncMock,
         ) as mock_enable:
-            mock_enable.side_effect = AbodeError("API Error")
+            mock_enable.side_effect = AbodeException((500, "API Error"))
             config_entry = MockConfigEntry(
                 domain=DOMAIN,
                 data={
@@ -902,12 +912,13 @@ async def test_automation_switch_error_handling(
             await hass.config_entries.async_setup(config_entry.entry_id)
             await hass.async_block_till_done()
 
-            await hass.services.async_call(
-                SWITCH_DOMAIN,
-                SERVICE_TURN_ON,
-                {ATTR_ENTITY_ID: AUTOMATION_ID},
-                blocking=True,
-            )
+            with pytest.raises(HomeAssistantError, match="enable automation"):
+                await hass.services.async_call(
+                    SWITCH_DOMAIN,
+                    SERVICE_TURN_ON,
+                    {ATTR_ENTITY_ID: AUTOMATION_ID},
+                    blocking=True,
+                )
             await hass.async_block_till_done()
 
             # Entity should still exist despite error
@@ -923,9 +934,19 @@ async def test_automation_switch_error_handling(
 
 @pytest.mark.integration
 async def test_automation_trigger_error_handling(
-    hass: HomeAssistant, mock_server_client: dict[str, str]
+    hass: HomeAssistant,
+    mock_server_client: dict[str, str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Test that automation trigger handles errors gracefully."""
+    """A failed automation trigger is named in the log rather than dropped.
+
+    Unlike the two tests above, this is not a direct entity service call:
+    `_trigger_automation` fans out over `async_dispatcher_send` and
+    `_trigger_wrapper` schedules the coroutine with `hass.add_job`, so the
+    failure has no caller to reach. `_trigger_and_log` catches and logs it;
+    without that it would escape as an unretrieved task exception and fail
+    this test at teardown.
+    """
     import importlib
 
     from custom_components.abode_security.abode.helpers import urls
@@ -948,9 +969,10 @@ async def test_automation_trigger_error_handling(
         await hass.async_block_till_done()
 
         with patch(
-            "custom_components.abode_security.abode.automation.Automation.trigger"
+            "custom_components.abode_security.abode.automation.Automation.trigger",
+            new_callable=AsyncMock,
         ) as mock_trigger:
-            mock_trigger.side_effect = AbodeError("API Error")
+            mock_trigger.side_effect = AbodeException((500, "API Error"))
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_TRIGGER_AUTOMATION,
@@ -959,8 +981,15 @@ async def test_automation_trigger_error_handling(
             )
             await hass.async_block_till_done()
 
-            # Service call should complete without raising
-            # (error handling in decorator will catch and log)
+            # The dispatch really did reach the entity...
+            mock_trigger.assert_called_once()
+            # ...the fan-out service call itself cannot report per-entity
+            # failure, so it still returns cleanly...
+            # ...but the failure is logged against the specific automation
+            # rather than surfacing as an anonymous asyncio traceback. Only
+            # `_trigger_and_log` can produce this text: the decorator's own
+            # log line (decorators.py) never names the entity.
+            assert f"Automation {AUTOMATION_ID} failed to trigger" in caplog.text
 
     finally:
         if original_url is not None:

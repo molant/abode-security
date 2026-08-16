@@ -83,7 +83,16 @@ export interface AbodeAction {
   delay_seconds: number;
   last_triggered: string | null;
   trigger_count: number;
+  // Alarm outcome of the most recent execution. Optional: older backends
+  // don't send it, and an action that has never fired has none.
+  last_outcome?: AlarmOutcome | null;
 }
+
+// "armed"  — every configured alarm was raised
+// "partial"— some raised, some failed
+// "failed" — none raised; monitoring was NOT contacted
+// "none"   — notification-only action, no alarm configured
+export type AlarmOutcome = 'armed' | 'partial' | 'failed' | 'none';
 
 export interface AbodeMode {
   id: Mode;

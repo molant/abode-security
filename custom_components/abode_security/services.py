@@ -8,11 +8,17 @@ from typing import TYPE_CHECKING, Any, cast
 import voluptuous as vol
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .abode.exceptions import Exception as AbodeException
-from .const import CONF_DEBUG_LOGGING, DOMAIN, LOGGER
+from .const import (
+    CONF_DEBUG_LOGGING,
+    DOMAIN,
+    LOGGER,
+    TRIGGERABLE_ALARM_TYPES,
+)
 
 if TYPE_CHECKING:
     from .models import AbodeSystem
@@ -44,7 +50,19 @@ CAPTURE_IMAGE_SCHEMA = vol.Schema({ATTR_ENTITY_ID: cv.entity_ids})
 
 AUTOMATION_SCHEMA = vol.Schema({ATTR_ENTITY_ID: cv.entity_ids})
 
-TRIGGER_ALARM_SCHEMA = vol.Schema({vol.Required(ATTR_ALARM_TYPE): cv.string})
+# Validated here, not just in services.yaml: the `select` selector only shapes
+# the UI picker and does nothing for a YAML automation or a REST/WS call.
+# Without this, `abode_security.trigger_alarm` with `BURGLAR` still reached the
+# API, got a 400, and returned normally — the original silent-failure mode.
+TRIGGER_ALARM_SCHEMA = vol.Schema(
+    {
+        # Strip before Upper: YAML block scalars and templated values routinely
+        # carry a trailing newline, and " panic\n" is a legitimate input.
+        vol.Required(ATTR_ALARM_TYPE): vol.All(
+            cv.string, vol.Strip, vol.Upper, vol.In(sorted(TRIGGERABLE_ALARM_TYPES))
+        )
+    }
+)
 
 ACKNOWLEDGE_ALARM_SCHEMA = vol.Schema({vol.Required(ATTR_TIMELINE_ID): cv.string})
 
@@ -212,24 +230,35 @@ async def _trigger_alarm_handler(call: ServiceCall) -> None:
     """Trigger a manual alarm (special handler for multi-step operation)."""
     alarm_type = call.data[ATTR_ALARM_TYPE]
 
+    # Every failure below raises rather than logging and returning. This
+    # service raises a real alarm and contacts a monitoring service; a caller
+    # that gets no error is entitled to believe it worked, and an automation
+    # built on that assumption fails silently at the worst possible moment.
+    # ServiceValidationError for the two "your system isn't set up for this"
+    # cases (no stack trace in the log, matches AbodeManualAlarmSwitch), and
+    # HomeAssistantError below for a genuine runtime failure. Both subclass
+    # HomeAssistantError, so callers can catch either.
     abode_system = _get_abode_system(call.hass)
     if not abode_system:
-        LOGGER.error("Abode integration not configured")
-        return
+        raise ServiceValidationError("Abode integration is not configured")
 
     alarm = abode_system.abode.get_alarm()
     if alarm is None:
         # Reachable during transient pre-load state (panel still initializing,
         # devices not yet fetched) or on accounts without an alarm device.
-        # Without this guard, the await below crashed with AttributeError.
-        LOGGER.error("No alarm device available; cannot trigger manual alarm")
-        return
+        raise ServiceValidationError(
+            "No Abode alarm device available; cannot trigger a manual alarm"
+        )
 
     try:
         await alarm.trigger_manual_alarm(alarm_type)
-        LOGGER.info("Triggered manual alarm of type: %s", alarm_type)
     except AbodeException as ex:
         LOGGER.error("Failed to trigger manual alarm: %s", ex)
+        raise HomeAssistantError(
+            f"Abode refused to trigger a {alarm_type} alarm: {ex}"
+        ) from ex
+
+    LOGGER.info("Triggered manual alarm of type: %s", alarm_type)
 
 
 def setup_services(hass: HomeAssistant) -> None:

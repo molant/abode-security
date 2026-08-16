@@ -4,6 +4,7 @@ import logging
 from datetime import UTC, datetime
 
 import pytest
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
 from custom_components.abode_security.action_manager import (
@@ -285,6 +286,191 @@ class TestActionStore:
 @pytest.mark.usefixtures("mock_abode")
 class TestActionManager:
     """Tests for ActionManager class."""
+
+    # --- Alarm-outcome bookkeeping ---
+
+    async def test_update_preserves_last_outcome(self, hass) -> None:
+        """Editing an action must not clear its failure badge.
+
+        `last_outcome` is run history like `last_triggered` / `trigger_count`.
+        Dropping it on update meant a rename — or a disable/enable through
+        `async_toggle`, which routes through `async_update` — silently cleared
+        the "alarm failed" badge while the misconfiguration persisted.
+        """
+        manager = ActionManager(hass)
+        await manager.async_setup()
+        action = await manager.async_create(
+            name="Call the police",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        await manager.async_record_trigger(action.id, "failed")
+
+        renamed = await manager.async_update(action.id, name="Call the cops")
+        assert renamed is not None
+        assert renamed.last_outcome == "failed"
+
+        toggled = await manager.async_toggle(action.id)
+        assert toggled is not None
+        assert toggled.last_outcome == "failed"
+
+    async def test_record_trigger_keeps_prior_outcome_when_unspecified(
+        self, hass
+    ) -> None:
+        """An outcome-less record must not erase the previous verdict."""
+        manager = ActionManager(hass)
+        await manager.async_setup()
+        action = await manager.async_create(
+            name="A",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        await manager.async_record_trigger(action.id, "failed")
+        await manager.async_record_trigger(action.id)
+
+        stored = await manager.async_get(action.id)
+        assert stored is not None
+        assert stored.last_outcome == "failed"
+        assert stored.trigger_count == 2
+
+    @pytest.mark.parametrize("stored", ["armed", "partial", "failed", "none"])
+    def test_known_outcomes_survive_a_round_trip(self, stored) -> None:
+        action = AbodeAction.from_dict(
+            {
+                "id": "uuid-1",
+                "name": "A",
+                "modes": ["home"],
+                "sensor_entity_ids": ["binary_sensor.door"],
+                "alarm_entity_ids": [],
+                "last_outcome": stored,
+            }
+        )
+        assert action.last_outcome == stored
+
+    @pytest.mark.parametrize("stored", ["", "ARMED", "bogus", 42, None, True])
+    def test_unknown_outcomes_normalize_to_none(self, stored) -> None:
+        """An unrecognised value must not invent a failure.
+
+        The panel renders anything outside the known set as a red "alarm
+        failed" badge, so a corrupt record or a value written by a future
+        version would report a failure that never happened. Normalise rather
+        than drop — the action itself is still a valid security rule.
+        """
+        action = AbodeAction.from_dict(
+            {
+                "id": "uuid-1",
+                "name": "A",
+                "modes": ["home"],
+                "sensor_entity_ids": ["binary_sensor.door"],
+                "alarm_entity_ids": [],
+                "last_outcome": stored,
+            }
+        )
+        assert action.last_outcome is None
+        assert action.name == "A", "the action must survive, not be dropped"
+
+    async def test_audit_reports_every_action_with_a_duplicate_name(self, hass) -> None:
+        """Action names aren't unique; both offenders must be reported.
+
+        Keying the summary by name alone meant two broken actions sharing one
+        hid each other from the repair issue.
+        """
+        registry = er.async_get(hass)
+        entry = registry.async_get_or_create(
+            domain="switch",
+            platform=DOMAIN,
+            unique_id="1-manual-alarm-burglar",
+            suggested_object_id="abode_alarm_burglar_alarm",
+        )
+        hass.states.async_set(entry.entity_id, "off")
+
+        manager = ActionManager(hass)
+        await manager.async_setup()
+        for _ in range(2):
+            await manager.async_create(
+                name="Call the police",
+                modes=["away"],
+                sensor_entity_ids=["binary_sensor.motion"],
+                alarm_entity_ids=[entry.entity_id],
+            )
+
+        offenders = manager.async_audit_alarm_targets()
+        assert len(offenders) == 2, f"both actions must be reported, got {offenders}"
+        assert all("Call the police" in label for label in offenders)
+
+    async def test_audit_flags_alarm_target_outside_the_switch_domain(
+        self, hass
+    ) -> None:
+        """A non-switch target fails on every trigger, so surface it up front.
+
+        Actions arm via `switch.turn_on`, which silently drops entities outside
+        its own domain. `cv.entity_id` only validates the `domain.object_id`
+        shape, so a stored action can name `light.porch` — caught at arm time
+        as `entity_wrong_domain`, but the point of the audit is to say so
+        before the sensor ever trips.
+        """
+        hass.states.async_set("light.porch", "off")
+
+        manager = ActionManager(hass)
+        await manager.async_setup()
+        await manager.async_create(
+            name="Not a switch",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["light.porch"],
+        )
+
+        offenders = manager.async_audit_alarm_targets()
+
+        assert len(offenders) == 1
+        assert next(iter(offenders.values())) == ["light.porch"]
+
+    async def test_audit_leaves_third_party_switches_alone(self, hass) -> None:
+        """Arming someone else's switch is legitimate and must not be flagged.
+
+        Only Abode manual-alarm switches of an untriggerable type, and targets
+        outside the switch domain, are guaranteed failures.
+        """
+        hass.states.async_set("switch.siren_relay", "off")
+
+        manager = ActionManager(hass)
+        await manager.async_setup()
+        await manager.async_create(
+            name="Third-party siren",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.siren_relay"],
+        )
+
+        assert manager.async_audit_alarm_targets() == {}
+
+    async def test_delete_clears_the_alarm_failed_repair_issue(self, hass) -> None:
+        """Otherwise a permanent ERROR issue names an action that's gone."""
+        from custom_components.abode_security import action_repair
+
+        manager = ActionManager(hass)
+        await manager.async_setup()
+        action = await manager.async_create(
+            name="Call the police",
+            modes=["away"],
+            sensor_entity_ids=["binary_sensor.motion"],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        action_repair.async_raise_alarm_failed_issue(
+            hass,
+            action_id=action.id,
+            action_name=action.name,
+            entity_ids=["switch.panic_alarm"],
+            reason="api_error: (400, ...)",
+        )
+        registry = ir.async_get(hass)
+        issue_id = f"action_alarm_failed_{action.id}"
+        assert registry.async_get_issue(DOMAIN, issue_id) is not None
+
+        assert await manager.async_delete(action.id) is True
+        assert registry.async_get_issue(DOMAIN, issue_id) is None
 
     # --- Sub-Phase A: Core CRUD ---
 

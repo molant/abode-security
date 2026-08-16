@@ -34,8 +34,15 @@ trigger_alarm:
     alarm_type:
       required: true
       example: PANIC
+      # Abode's POST /panel/alarm rejects anything else with 400 errorCode
+      # 16013. A dropdown instead of free text so the invalid types aren't
+      # reachable by typo.
       selector:
-        text:
+        select:
+          options:
+            - PANIC
+            - SILENT_PANIC
+            - MEDICAL
 
 acknowledge_alarm:
   fields:

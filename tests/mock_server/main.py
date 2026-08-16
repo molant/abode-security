@@ -264,15 +264,37 @@ async def set_panel_mode(area: str, mode: str):
     }
 
 
+# Abode only accepts these three on triggerAlarm. The other alarm types it
+# defines (CO, SMOKE, SMOKE_CO, BURGLAR) are inbound classifications reported
+# by sensors, and the real API rejects them with 400 errorCode 16013.
+#
+# The mock used to accept *any* type unconditionally, which is why an action
+# wired to the BURGLAR switch passed every unit, integration, and E2E run
+# while failing on every single real trigger.
+TRIGGERABLE_ALARM_TYPES = {"PANIC", "SILENT_PANIC", "MEDICAL"}
+
+
 @app.post("/integrations/v1/panel/alarm")
 async def trigger_alarm(request: Request):
     """
     Trigger manual alarm.
 
-    Types: PANIC, SILENT_PANIC, MEDICAL, CO, SMOKE_CO, SMOKE, BURGLAR
+    Accepts PANIC, SILENT_PANIC, MEDICAL. Anything else reproduces the real
+    API's rejection.
     """
     body = await request.json()
     alarm_type = body.get("type", "PANIC")
+
+    if alarm_type not in TRIGGERABLE_ALARM_TYPES:
+        log.warning(f"Rejecting untriggerable alarm type: {alarm_type}")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "errorCode": 16013,
+                "message": "invalid {{param}} value.",
+                "errorProperties": {"action": "triggerAlarm", "type": alarm_type},
+            },
+        )
 
     # Add to timeline
     state["timeline"].insert(

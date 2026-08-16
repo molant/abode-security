@@ -38,6 +38,17 @@ export class AbodeConfigurationPanel extends LitElement {
     return new URLSearchParams(window.location.search).get('camera');
   }
 
+  // Home Assistant keeps a panel element alive between visits, so field
+  // initializers run once and a *second* notification tapped while the panel
+  // is still mounted would land on whatever tab was last open, with no
+  // camera selected. Re-read the URL on every (re)connect so each deep link
+  // is honoured, not just the first.
+  connectedCallback(): void {
+    super.connectedCallback();
+    this._activeTab = AbodeConfigurationPanel._initialTabFromUrl();
+    this._initialCameraSelection = AbodeConfigurationPanel._initialCameraFromUrl();
+  }
+
   static styles = css`
     :host {
       display: block;

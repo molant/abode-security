@@ -113,11 +113,32 @@ Eight services grouped by theme:
 | Settings | `change_setting` | async (API call) |
 | Media | `capture_image` | sync (dispatcher signal) |
 | Automation | `trigger_automation` | sync (dispatcher signal) |
-| Alarms | `trigger_alarm` | async (API call — PANIC, FIRE, MEDICAL, BURGLAR) |
+| Alarms | `trigger_alarm` | async (API call — PANIC, SILENT_PANIC, MEDICAL only) |
 | Timeline | `acknowledge_alarm`, `dismiss_alarm` | async (API call) |
 | Test mode | `enable_test_mode`, `disable_test_mode` | async (API call) |
 
 Dispatcher-signal handlers are intentionally sync (see `ASYNC_AWAIT_PATTERNS.md`).
+
+#### Manual alarm types
+
+`switch.py` creates seven `AbodeManualAlarmSwitch` entities (`PANIC, SILENT_PANIC,
+MEDICAL, CO, SMOKE_CO, SMOKE, BURGLAR`) because all seven can arrive *inbound* as timeline
+alarm events, and the switch state mirrors that.
+
+Only the three in `const.TRIGGERABLE_ALARM_TYPES` (`PANIC`, `SILENT_PANIC`, `MEDICAL`) can
+be raised on request. `POST /integrations/v1/panel/alarm` rejects the other four:
+
+```
+400 {"errorCode":16013,"message":"invalid {{param}} value.",
+     "errorProperties":{"action":"triggerAlarm","type":"BURGLAR"}}
+```
+
+This matches the official Abode Android app, whose manual-alarm screen only ever calls
+`triggerManualAlarm` with Panic / Silent Panic / Medical even though its `AlarmType` enum
+declares all seven. Turning on a non-triggerable switch raises `ServiceValidationError`
+before any request is made, `entities/alarms` omits them from the action picker, and
+`ActionManager.async_audit_alarm_targets()` raises a repair issue at startup for any stored
+action still pointing at one.
 
 ### Actions system (`action_manager.py`, `action_trigger.py`)
 
@@ -128,7 +149,13 @@ User-defined mappings from **sensor activation → event fire (and optionally an
 - Trigger state (pending delays, debounce timestamps) is memory-only; lost on restart by design.
 - A debug-only `abode_security.fire_test_notification` service (gated by the `debug_logging` option) runs the snapshot + event-fire path for a chosen action and sensor without arming the panel — see [`docs/notifications.md`](./notifications.md).
 
-The `abode_security.action_triggered` event payload carries 16 keys: the original 7 (`action_id`, `action_name`, `triggered_by`, `mode`, `alarms_triggered`, `alarms_failed`, `timestamp`) plus 6 sensor-context keys added in Phase 1 of the notifications feature (`sensor_friendly_name`, `sensor_device_class`, `previous_state`, `new_state`, `sensor_area_id`, `sensor_area_name`), plus 3 snapshot keys added in Phase 2 (`camera_entity_id`, `snapshot_path`, `snapshot_error`). Context is captured at the moment of the `off→on` transition — not re-read at execute time — so delayed actions carry the state that caused the trigger rather than the current state.
+The `abode_security.action_triggered` event payload carries 19 keys: the original 7 (`action_id`, `action_name`, `triggered_by`, `mode`, `alarms_triggered`, `alarms_failed`, `timestamp`), 6 sensor-context keys (`sensor_friendly_name`, `sensor_device_class`, `previous_state`, `new_state`, `sensor_area_id`, `sensor_area_name`), 3 snapshot keys (`camera_entity_id`, `snapshot_path`, `snapshot_error`), and 3 outcome keys (`alarm_outcome`, `alarm_failures`, `severity`). Context is captured at the moment of the `off→on` transition — not re-read at execute time — so delayed actions carry the state that caused the trigger rather than the current state.
+
+`alarm_outcome` (`armed` / `partial` / `failed` / `none`) and `severity` (`critical` / `high` / `normal`) exist because `alarms_triggered` and `alarms_failed` shipped from the start and nothing ever read them: an action whose alarm was rejected by the API produced a notification identical to a successful one. Severity is computed in the integration (`action_trigger._severity`) rather than in the blueprint so custom automations escalate the same way, and a *failed* alarm is rated `critical` — the user believes monitoring was contacted when it was not. `_execute_action` also verifies rather than assumes, but only *before* the call: `async_arm_alarm` checks the target entity is in the `switch` domain, exists, and is available, because HA drops out-of-domain, missing, and unavailable entities from an entity service call and only logs it (`helpers/service.py`), and Abode entities go unavailable whenever the SocketIO stream drops. (The domain check matters because `cv.entity_id` on the WebSocket schemas validates the `domain.object_id` *format* only — a stored action naming `light.porch` would otherwise pass every guard and be recorded as armed.) A returning service call is then taken as success.
+
+There is deliberately **no** post-call state check. Two were tried and both reported successfully raised alarms as failures: re-reading on/off races `_alarm_end_callback`, which clears `_attr_is_on` on every manual alarm switch; and re-reading availability is poisoned by `async_turn_on`'s own closing `async_write_ha_state()`, which stamps `unavailable` if availability flipped at any point during a call that blocks for the inline timeline lookup (67 s of retry delays — see #194). The residual sub-millisecond window between the pre-check and HA's own filter errs toward `armed`, which is the correct direction against a ~70 s false-failure window.
+
+Failures raise a per-action repair issue via `action_repair.py` and are persisted as `AbodeAction.last_outcome` so the Actions panel can badge them.
 
 When an action fires in `home` or `away` mode and the triggering binary_sensor shares an HA device (`device_id`) with a `camera.*` entity, `snapshot.py` captures a JPEG via the built-in `camera.snapshot` service and saves it under `/config/www/abode_security_snapshots/`. The `/local/abode_security_snapshots/<filename>` URL is exposed on the event as `snapshot_path`, making it directly usable as `data.image` in a mobile notification. Capture is bounded by a 3-second timeout; on failure the event still fires with `snapshot_path: null` and a short `snapshot_error` reason string. In `standby` mode, `camera_entity_id` is still resolved (so users can see the wiring) but no snapshot is taken.
 
@@ -327,7 +354,7 @@ Callback registration via `hass.async_add_executor_job(...)` is wrapped in `asyn
 
 ## Unique Features
 
-1. **Manual alarm triggering** — PANIC, FIRE, MEDICAL, BURGLAR from HA
+1. **Manual alarm triggering** — PANIC, SILENT_PANIC, MEDICAL from HA
 2. **Custom actions** — sensor-to-alarm mappings gated by mode, with delay and debounce
 3. **Timeline event management** — acknowledge/dismiss alarm events
 4. **CMS settings control** — test mode, monitoring active, dispatch settings

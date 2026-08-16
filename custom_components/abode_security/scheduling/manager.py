@@ -347,7 +347,7 @@ class ScheduleManager:
                 error=pair.last_error,
                 attempts=err.attempts,
             )
-            self._raise_fire_failed_issue(pair, str(err.last_error))
+            self._raise_fire_failed_issue(pair, str(err.last_error), "arm")
             _LOGGER.warning(
                 "Schedule '%s' failed after %d attempts",
                 pair.name or pair.id,
@@ -436,7 +436,7 @@ class ScheduleManager:
                 error=pair.last_error,
                 attempts=err.attempts,
             )
-            self._raise_fire_failed_issue(pair, str(err.last_error))
+            self._raise_fire_failed_issue(pair, str(err.last_error), "disarm")
             _LOGGER.warning(
                 "Schedule '%s' failed after %d attempts",
                 pair.name or pair.id,
@@ -480,7 +480,16 @@ class ScheduleManager:
             payload["failed_at"] = now_iso
         self._hass.bus.async_fire(name, payload)
 
-    def _raise_fire_failed_issue(self, pair: ScheduledPair, error: str) -> None:
+    def _raise_fire_failed_issue(
+        self, pair: ScheduledPair, error: str, action: str
+    ) -> None:
+        """Raise the "schedule failed to fire" repair issue.
+
+        ``action`` is "arm" or "disarm". The event payload has carried it from
+        the start; without it in the issue too, the user is told a schedule
+        failed but not which half — and the two have very different
+        consequences (a failed arm leaves the house unarmed).
+        """
         ir.async_create_issue(
             self._hass,
             DOMAIN,
@@ -490,6 +499,7 @@ class ScheduleManager:
             translation_key=REPAIR_ISSUE_SCHEDULE_FIRE_FAILED,
             translation_placeholders={
                 "schedule_name": pair.name or pair.id,
+                "action": action,
                 "error": error[:200],
             },
         )

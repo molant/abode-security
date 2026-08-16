@@ -879,6 +879,106 @@ describe('ActionEditor', () => {
     });
   });
 
+  describe('notification-only confirmation', () => {
+    // An action named "Call the police" that is silently notification-only
+    // reads, in the notification, exactly like one that raises an alarm.
+    // Saving one takes a deliberate second press.
+    async function mountWithNoAlarm(onCreate: () => void) {
+      const hass = createMockHass({
+        callWS: ((params: { type: string }) => {
+          if (params.type === 'abode_security/entities/sensors') {
+            return Promise.resolve({ sensors: createMockSensors() });
+          }
+          if (params.type === 'abode_security/entities/alarms') {
+            return Promise.resolve({ alarms: createMockAlarms() });
+          }
+          if (params.type === 'abode_security/actions/create') {
+            onCreate();
+            return Promise.resolve({ id: 'new-id' });
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ActionEditor>(html`
+        <abode-action-editor .hass=${hass}></abode-action-editor>
+      `);
+      await aTimeout(0);
+      await elementUpdated(el);
+      await setState(el, {
+        _name: 'Call the police',
+        _modes: ['away'],
+        _selectedSensors: ['binary_sensor.front_door'],
+        _selectedAlarms: [],
+      } as Partial<ActionEditor>);
+      return el;
+    }
+
+    it('does not save on the first press when no alarm is selected', async () => {
+      let created = 0;
+      const el = await mountWithNoAlarm(() => created++);
+
+      // @ts-expect-error - calling private method for testing
+      await el._handleSave();
+
+      expect(created).to.equal(0, 'first press must only warn');
+      // @ts-expect-error - accessing private property for testing
+      expect(el._confirmNotificationOnly).to.equal(true);
+
+      await elementUpdated(el);
+      const warning = el.shadowRoot!.querySelector('.notify-only-confirm');
+      expect(warning, 'warning is rendered').to.not.equal(null);
+      expect(warning!.textContent).to.contain('not');
+    });
+
+    it('saves on the second press', async () => {
+      let created = 0;
+      const el = await mountWithNoAlarm(() => created++);
+
+      // @ts-expect-error - calling private method for testing
+      await el._handleSave();
+      // @ts-expect-error - calling private method for testing
+      await el._handleSave();
+
+      expect(created).to.equal(1);
+    });
+
+    it('does not warn when an alarm is selected', async () => {
+      let created = 0;
+      const el = await mountWithNoAlarm(() => created++);
+      await setState(el, {
+        _selectedAlarms: ['switch.abode_alarm_panic_alarm'],
+      } as Partial<ActionEditor>);
+
+      // @ts-expect-error - calling private method for testing
+      await el._handleSave();
+
+      expect(created).to.equal(1, 'a configured alarm saves immediately');
+      expect(el.shadowRoot!.querySelector('.notify-only-confirm')).to.equal(null);
+    });
+
+    it('re-arms the confirmation when the alarm is cleared again', async () => {
+      let created = 0;
+      const el = await mountWithNoAlarm(() => created++);
+
+      // Acknowledge once...
+      // @ts-expect-error - calling private method for testing
+      await el._handleSave();
+      // ...then pick an alarm and switch back to notification-only.
+      // @ts-expect-error - calling private method for testing
+      el._selectAlarm('switch.abode_alarm_panic_alarm');
+      // @ts-expect-error - calling private method for testing
+      el._clearAlarmSelection();
+
+      // @ts-expect-error - accessing private property for testing
+      expect(el._confirmNotificationOnly).to.equal(false);
+
+      // @ts-expect-error - calling private method for testing
+      await el._handleSave();
+      expect(created).to.equal(0, 'the reverted choice must be confirmed again');
+    });
+  });
+
   describe('_handleSave (#31)', () => {
     it('calls createAction when no action prop is set', async () => {
       let createPayload: Record<string, unknown> | null = null;

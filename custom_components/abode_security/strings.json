@@ -64,8 +64,21 @@
       "description": "Records dropped: {count}. One or more entries in `.storage/abode_security_schedules.json` could not be loaded and were skipped. Any remaining schedules are still active. Inspect the file or recreate the affected schedules from the Modes panel. See Home Assistant logs for per-record details."
     },
     "schedule_fire_failed": {
-      "title": "Abode Security: schedule '{schedule_name}' failed to fire",
-      "description": "After 4 attempts (1 initial + 3 retries), the scheduled arm or disarm for '{schedule_name}' could not complete. Last error: {error}. Check your Abode connection and the Home Assistant logs. The schedule will retry at its next scheduled time."
+      "title": "Abode Security: schedule '{schedule_name}' may have failed to {action}",
+      "description": "The scheduled **{action}** for '{schedule_name}' reported failure after 4 attempts (1 initial + 3 retries). Last error: {error}. **Check the panel's current state** — the command may in fact have taken effect and only its confirmation failed, so this is not proof the panel is in the wrong mode. See the Home Assistant logs for detail. The schedule will try again at its next scheduled time."
+    },
+    "action_alarm_failed": {
+      "title": "Abode Security: action '{action_name}' did not raise its alarm",
+      "description": "The action '{action_name}' triggered, but the alarm it is configured to raise ({entities}) did not fire. Reason: {reason}. **No alarm was raised and your monitoring service was not contacted.** Open the Actions panel and check the alarm assigned to this action, then verify it with Abode Test Mode enabled."
+    },
+    "action_untriggerable_alarm": {
+      "title": "Abode Security: an action targets an alarm that cannot be triggered",
+      "description": "These actions point at an alarm that cannot be raised, so they will fail every time they fire: {actions}. Either the target is an alarm type Abode refuses to raise on request \u2014 it only accepts Panic, Silent Panic, and Medical as manually triggered alarms, while CO, Smoke, Smoke CO, and Burglar are inbound classifications reported by sensors \u2014 or it is not a switch at all, so there is nothing for the action to turn on. Edit each action in the Actions panel and pick a supported alarm."
+    }
+  },
+  "exceptions": {
+    "alarm_type_not_triggerable": {
+      "message": "Abode does not accept '{alarm_type}' as a manually triggered alarm. Supported types: {supported}. This switch reflects inbound {alarm_type} alarms but cannot raise one."
     }
   },
   "services": {
@@ -107,7 +120,7 @@
       "description": "Triggers a manual alarm of the specified type.",
       "fields": {
         "alarm_type": {
-          "description": "Type of alarm to trigger (PANIC, SILENT_PANIC, MEDICAL, CO, SMOKE_CO, SMOKE, BURGLAR).",
+          "description": "Type of alarm to raise. Abode only accepts PANIC, SILENT_PANIC and MEDICAL; CO, SMOKE, SMOKE_CO and BURGLAR are inbound classifications reported by sensors and are rejected by the API.",
           "name": "Alarm type"
         }
       },

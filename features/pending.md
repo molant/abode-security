@@ -10,6 +10,16 @@ A parallel code review in April 2026 produced 9 GitHub issues spanning correctne
 
 The review also landed four direct fixes for production bugs (frontend WS contract, action-trigger restart false-fire + delay race, embedded library retry/shutdown races); those are done.
 
+- [ ] `abode_security.trigger_automation` cannot report per-entity failure.
+      `services.py:_trigger_automation` fans out over `async_dispatcher_send`
+      and `switch.py:_trigger_wrapper` schedules the coroutine with
+      `hass.add_job`, so the service call returns successfully even when every
+      automation failed. `handle_abode_errors` re-raises specifically so
+      failures stay visible to callers, and this is the one path where that
+      contract isn't met — the entity now logs the failure against its own
+      entity_id, which is the most a fire-and-forget path can do. Making the
+      service await the entities (or collect results) would close the gap.
+
 ## Frontend Panel Enhancements
 
 **Source**: Phase 5 & 6 of better-development

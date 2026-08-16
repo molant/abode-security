@@ -36,7 +36,7 @@ The integration ships a visual panel at `/abode_security` with three tabs:
 > Home Assistant renamed "services" to "actions" in the UI; YAML accepts either `service:` or `action:`. Call these from **Developer Tools → Actions**.
 
 ### `abode_security.trigger_alarm`
-Trigger a manual alarm. `alarm_type` is one of `PANIC`, `SILENT_PANIC`, `MEDICAL`, `CO`, `SMOKE_CO`, `SMOKE`, `BURGLAR`.
+Trigger a manual alarm. `alarm_type` is one of `PANIC`, `SILENT_PANIC`, `MEDICAL` — the only three Abode accepts on demand. `CO`, `SMOKE`, `SMOKE_CO` and `BURGLAR` are inbound classifications reported by sensors; the API rejects them with `400 errorCode 16013`, and the service now refuses them up front.
 
 ```yaml
 action: abode_security.trigger_alarm

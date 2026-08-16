@@ -241,6 +241,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Flag any stored action wired to an alarm Abode won't let us trigger, so
+    # it surfaces as a repair issue now rather than as a silent failure during
+    # the incident the action was meant to escalate. Must run *after* the
+    # platforms are forwarded: the audit resolves alarm switches through the
+    # entity registry, and on a first setup (or after a registry purge) it
+    # would otherwise find nothing and clear a valid issue.
+    action_manager.async_audit_alarm_targets()
+
     # Enable all Abode entities that were created
     await _enable_abode_entities(hass, entry)
 

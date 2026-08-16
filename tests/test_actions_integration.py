@@ -26,6 +26,55 @@ from custom_components.abode_security.websocket_api import (
     async_register_websocket_commands,
 )
 
+# Every key `abode_security.action_triggered` carries. Kept as one set so a
+# payload change has to be made deliberately in both tests below rather than
+# only in whichever one happened to be updated.
+EXPECTED_EVENT_KEYS = {
+    # 7 original
+    "action_id",
+    "action_name",
+    "triggered_by",
+    "mode",
+    "alarms_triggered",
+    "alarms_failed",
+    "timestamp",
+    # 6 sensor context
+    "sensor_friendly_name",
+    "sensor_device_class",
+    "previous_state",
+    "new_state",
+    "sensor_area_id",
+    "sensor_area_name",
+    # 3 snapshot
+    "camera_entity_id",
+    "snapshot_path",
+    "snapshot_error",
+    # 3 outcome
+    "alarm_outcome",
+    "alarm_failures",
+    "severity",
+}
+
+
+def _register_manual_alarm(
+    hass: HomeAssistant, alarm_type: str, object_id: str, name: str
+) -> str:
+    """Register a manual alarm switch the way switch.py does.
+
+    `entities/alarms` resolves through the entity registry by unique_id
+    (``{alarm_id}-manual-alarm-{type}``) rather than by entity_id pattern, so
+    tests have to register rather than just set a state.
+    """
+    registry = er.async_get(hass)
+    entry = registry.async_get_or_create(
+        domain="switch",
+        platform=DOMAIN,
+        unique_id=f"1-manual-alarm-{alarm_type}",
+        suggested_object_id=object_id,
+    )
+    hass.states.async_set(entry.entity_id, STATE_OFF, {"friendly_name": name})
+    return entry.entity_id
+
 
 @pytest.fixture
 async def integration_action_manager(hass: HomeAssistant):
@@ -251,17 +300,30 @@ class TestActionsIntegration:
         hass_ws_client,
         integration_setup,  # noqa: ARG002
     ) -> None:
-        """Test that alarms list returns properly formatted response."""
-        # Add test Abode alarm switches
-        hass.states.async_set(
-            "switch.abode_panic_alarm",
-            STATE_OFF,
-            {"friendly_name": "Abode Panic Alarm"},
+        """Test that alarms list returns properly formatted response.
+
+        Registered rather than state-set, and deliberately under object_ids
+        that do *not* match the old `switch.abode_*_alarm` pattern: the picker
+        resolves through the entity registry by unique_id precisely so that
+        renaming the panel device (which HA offers to do to the entity_ids
+        too) stops emptying the list. Naming them `abode_*_alarm` here would
+        pass under the old implementation as well and pin nothing.
+        """
+        panic = _register_manual_alarm(
+            hass, "panic", "front_hall_panel_panic", "Front Hall Panel Panic"
         )
-        hass.states.async_set(
-            "switch.abode_fire_alarm",
-            STATE_OFF,
-            {"friendly_name": "Abode Fire Alarm"},
+        silent = _register_manual_alarm(
+            hass, "silent_panic", "front_hall_panel_silent", "Front Hall Panel Silent"
+        )
+        medical = _register_manual_alarm(
+            hass, "medical", "front_hall_panel_medical", "Front Hall Panel Medical"
+        )
+        # BURGLAR is one of the four types `switch.py:MANUAL_ALARM_TYPES`
+        # really does create a switch for, and one Abode rejects on
+        # /panel/alarm with 400 errorCode 16013 — so it must be excluded here
+        # rather than offered as an action that silently fails.
+        _register_manual_alarm(
+            hass, "burglar", "front_hall_panel_burglar", "Front Hall Panel Burglar"
         )
 
         client = await hass_ws_client(hass)
@@ -274,19 +336,16 @@ class TestActionsIntegration:
         assert "alarms" in response["result"]
         alarms = response["result"]["alarms"]
 
-        # Should have found the Abode alarm switches
-        assert len(alarms) >= 2
-
         # Each alarm should have required fields
         for alarm in alarms:
             assert "entity_id" in alarm
             assert "name" in alarm
             assert "type" in alarm
 
-        # Verify alarm types are detected
+        # Every triggerable type, and only those, resolved by unique_id.
+        assert {a["entity_id"] for a in alarms} == {panic, silent, medical}
         alarm_types = {a["type"] for a in alarms}
-        assert "panic" in alarm_types
-        assert "fire" in alarm_types
+        assert alarm_types == {"panic", "silent_panic", "medical"}
 
     async def test_config_get_and_set(
         self,
@@ -632,10 +691,10 @@ class TestActionTriggerIntegration:
         assert updated1.trigger_count == 1
         assert updated2.trigger_count == 1
 
-    async def test_enriched_event_payload_all_16_keys(
+    async def test_enriched_event_payload_all_19_keys(
         self, hass: HomeAssistant, integration_setup
     ) -> None:
-        """Fired event includes all 7 original keys plus 6 context keys plus 3 snapshot keys."""
+        """Fired event includes 7 original + 6 context + 3 snapshot + 3 outcome keys."""
         action_manager = integration_setup["action_manager"]
         events_fired = []
 
@@ -671,26 +730,9 @@ class TestActionTriggerIntegration:
         assert len(events_fired) == 1
         event_data = events_fired[0].data
 
-        # All 16 keys must be present (7 original + 6 Phase 1 context + 3 Phase 2 snapshot)
-        expected_keys = {
-            "action_id",
-            "action_name",
-            "triggered_by",
-            "mode",
-            "alarms_triggered",
-            "alarms_failed",
-            "timestamp",
-            "sensor_friendly_name",
-            "sensor_device_class",
-            "previous_state",
-            "new_state",
-            "sensor_area_id",
-            "sensor_area_name",
-            "camera_entity_id",
-            "snapshot_path",
-            "snapshot_error",
-        }
-        assert set(event_data.keys()) == expected_keys
+        # All 19 keys must be present
+        # (7 original + 6 Phase 1 context + 3 Phase 2 snapshot + 3 outcome)
+        assert set(event_data.keys()) == EXPECTED_EVENT_KEYS
 
         # Original 7 keys
         assert event_data["action_id"] == action.id
@@ -700,6 +742,17 @@ class TestActionTriggerIntegration:
         assert isinstance(event_data["alarms_triggered"], list)
         assert isinstance(event_data["alarms_failed"], list)
         assert isinstance(event_data["timestamp"], str)
+
+        # 3 outcome keys. The action points at an alarm switch that was never
+        # registered, so nothing was armed — the payload has to say so rather
+        # than look like a successful trigger.
+        assert event_data["alarms_triggered"] == []
+        assert event_data["alarms_failed"] == ["switch.abode_panic_alarm"]
+        assert event_data["alarm_outcome"] == "failed"
+        assert event_data["alarm_failures"] == {
+            "switch.abode_panic_alarm": "entity_missing"
+        }
+        assert event_data["severity"] == "critical"
 
         # 6 Phase 1 context keys
         assert event_data["sensor_friendly_name"] == "Enriched Door"
@@ -714,16 +767,19 @@ class TestActionTriggerIntegration:
         assert event_data["snapshot_path"] is None
         assert event_data["snapshot_error"] is None
 
-    async def test_snapshot_capture_with_co_located_camera_all_16_keys(
+    async def test_snapshot_capture_with_co_located_camera_all_19_keys(
         self, hass: HomeAssistant, integration_setup, tmp_path: Path
     ) -> None:
-        """Snapshot is captured and all 16 event payload keys are present with expected types.
+        """Snapshot is captured and the full 19-key event payload is present.
 
         Registers a camera on the same device as the triggering sensor, patches
         camera.snapshot to write a tiny JPEG, triggers in home mode, and asserts:
         - snapshot_path points at an existing file
-        - all 16 keys are present with correct types
-        - the 7 original backwards-compat keys are unchanged
+        - all 19 keys are present
+        - the 7 original backwards-compat keys keep their types
+
+        The 3 outcome keys are only checked for presence here; their values are
+        asserted in `test_enriched_event_payload_all_19_keys`.
         """
         action_manager = integration_setup["action_manager"]
         events_fired = []
@@ -792,26 +848,8 @@ class TestActionTriggerIntegration:
         assert len(events_fired) == 1
         event_data = events_fired[0].data
 
-        # All 16 keys must be present
-        expected_keys = {
-            "action_id",
-            "action_name",
-            "triggered_by",
-            "mode",
-            "alarms_triggered",
-            "alarms_failed",
-            "timestamp",
-            "sensor_friendly_name",
-            "sensor_device_class",
-            "previous_state",
-            "new_state",
-            "sensor_area_id",
-            "sensor_area_name",
-            "camera_entity_id",
-            "snapshot_path",
-            "snapshot_error",
-        }
-        assert set(event_data.keys()) == expected_keys
+        # All 19 keys must be present
+        assert set(event_data.keys()) == EXPECTED_EVENT_KEYS
 
         # Original 7 keys — types unchanged for backwards-compat
         assert event_data["action_id"] == action.id

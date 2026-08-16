@@ -764,10 +764,42 @@ describe('ActionsTab', () => {
       await el._confirmTest();
       await elementUpdated(el);
 
+      // The backend's reason is surfaced, not swallowed behind a generic
+      // string: a test that raised no alarm has to say so.
       // @ts-expect-error - accessing private property for testing
-      expect(el._operationError).to.equal('Failed to test action');
+      expect(el._operationError).to.equal('Failed to test action: alarm offline');
       // @ts-expect-error - accessing private property for testing
       expect(el._confirm).to.equal(null, 'confirm still closes on failure');
+    });
+
+    it('falls back to a generic message when the rejection carries none', async () => {
+      const action = createMockAction({ id: 'a1', name: 'A1' });
+      const hass = createMockHass({
+        callWS: ((params: { type: string }) => {
+          if (params.type === 'abode_security/actions/test') {
+            return Promise.reject({});
+          }
+          if (params.type === 'abode_security/actions/list') {
+            return Promise.resolve({ actions: [] });
+          }
+          return Promise.resolve({ success: true });
+        }) as HomeAssistant['callWS'],
+      });
+
+      const el = await fixture<ActionsTab>(html`
+        <abode-actions-tab .hass=${hass}></abode-actions-tab>
+      `);
+      await setState(el, { _actions: [action], _loading: false } as Partial<ActionsTab>);
+
+      // @ts-expect-error - accessing private method for testing
+      el._requestTest(action);
+      await elementUpdated(el);
+      // @ts-expect-error - accessing private method for testing
+      await el._confirmTest();
+      await elementUpdated(el);
+
+      // @ts-expect-error - accessing private property for testing
+      expect(el._operationError).to.equal('Failed to test action');
     });
   });
 
@@ -869,6 +901,60 @@ describe('ActionsTab', () => {
         ),
       });
     }
+
+    // The incident this came from: an action fired ten times, its alarm was
+    // rejected by Abode every time, and the list showed a healthy
+    // trigger_count with no hint anything was wrong.
+    describe('last-run outcome badge', () => {
+      async function mountWithOutcome(last_outcome: AbodeAction['last_outcome']) {
+        const hass = hassWithStates({ 'binary_sensor.front': 'off' });
+        const el = await fixture<ActionsTab>(html`
+          <abode-actions-tab .hass=${hass}></abode-actions-tab>
+        `);
+        await setState(el, {
+          _actions: [
+            createMockAction({
+              name: 'Call the police',
+              sensor_entity_ids: ['binary_sensor.front'],
+              trigger_count: 10,
+              last_outcome,
+            }),
+          ],
+          _loading: false,
+        } as Partial<ActionsTab>);
+        return el;
+      }
+
+      it('shouts when the last run failed to raise the alarm', async () => {
+        const el = await mountWithOutcome('failed');
+        const badge = el.shadowRoot?.querySelector('.outcome-badge.failed');
+        expect(badge, 'expected a failed outcome badge').to.exist;
+        expect((badge?.textContent ?? '').trim()).to.contain('alarm failed');
+        expect(badge?.getAttribute('title')).to.contain('did NOT fire');
+      });
+
+      it('distinguishes a partial failure', async () => {
+        const el = await mountWithOutcome('partial');
+        const badge = el.shadowRoot?.querySelector('.outcome-badge.failed');
+        expect((badge?.textContent ?? '').trim()).to.contain('alarm partly failed');
+      });
+
+      it('labels notification-only actions', async () => {
+        const el = await mountWithOutcome('none');
+        const badge = el.shadowRoot?.querySelector('.outcome-badge.notification-only');
+        expect((badge?.textContent ?? '').trim()).to.contain('notification only');
+      });
+
+      it('stays quiet when the alarm armed correctly', async () => {
+        const el = await mountWithOutcome('armed');
+        expect(el.shadowRoot?.querySelector('.outcome-badge')).to.equal(null);
+      });
+
+      it('stays quiet for actions that predate the field', async () => {
+        const el = await mountWithOutcome(undefined);
+        expect(el.shadowRoot?.querySelector('.outcome-badge')).to.equal(null);
+      });
+    });
 
     it("renders 'N of M sensors unavailable' when any referenced sensor is unavailable", async () => {
       const hass = hassWithStates({

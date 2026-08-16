@@ -38,3 +38,28 @@ def find_abode_alarm_panel(hass: HomeAssistant) -> State | None:
         if state.entity_id.startswith("alarm_control_panel.abode"):
             return state
     return None
+
+
+# Marker embedded in every manual alarm switch's unique_id, which is built as
+# f"{alarm.id}-manual-alarm-{alarm_type.lower()}" in switch.py.
+MANUAL_ALARM_UNIQUE_ID_MARKER = "-manual-alarm-"
+
+
+def manual_alarm_type_for_entity(hass: HomeAssistant, entity_id: str) -> str | None:
+    """Return the upper-case alarm type behind a manual alarm switch entity.
+
+    Returns None when the entity isn't one of ours, or isn't registered.
+    Reads the unique_id rather than pattern-matching the entity_id so a
+    renamed panel device doesn't break the lookup.
+    """
+    registry = er.async_get(hass)
+    entry = registry.async_get(entity_id)
+    if entry is None or entry.platform != DOMAIN or entry.domain != "switch":
+        return None
+
+    unique_id = entry.unique_id or ""
+    marker_at = unique_id.find(MANUAL_ALARM_UNIQUE_ID_MARKER)
+    if marker_at == -1:
+        return None
+
+    return unique_id[marker_at + len(MANUAL_ALARM_UNIQUE_ID_MARKER) :].upper()

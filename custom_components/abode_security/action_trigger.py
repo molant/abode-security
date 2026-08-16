@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.const import EVENT_STATE_CHANGED
+from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE
 from homeassistant.core import (
     CALLBACK_TYPE,
     Event,
@@ -25,8 +25,8 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later
 
-from . import snapshot
-from .const import DOMAIN
+from . import action_repair, snapshot
+from .const import ALARM_SWITCH_DOMAIN, DOMAIN
 from .helpers import find_abode_alarm_panel
 
 if TYPE_CHECKING:
@@ -54,6 +54,37 @@ STATE_TO_MODE = {
     "armed_home": "home",
     "armed_away": "away",
 }
+
+
+def _alarm_outcome(triggered: list[str], failed: list[str]) -> str:
+    """Summarise what actually happened to the action's alarms.
+
+    Exists because `alarms_triggered` / `alarms_failed` were on the event from
+    the start and nothing ever read them, so a notification for an action whose
+    alarm failed outright was indistinguishable from a successful one.
+    """
+    if failed and triggered:
+        return "partial"
+    if failed:
+        return "failed"
+    if triggered:
+        return "armed"
+    return "none"
+
+
+def _severity(triggered: list[str], failed: list[str], mode: str) -> str:
+    """Decide how loudly this event deserves to be announced.
+
+    Computed here rather than in the notification blueprint so custom
+    automations get the same escalation. A promised alarm that did *not* fire
+    is treated as critical, not as a lesser event — the user believes their
+    monitoring service was contacted when it was not.
+    """
+    if triggered or failed:
+        return "critical"
+    if mode == "away":
+        return "high"
+    return "normal"
 
 
 class ActionTriggerCoordinator:
@@ -324,27 +355,31 @@ class ActionTriggerCoordinator:
         """
         alarms_triggered: list[str] = []
         alarms_failed: list[str] = []
+        alarm_failures: dict[str, str] = {}
 
         for alarm_entity_id in action.alarm_entity_ids:
-            try:
-                await self._hass.services.async_call(
-                    "switch",
-                    "turn_on",
-                    {"entity_id": alarm_entity_id},
-                    blocking=True,
-                )
+            failure = await self.async_arm_alarm(alarm_entity_id, action.name)
+            if failure is None:
                 alarms_triggered.append(alarm_entity_id)
-            except Exception as err:
-                _LOGGER.warning(
-                    "Failed to trigger alarm %s for action '%s': %s",
-                    alarm_entity_id,
-                    action.name,
-                    err,
-                )
+            else:
                 alarms_failed.append(alarm_entity_id)
+                alarm_failures[alarm_entity_id] = failure
 
-        # Record the trigger
-        await self._action_manager.async_record_trigger(action.id)
+        outcome = _alarm_outcome(alarms_triggered, alarms_failed)
+        await self._action_manager.async_record_trigger(action.id, outcome)
+
+        if alarms_failed:
+            action_repair.async_raise_alarm_failed_issue(
+                self._hass,
+                action_id=action.id,
+                action_name=action.name,
+                entity_ids=alarms_failed,
+                reason="; ".join(f"{k}: {v}" for k, v in alarm_failures.items()),
+            )
+        elif alarms_triggered:
+            # Only clear on a genuinely successful arm — a notification-only
+            # action must not silently resolve a real prior failure.
+            action_repair.async_clear_alarm_failed_issue(self._hass, action.id)
 
         await self._capture_and_fire(
             action=action,
@@ -352,15 +387,109 @@ class ActionTriggerCoordinator:
             current_mode=current_mode,
             alarms_triggered=alarms_triggered,
             alarms_failed=alarms_failed,
+            alarm_failures=alarm_failures,
             force_snapshot=False,
+            outcome=outcome,
         )
 
-        _LOGGER.info(
+        log = _LOGGER.error if alarms_failed else _LOGGER.info
+        log(
             "Action '%s' executed: %d alarms triggered, %d failed",
             action.name,
             len(alarms_triggered),
             len(alarms_failed),
         )
+
+    async def async_arm_alarm(
+        self, alarm_entity_id: str, action_name: str
+    ) -> str | None:
+        """Turn on one alarm switch. Returns None on success, else a reason.
+
+        Public because the panel's Test button goes through it too — that path
+        previously had its own copy of the service call and reported success
+        whenever `switch.turn_on` didn't raise.
+
+        A returning `switch.turn_on` does not by itself mean an alarm was
+        raised. Home Assistant drops missing, *unavailable*, and out-of-domain
+        entities before dispatching an entity service call, logging rather than
+        raising (`helpers/service.py`: `entity_candidates = [e for e in
+        entity_candidates if e.available]`). Each case used to be recorded as a
+        successful arm. All three are checked up front here.
+        """
+        # `cv.entity_id` on the create/update schemas validates the *format*
+        # only, so a stored action can name `light.porch` and reach this point.
+        # `switch.turn_on` would then match no switch entity and return without
+        # raising — the same silent no-op as a missing entity. Checked here
+        # rather than in the schema so actions already in the store are covered
+        # too, not just new WebSocket input.
+        if alarm_entity_id.split(".")[0] != ALARM_SWITCH_DOMAIN:
+            _LOGGER.error(
+                "Alarm entity %s for action '%s' is not in the switch domain — "
+                "switch.turn_on cannot dispatch to it, so no alarm was raised",
+                alarm_entity_id,
+                action_name,
+            )
+            return "entity_wrong_domain"
+
+        state = self._hass.states.get(alarm_entity_id)
+        if state is None:
+            _LOGGER.error(
+                "Alarm entity %s for action '%s' does not exist — no alarm raised",
+                alarm_entity_id,
+                action_name,
+            )
+            return "entity_missing"
+
+        # Abode entities track the SocketIO connection
+        # (AbodeEntity._update_connection_status), and the client recreates its
+        # session every ~30 minutes, so this is a routine state — not an edge
+        # case. Checked before the call, so unlike an after-the-fact state
+        # re-read there is no await for a concurrent callback to slip into.
+        if state.state == STATE_UNAVAILABLE:
+            _LOGGER.error(
+                "Alarm entity %s for action '%s' is unavailable — Home Assistant "
+                "will not dispatch to it, so no alarm was raised",
+                alarm_entity_id,
+                action_name,
+            )
+            return "entity_unavailable"
+
+        try:
+            await self._hass.services.async_call(
+                ALARM_SWITCH_DOMAIN,
+                "turn_on",
+                {"entity_id": alarm_entity_id},
+                blocking=True,
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to trigger alarm %s for action '%s': %s",
+                alarm_entity_id,
+                action_name,
+                err,
+            )
+            return f"api_error: {err}"[:200]
+
+        # Deliberately no post-call state re-check. Two earlier revisions had
+        # one and both were wrong in the same direction — reporting a raised
+        # alarm as failed, which is the worst error this module can make:
+        #
+        #  - Re-reading on/off races `_alarm_end_callback`, which clears
+        #    `_attr_is_on` on *every* manual alarm switch, so a dismissal for a
+        #    previous alarm lands as a false failure.
+        #  - Re-reading availability looks race-free but isn't: a successful
+        #    `async_turn_on` ends in `async_write_ha_state()`, and HA's
+        #    `_stringify_state` stamps `unavailable` if availability flipped at
+        #    any point during the call. That call blocks for the inline
+        #    timeline lookup — `timeline_event_retry_delays` sums to 67s — so
+        #    any SocketIO drop in a ~70s window would report a successfully
+        #    dispatched alarm as failed.
+        #
+        # The pre-call checks above carry nearly all the value at none of that
+        # cost. What remains is a sub-millisecond window between the pre-check
+        # and HA's own `entity_candidates` filter; erring toward "armed" there
+        # is the right trade against a 70-second false-failure window.
+        return None
 
     async def _capture_and_fire(
         self,
@@ -370,7 +499,9 @@ class ActionTriggerCoordinator:
         current_mode: str,
         alarms_triggered: list[str],
         alarms_failed: list[str],
+        alarm_failures: dict[str, str] | None = None,
         force_snapshot: bool,
+        outcome: str | None = None,
     ) -> None:
         """Resolve the co-located camera, optionally snapshot, and fire the event.
 
@@ -412,6 +543,11 @@ class ActionTriggerCoordinator:
             "mode": current_mode,
             "alarms_triggered": alarms_triggered,
             "alarms_failed": alarms_failed,
+            "alarm_outcome": outcome
+            if outcome is not None
+            else _alarm_outcome(alarms_triggered, alarms_failed),
+            "alarm_failures": alarm_failures or {},
+            "severity": _severity(alarms_triggered, alarms_failed, current_mode),
             "timestamp": datetime.now(UTC).isoformat(),
             # Sensor context captured at trigger time — not re-fetched here so
             # delayed actions carry the state that caused the trigger, not the
