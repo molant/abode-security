@@ -480,15 +480,15 @@ class ActionTriggerCoordinator:
         #  - Re-reading availability looks race-free but isn't: a successful
         #    `async_turn_on` ends in `async_write_ha_state()`, and HA's
         #    `_stringify_state` stamps `unavailable` if availability flipped at
-        #    any point during the call. That call blocks for the inline
-        #    timeline lookup — `timeline_event_retry_delays` sums to 67s — so
-        #    any SocketIO drop in a ~70s window would report a successfully
-        #    dispatched alarm as failed.
+        #    any point during the call. That window used to be ~70s wide (the
+        #    inline timeline lookup); #194 moved that lookup off this path, so
+        #    it is now roughly one round-trip — but a SocketIO drop inside it
+        #    would still report a successfully dispatched alarm as failed.
         #
         # The pre-call checks above carry nearly all the value at none of that
         # cost. What remains is a sub-millisecond window between the pre-check
         # and HA's own `entity_candidates` filter; erring toward "armed" there
-        # is the right trade against a 70-second false-failure window.
+        # is the right trade against reporting a raised alarm as failed.
         return None
 
     async def _capture_and_fire(

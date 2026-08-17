@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -52,6 +54,39 @@ ALARM_TYPE_EVENT_CODES = {
     "SMOKE": ["1111"],  # Smoke Detected
     "BURGLAR": ["1133"],  # Burglar Alarm Triggered
 }
+
+
+# How long entity removal waits for a cancelled event-ID lookup to unwind. The
+# lookup only ever awaits network I/O and `asyncio.sleep`, so this is a backstop
+# against blocking teardown, not an expected duration.
+EVENT_ID_TASK_TEARDOWN_SECONDS = 5.0
+
+
+@dataclass
+class _EventIdLookup:
+    """One run of the background timeline event-ID lookup.
+
+    Handed to the task that performs it, so everything about that run is reached
+    through a reference the task holds rather than through entity state a later
+    alarm cycle can overwrite. That is what makes the abandoned-dismissal report
+    exactly-once: one lookup per task, one `finally` per task, and the report
+    reads the object it was given. No identity checks, no verdict that has to
+    survive an await.
+
+    `dismissal_requested` is set by `async_turn_off` when it finds no event ID to
+    dismiss with; `dismissal_settled` when the dismissal was sent, or made moot by
+    the alarm ending; `superseded` when another `TimelineGroups.ALARM` event
+    arrived after the dismissal was asked for, which disqualifies `_timeline_id`
+    as a fallback target; `withheld_target` is that disqualified ID, recorded
+    where the decision is made so the warning can name it without re-reading
+    entity state that may since have moved on.
+    """
+
+    task: asyncio.Task[None] | None = None
+    dismissal_requested: bool = False
+    dismissal_settled: bool = False
+    superseded: bool = False
+    withheld_target: str | None = None
 
 
 def _map_event_code_to_alarm_type(event_code: str, alarm_type: str) -> bool:
@@ -218,6 +253,9 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
 
     _alarm_type: str
     _timeline_id: str | None = None
+    # Non-None only while a lookup may still be running: set when the task is
+    # created, cleared by the task's own unwind or by whoever cancels it.
+    _lookup: _EventIdLookup | None = None
 
     # Icon mapping for alarm types
     ALARM_ICONS = {
@@ -272,6 +310,15 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
 
     async def async_will_remove_from_hass(self) -> None:
         """Clean up event subscriptions when removed."""
+        # Cancel first so the lookup stops early, but wait for it *after* the
+        # callbacks are gone: `_alarm_event_callback` / `_alarm_end_callback`
+        # both call `schedule_update_ha_state()`, and waiting here first would
+        # leave them registered against a half-torn-down entity for as long as
+        # the task takes to unwind.
+        lookup = self._lookup
+        self._cancel_event_id_lookup()
+        task = lookup.task if lookup is not None else None
+
         await super().async_will_remove_from_hass()
         await self._run_executor_with_timeout(
             self._data.abode.events.remove_event_callback,
@@ -283,6 +330,26 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
             TimelineGroups.ALARM_END,
             self._alarm_end_callback,
         )
+
+        if task is not None:
+            # `asyncio.wait` rather than `await task` under
+            # `suppress(CancelledError)`: that cannot tell the task's own
+            # cancellation from a cancellation of *this* coroutine, and would
+            # swallow the latter.
+            _, pending = await asyncio.wait(
+                {task}, timeout=EVENT_ID_TASK_TEARDOWN_SECONDS
+            )
+            if pending:
+                # Not expected to fire — the task only ever awaits network I/O
+                # and `asyncio.sleep`. If it does, the task outlives the entity
+                # and its next state write raises against a removed one, so say
+                # which entity so the two can be connected.
+                LOGGER.warning(
+                    "Event id lookup for the %s alarm did not unwind within "
+                    "%.0fs of being cancelled",
+                    self._alarm_type,
+                    EVENT_ID_TASK_TEARDOWN_SECONDS,
+                )
 
     def _alarm_event_callback(self, event: dict[str, Any]) -> None:
         """Handle alarm trigger events from timeline.
@@ -298,6 +365,18 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
         event_code = event.get("event_code", "")
         if not _map_event_code_to_alarm_type(event_code, self._alarm_type):
             return
+
+        # An ALARM event arriving after a dismissal was asked for disqualifies
+        # this ID as that dismissal's fallback *target*. It may be a genuinely new
+        # alarm or just our own alarm's late event — the payload cannot tell, and
+        # since deferral only happens when no ID had arrived yet, the late-event
+        # case is the likelier one. `dismiss_timeline_event` ignores one specific
+        # event, so guessing wrong the other way would silently swallow an alarm
+        # nobody has seen. The dismissal still goes out if the lookup finds its
+        # own event id.
+        lookup = self._lookup
+        if lookup is not None and lookup.dismissal_requested:
+            lookup.superseded = True
 
         # Update state when alarm is triggered
         self._timeline_id = event.get("id")
@@ -331,6 +410,12 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
         # When any alarm is dismissed, turn off all alarms
         # (since triggering one alarm dismisses all in Abode)
         self._timeline_id = None
+        # The alarm is over, so an in-flight event-ID lookup has nothing left to
+        # do — and a dismissal riding on it is now satisfied rather than
+        # abandoned: the alarm ending is what it was waiting for. Safe to cancel
+        # from here: timeline callbacks run on the event loop
+        # (`event_controller._execute_callback`).
+        self._cancel_event_id_lookup(settled=True)
         self._attr_is_on = False
         LOGGER.info(
             "Alarm %s ended via event (event_code: %s, all alarms dismissed)",
@@ -357,30 +442,294 @@ class AbodeManualAlarmSwitch(AbodeAlarmAttachedEntity, SwitchEntity):
                 },
             )
 
-        response = await self._alarm.trigger_manual_alarm(self._alarm_type)
-        # Safely extract event_id from response, handling non-dict responses
-        if isinstance(response, dict):
-            self._timeline_id = response.get("event_id")
-        else:
-            self._timeline_id = None
+        # Cleared *before* the POST, not after: the SocketIO ALARM event for
+        # this alarm can land while the request is still in flight, and
+        # `_alarm_event_callback`'s ID is the authoritative one. Anything still
+        # set at this point belongs to a previous alarm.
+        previous_timeline_id = self._timeline_id
+        was_resolving = self._lookup is not None
+        self._cancel_event_id_lookup()
+        self._timeline_id = None
 
-        LOGGER.info(
-            "Triggered manual alarm of type: %s (event_id: %s)",
-            self._alarm_type,
-            self._timeline_id,
-        )
+        try:
+            await self._alarm.trigger_manual_alarm(self._alarm_type)
+        except BaseException:
+            # No new alarm was raised, so nothing superseded the one this switch
+            # was already tracking. Leaving the ID cleared would strand a live
+            # alarm with no way to dismiss it — its SocketIO ALARM event fired
+            # long ago and will not repeat. BaseException, not Exception: a POST
+            # cancelled at shutdown strands the ID exactly the same way.
+            if self._timeline_id is None and self._attr_is_on:
+                self._timeline_id = previous_timeline_id
+            if self._timeline_id is None and was_resolving and self._attr_is_on:
+                # The cancelled lookup cannot be restored the way the ID can, so
+                # the previous alarm is now live with neither an ID nor anything
+                # still trying to find one. A 429 on a re-trigger inside the
+                # 30-67s resolution window is enough to get here, and without
+                # this the loss is invisible until someone tries to dismiss.
+                LOGGER.warning(
+                    "Re-triggering the %s alarm failed after its previous event "
+                    "id lookup was cancelled — the earlier alarm may still be "
+                    "live in Abode with no id to dismiss it",
+                    self._alarm_type,
+                )
+            raise
+
+        LOGGER.info("Triggered manual alarm of type: %s", self._alarm_type)
         self._attr_is_on = True
         self.async_write_ha_state()
+
+        # Resolving the timeline event ID polls Abode for up to ~67s (the API
+        # does not expose a triggered alarm on the timeline for 30-60s). It is
+        # only needed for a later dismissal, so it runs off the critical path —
+        # the alarm is already raised, and the `action_triggered` event that
+        # drives the user's notification fires as soon as this returns. See
+        # issue #194.
+        #
+        # An action wired to several alarm switches now polls once per switch on
+        # the same retry schedule, so those requests arrive together rather than
+        # spread out by the old inline serialization. The timeline endpoint has
+        # not shown the 429s the panel/CMS endpoints do; if it starts to, jitter
+        # belongs in `Alarm.timeline_event_retry_delays`, not here.
+        # Assigned before the task is created, not after: under eager start the
+        # coroutine can reach its `finally` first, and that clears `self._lookup`
+        # only when it still points at this lookup. Unwound on failure so a lookup
+        # that never ran cannot linger and make `was_resolving` lie.
+        lookup = _EventIdLookup()
+        self._lookup = lookup
+        try:
+            lookup.task = self.hass.async_create_background_task(
+                self._async_resolve_timeline_id(lookup),
+                name=f"abode_security resolve alarm event id {self._alarm_type}",
+            )
+        except BaseException:
+            if self._lookup is lookup:
+                self._lookup = None
+            raise
+
+    async def _async_resolve_timeline_id(self, lookup: _EventIdLookup) -> None:
+        """Resolve the timeline event ID, then store it or spend it dismissing."""
+        try:
+            event_id = await self._alarm.find_alarm_event_id()
+
+            if lookup.dismissal_requested:
+                # `async_turn_off` ran while this lookup was still in flight and
+                # handed the dismissal here rather than dropping it.
+                await self._async_send_dismissal(lookup, event_id)
+                return
+
+            if not event_id:
+                return
+
+            # Two ways this result can already be stale by the time it lands:
+            # `_alarm_event_callback` supplied the real ID over SocketIO (better
+            # source, keep it), or the alarm was dismissed/ended in the meantime
+            # (storing the ID would make the next `turn_off` dismiss an event
+            # that is already gone).
+            if not self._attr_is_on or self._timeline_id is not None:
+                LOGGER.debug(
+                    "Discarding polled event id %s for %s (is_on=%s, known id=%s)",
+                    event_id,
+                    self._alarm_type,
+                    self._attr_is_on,
+                    self._timeline_id,
+                )
+                return
+
+            self._timeline_id = event_id
+            LOGGER.info(
+                "Resolved timeline event id for %s alarm: %s",
+                self._alarm_type,
+                event_id,
+            )
+        finally:
+            # Every exit — resolved, gave up, dismissal sent, dismissal failed,
+            # cancelled by `_cancel_event_id_lookup`, or cancelled out of band by
+            # HA at shutdown — passes through here exactly once per task, and
+            # reports the lookup it was *handed* rather than whatever the entity
+            # currently points at. That is what makes "an abandoned dismissal is
+            # reported exactly once" hold by construction: a later cycle can
+            # replace `self._lookup`, but it cannot reach this one's obligation.
+            if self._lookup is lookup:
+                self._lookup = None
+            if lookup.dismissal_requested and not lookup.dismissal_settled:
+                # Names the withheld id and why: on the `superseded` path this
+                # warning is the only output, and the remedy is a manual dismissal.
+                LOGGER.warning(
+                    "The pending dismissal of the %s alarm was not sent — the "
+                    "alarm may still be live in Abode (superseded=%s, "
+                    "withheld id=%s)",
+                    self._alarm_type,
+                    lookup.superseded,
+                    lookup.withheld_target,
+                )
+
+    async def _async_send_dismissal(
+        self, lookup: _EventIdLookup, event_id: str | None
+    ) -> None:
+        """Send a dismissal `async_turn_off` could not send itself.
+
+        Runs inside the background lookup task, so it has no caller to raise to
+        and must consume its own errors — an escaping exception would surface
+        only as an unretrieved-task traceback. Anything short of success leaves
+        `lookup.dismissal_settled` false, and the caller's `finally` says so.
+        """
+        # The polled ID wins. Note what the poll does and does not guarantee:
+        # `_find_timeline_alarm_event` takes the newest `is_alarm` event aged
+        # `[0, 90]`s relative to its own start, so it cannot return an alarm
+        # raised *after* this lookup began, but a flat 90s backward bound means it
+        # can return an earlier one (see `features/pending.md`). `_timeline_id` is
+        # the fallback for a poll that came back empty on a transient error — and
+        # only while nothing newer has arrived, because `dismiss_timeline_event`
+        # ignores one specific event, and spending this dismissal on an alarm
+        # raised after the user asked for it would silently swallow one they have
+        # not seen.
+        target = event_id
+        if target is None:
+            if lookup.superseded:
+                lookup.withheld_target = self._timeline_id
+            else:
+                target = self._timeline_id
+        if not target:
+            return
+
+        try:
+            await self._data.abode.dismiss_timeline_event(target)
+        except Exception:
+            LOGGER.exception(
+                "Deferred dismissal of the %s alarm (timeline event %s) failed",
+                self._alarm_type,
+                target,
+            )
+            return
+
+        lookup.dismissal_settled = True
+        LOGGER.info("Dismissed timeline event: %s (deferred)", target)
+        # Reconcile: `_alarm_event_callback` may have flipped the switch back on
+        # and stored this ID during the deferral window. Waiting for ALARM_END to
+        # tidy up would leave the switch reporting a live alarm, holding an ID
+        # that now points at a dismissed event. Guarded, because that same
+        # callback may instead hold a *newer* alarm's ID, and its ALARM event
+        # will not repeat — clearing it would make that alarm undismissable.
+        if self._timeline_id in (None, target):
+            self._timeline_id = None
+            self._attr_is_on = False
+            self.async_write_ha_state()
+        else:
+            # Mirrors the inline path's warning. "Your dismissal landed on an
+            # older event and a newer alarm is live" is the more confusing of the
+            # two outcomes, so it should not be the quieter one.
+            LOGGER.warning(
+                "Dismissed the %s alarm's earlier timeline event %s, but a newer "
+                "alarm (event %s) is live — leaving the switch on so it can still "
+                "be dismissed",
+                self._alarm_type,
+                target,
+                self._timeline_id,
+            )
+
+    def _cancel_event_id_lookup(self, *, settled: bool = False) -> None:
+        """Stop the in-flight event-ID lookup.
+
+        `settled` when whatever a pending dismissal was waiting for has already
+        happened. Settling the obligation is the *only* thing that keeps the
+        abandoned-dismissal warning off the benign paths; every other caller
+        leaves it outstanding and the owning task reports it as it unwinds.
+
+        Two callers pass it, and they know it to different degrees. `ALARM_END`
+        knows it: Abode said the alarm is over. The inline branch of
+        `async_turn_off` is making a judgement — it just dismissed the ID now on
+        the entity, and treats that as discharging an earlier request for which no
+        ID had arrived. In that situation the lookup is necessarily `superseded`
+        (only `_alarm_event_callback` can put an ID there while a dismissal is
+        outstanding, and it sets that flag), so this settles on exactly the
+        ambiguity `_async_send_dismissal` refuses to resolve. The asymmetry is
+        deliberate: deferral only happens when no ID had arrived, which makes the
+        late-own-event reading the likely one, and warning here would fire on that
+        common path — the false alarm that makes the real warnings worthless. The
+        cost is that the rarer reading (a genuinely different alarm) settles an
+        obligation that was not actually met, silently. `dismiss_timeline_event`
+        ignoring one specific event is what makes both readings survivable: the
+        other alarm keeps its own ID and stays dismissable.
+        """
+        lookup = self._lookup
+        if lookup is None:
+            return
+
+        if settled:
+            lookup.dismissal_settled = True
+        self._lookup = None
+
+        task = lookup.task
+        if task is not None and not task.done():
+            task.cancel()
 
     @handle_abode_errors("dismiss timeline event")
     async def async_turn_off(self, **_kwargs: Any) -> None:
         """Dismiss the manual alarm (if timeline event ID is available)."""
+        lookup = self._lookup
+        superseded_by: str | None = None
         if self._timeline_id:
-            await self._data.abode.dismiss_timeline_event(self._timeline_id)
-            LOGGER.info("Dismissed timeline event: %s", self._timeline_id)
-            self._timeline_id = None
+            # Captured before the await, and logged from the capture: reading the
+            # attribute back afterwards can name an event that was never
+            # dismissed, on a path where the log is the audit trail.
+            target = self._timeline_id
+            await self._data.abode.dismiss_timeline_event(target)
+            LOGGER.info("Dismissed timeline event: %s", target)
+            # Settles any dismissal riding on the lookup: what it was waiting to
+            # do has just been done. Reached only *after* the await — a failed
+            # inline dismissal raises through `handle_abode_errors` and leaves the
+            # obligation outstanding as a fallback.
+            self._cancel_event_id_lookup(settled=True)
+            # Same reconciliation rule as the deferred path: only clear what was
+            # actually dismissed. `_alarm_event_callback` can fire during the
+            # await with a *newer* alarm's id, and that alarm's ALARM event will
+            # not repeat — clearing it would make it undismissable, and reporting
+            # the switch off would hide it.
+            if self._timeline_id in (None, target):
+                self._timeline_id = None
+            else:
+                superseded_by = self._timeline_id
+        elif lookup is not None and lookup.dismissal_requested:
+            LOGGER.info(
+                "A dismissal of the %s alarm is already pending on its event id lookup",
+                self._alarm_type,
+            )
+        elif lookup is not None and lookup.task is not None:
+            # The ID is still being resolved. Waiting for it here is the wrong
+            # trade twice over: Abode typically needs 30-60s to expose the event
+            # at all, and `PARALLEL_UPDATES = 1` means a blocked `turn_off`
+            # serializes every other Abode switch call behind it — including the
+            # `switch.turn_on` that raises the *next* alarm, which is exactly the
+            # latency #194 set out to remove. So the dismissal is handed to the
+            # lookup instead, and sent the moment the ID lands.
+            lookup.dismissal_requested = True
+            LOGGER.info(
+                "No timeline event id for the %s alarm yet; the dismissal will "
+                "be sent to Abode as soon as the lookup resolves",
+                self._alarm_type,
+            )
+        elif self._attr_is_on:
+            # Not silent: the switch is about to report off while the alarm may
+            # still be live in Abode, and that is a security path. Reachable when
+            # neither the SocketIO ALARM event nor the timeline poll ever
+            # produced an ID.
+            LOGGER.warning(
+                "No timeline event id for the %s alarm — nothing was dismissed "
+                "in Abode; the switch is reporting off regardless",
+                self._alarm_type,
+            )
 
-        self._attr_is_on = False
+        if superseded_by is None:
+            self._attr_is_on = False
+        else:
+            LOGGER.warning(
+                "A new %s alarm (timeline event %s) was raised while the previous "
+                "one was being dismissed — leaving the switch on so it can still "
+                "be dismissed",
+                self._alarm_type,
+                superseded_by,
+            )
         self.async_write_ha_state()
 
 

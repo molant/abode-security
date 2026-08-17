@@ -158,6 +158,75 @@ Such records are deliberately **not** disabled at load either — a failing acti
 which is the only signal the user gets during the incident; the startup repair issue makes
 sure it isn't silent.
 
+##### Event-ID resolution and deferred dismissal
+
+Raising the alarm is the `POST /integrations/v1/panel/alarm`; the timeline event ID is only
+needed later, to *dismiss* it. Abode does not expose a triggered alarm on the timeline for
+30-60 s, so `Alarm._find_timeline_alarm_event` polls on a `(0, 2, 5, 10, 20, 30)` backoff —
+67 s in the worst case. That poll used to run inline inside `trigger_manual_alarm`, which
+put it in front of `async_arm_alarm`, `_execute_action`, and therefore the
+`action_triggered` event that drives the user's notification: a "call the police" action
+notified 30-70 s after the break-in (#194).
+
+`trigger_manual_alarm` now returns as soon as the POST is confirmed. The poll lives in
+`Alarm.find_alarm_event_id()` (best-effort, never raises except `CancelledError`), which
+`AbodeManualAlarmSwitch.async_turn_on` runs as an HA background task.
+
+The ID has two sources and SocketIO is the authoritative one: `_alarm_event_callback` sets
+`_timeline_id` when the `TimelineGroups.ALARM` event arrives, and the poll is the fallback
+for when it does not. `async_turn_on` therefore clears `_timeline_id` *before* the POST, and
+the poll result is discarded if SocketIO already supplied one.
+
+Dismissal is what backgrounding put at risk, since `switch.turn_off` inside the resolution
+window finds no ID. `async_turn_off` does not wait for one — the poll usually needs the full
+30-60 s, and `PARALLEL_UPDATES = 1` means a blocked `turn_off` serializes the `switch.turn_on`
+that raises the *next* alarm. Instead it marks the dismissal as owed on the lookup, and the
+background task sends it once the ID lands.
+
+That obligation is an `_EventIdLookup` — one object per lookup run, **handed to the task that
+performs it** rather than left in entity state a later alarm cycle can overwrite. The task
+reports an unsent dismissal from its own `finally`, reading the object it was given, so
+"an abandoned dismissal is reported exactly once" holds by construction: one lookup per task,
+one `finally` per task, no identity checks, and no verdict that has to survive an await.
+`_cancel_event_id_lookup(settled=True)` marks the obligation settled before cancelling (the
+alarm ended, or was just dismissed inline); every other caller leaves it outstanding, and a
+cancellation that bypasses the helper entirely — HA stopping its background tasks at
+shutdown — is covered by the same `finally` for free.
+
+Which event the deferred dismissal targets is a deliberate choice, because
+`dismiss_timeline_event` ignores one *specific* event (`POST timeline_ignore_alarm/<id>`). The
+polled ID wins, and `_timeline_id` is only the fallback for a poll that came back empty on a
+transient error — and then only while nothing newer has arrived. A `TimelineGroups.ALARM` event
+landing after the dismissal was asked for may be a *new* alarm rather than a late event for
+ours, and the payload cannot tell them apart, so it marks the lookup `superseded` and the
+fallback is withdrawn. Failing to dismiss is loud and recoverable; silently ignoring an alarm
+nobody has seen is neither.
+
+
+Settling an obligation has one asymmetry worth knowing. `ALARM_END` settles it on fact — Abode
+said the alarm is over. The inline branch of `async_turn_off` settles it on a judgement: it
+just dismissed the ID now on the entity, and treats that as discharging an earlier request for
+which no ID had arrived. In that situation the lookup is necessarily `superseded`, so this
+resolves the same ambiguity `_async_send_dismissal` refuses to resolve, and in the opposite
+direction. That is deliberate — deferral only happens when no ID had arrived, which makes the
+late-own-event reading the likely one, and warning there would fire on the common path. The
+accepted cost is that the rarer reading settles an obligation that was not met, silently;
+per-event dismissal semantics are what make both readings survivable, since the other alarm
+keeps its own ID.
+
+What the poll guarantees is narrower than "the event this lookup triggered", and the ordering
+above should not be read as more: `_find_timeline_alarm_event` accepts the newest event with
+`is_alarm == '1'` whose age falls in `[0, 90]` seconds relative to the lookup's own start. The
+forward bound is what makes it safe against the new-alarm case — a later alarm has a negative
+age and is skipped. The backward bound is a flat 90 s, so a second alarm raised while the
+first is still surfacing can be handed the first one's ID. Bounding that window against
+elapsed lookup time is tracked in `features/pending.md`.
+
+An earlier revision split this across three booleans on the entity, read from three reporting
+sites. It took several rounds of review to stabilise and each fix exposed another instance of
+the same bug class — entity-scoped state written by more than one owner across an await. The
+handed-to-the-owner shape is the same behaviour with that class of bug made unrepresentable.
+
 ### Actions system (`action_manager.py`, `action_trigger.py`)
 
 User-defined mappings from **sensor activation → event fire (and optionally an alarm trigger)**, gated by alarm mode.
@@ -171,7 +240,7 @@ The `abode_security.action_triggered` event payload carries 19 keys: the origina
 
 `alarm_outcome` (`armed` / `partial` / `failed` / `none`) and `severity` (`critical` / `high` / `normal`) exist because `alarms_triggered` and `alarms_failed` shipped from the start and nothing ever read them: an action whose alarm was rejected by the API produced a notification identical to a successful one. Severity is computed in the integration (`action_trigger._severity`) rather than in the blueprint so custom automations escalate the same way, and a *failed* alarm is rated `critical` — the user believes monitoring was contacted when it was not. `_execute_action` also verifies rather than assumes, but only *before* the call: `async_arm_alarm` checks the target entity is in the `switch` domain, exists, and is available, because HA drops out-of-domain, missing, and unavailable entities from an entity service call and only logs it (`helpers/service.py`), and Abode entities go unavailable whenever the SocketIO stream drops. (The domain check matters because `cv.entity_id` on the WebSocket schemas validates the `domain.object_id` *format* only — a stored action naming `light.porch` would otherwise pass every guard and be recorded as armed.) A returning service call is then taken as success.
 
-There is deliberately **no** post-call state check. Two were tried and both reported successfully raised alarms as failures: re-reading on/off races `_alarm_end_callback`, which clears `_attr_is_on` on every manual alarm switch; and re-reading availability is poisoned by `async_turn_on`'s own closing `async_write_ha_state()`, which stamps `unavailable` if availability flipped at any point during a call that blocks for the inline timeline lookup (67 s of retry delays — see #194). The residual sub-millisecond window between the pre-check and HA's own filter errs toward `armed`, which is the correct direction against a ~70 s false-failure window.
+There is deliberately **no** post-call state check. Two were tried and both reported successfully raised alarms as failures: re-reading on/off races `_alarm_end_callback`, which clears `_attr_is_on` on every manual alarm switch; and re-reading availability is poisoned by `async_turn_on`'s own closing `async_write_ha_state()`, which stamps `unavailable` if availability flipped at any point during the call. That window was ~70 s wide until #194 moved the timeline lookup off this path and is now roughly one round-trip, but the race survives. The residual sub-millisecond window between the pre-check and HA's own filter errs toward `armed`, which is the correct direction against reporting a raised alarm as failed.
 
 Failures raise a per-action repair issue via `action_repair.py` and are persisted as `AbodeAction.last_outcome` so the Actions panel can badge them.
 
