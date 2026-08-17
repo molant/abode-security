@@ -51,6 +51,18 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+class _Unset:
+    """Sentinel for "leave this runtime field alone" in ``_persist_runtime``.
+
+    A plain ``None`` default would not do: the success paths need to *clear*
+    ``last_error`` and ``last_skip_reason``, so "set to None" and "don't touch"
+    have to be distinguishable.
+    """
+
+
+_UNSET = _Unset()
+
+
 class ScheduleManager:
     """CRUD over SchedulesStore with field validation."""
 
@@ -210,8 +222,74 @@ class ScheduleManager:
             await task
 
     # ------------------------------------------------------------------
+    # Runtime-field persistence
+    # ------------------------------------------------------------------
+
+    async def _persist_runtime(
+        self,
+        pair_id: str,
+        *,
+        last_armed_at: datetime | None | _Unset = _UNSET,
+        last_disarmed_at: datetime | None | _Unset = _UNSET,
+        last_skip_reason: str | None | _Unset = _UNSET,
+        last_error: str | None | _Unset = _UNSET,
+    ) -> ScheduledPair | None:
+        """Merge runtime-owned fields onto the freshest stored pair and persist.
+
+        Every runtime write goes through here, and none of them may write back a
+        ``ScheduledPair`` captured before an ``await`` (#202).  ``ScheduledPair``
+        is mutable and :meth:`SchedulesStore.async_update` re-inserts the whole
+        record by id, so the last writer used to win every field rather than
+        only the ones it owns — and :meth:`async_update` builds a *new* instance,
+        so a WS edit arriving during the ~111 s confirmation window (#192) was
+        silently undone when the arm finished.  The four fields below are
+        disjoint from the user-editable ones (``name``, ``weekdays``,
+        ``arm_time``, ``disarm_time``, ``enabled``), which is what makes the
+        field-level merge unambiguous.
+
+        Returns whatever record is stored once the write settles — callers must
+        use *that* for events and for :meth:`_schedule_disarm`, so both see the
+        edited window and name — or ``None`` if the pair was deleted meanwhile,
+        which is the other half of the same bug: writing the captured copy back
+        re-created the record.
+
+        Returning the object we just wrote would leave a narrower version of the
+        very race this closes.  ``SchedulesStore.async_update`` is an immediate,
+        non-debounced ``Store.async_save``, so it suspends on real disk I/O, and
+        a WS edit landing in that window installs a *new* instance — one that
+        keeps our runtime fields (its own read happens after the synchronous
+        cache write below) but carries the user's edits.  That is the record to
+        hand back; the one we wrote is already superseded.
+        """
+        pair = self._store.get(pair_id)
+        if pair is None:
+            return None
+        if not isinstance(last_armed_at, _Unset):
+            pair.last_armed_at = last_armed_at
+        if not isinstance(last_disarmed_at, _Unset):
+            pair.last_disarmed_at = last_disarmed_at
+        if not isinstance(last_skip_reason, _Unset):
+            pair.last_skip_reason = last_skip_reason
+        if not isinstance(last_error, _Unset):
+            pair.last_error = last_error
+        await self._store.async_update(pair)
+        return self._store.get(pair_id)
+
+    # ------------------------------------------------------------------
     # Timer management
     # ------------------------------------------------------------------
+
+    def _set_disarm_handle(self, pair_id: str, handle: CancelHandle) -> None:
+        """Store a one-shot disarm handle, cancelling whatever it replaces.
+
+        Assigning into ``_pending_handles`` blind leaks the handle it overwrites:
+        the orphaned timer still fires, and only ``_disarm_impl``'s
+        ``derive_state`` guard keeps that harmless — an accident, not a design.
+        """
+        existing = self._pending_handles.pop((pair_id, "disarm"), None)
+        if existing is not None:
+            existing()
+        self._pending_handles[(pair_id, "disarm")] = handle
 
     def _register_pair_timers(self, pair_id: str) -> None:
         """Register the daily arm callback for one enabled pair.
@@ -310,7 +388,7 @@ class ScheduleManager:
             self._track(self._disarm_impl(p, source=ChangeSource.SCHEDULE_DISARM))
 
         handle = async_call_later(self._hass, delay, _disarm_cb)
-        self._pending_handles[(pair.id, "disarm")] = handle
+        self._set_disarm_handle(pair.id, handle)
 
     # ------------------------------------------------------------------
     # CRUD — now also wires/unwires timers
@@ -392,9 +470,20 @@ class ScheduleManager:
         return updated
 
     async def async_delete(self, pair_id: str) -> bool:
-        """Delete a pair; return True if found, False otherwise."""
+        """Delete a pair; return True if found, False otherwise.
+
+        Clears the pair's "failed to fire" repair issue too.  Only the arm and
+        disarm success paths used to clear it, and both now bail early on a pair
+        deleted mid-flight (see :meth:`_persist_runtime`) — which would strand an
+        ``is_fixable=False`` issue the user cannot dismiss, naming a schedule
+        that no longer exists.  Deleting a schedule that simply failed yesterday
+        stranded it the same way, so this closes both.
+        """
         self._unregister_timers(pair_id)
-        return await self._store.async_remove(pair_id)
+        removed = await self._store.async_remove(pair_id)
+        if removed:
+            self._clear_fire_failed_issue(pair_id)
+        return removed
 
     async def async_get(self, pair_id: str) -> ScheduledPair | None:
         """Return a pair by id."""
@@ -427,9 +516,14 @@ class ScheduleManager:
 
         if panel_str == "armed_away":
             # Away is a higher-priority state — skip both arm and disarm.
-            pair.last_skip_reason = SkipReason.AWAY_ACTIVE
-            pair.last_disarmed_at = self._clock.utcnow()
-            await self._store.async_update(pair)
+            persisted = await self._persist_runtime(
+                pair_id,
+                last_skip_reason=SkipReason.AWAY_ACTIVE,
+                last_disarmed_at=self._clock.utcnow(),
+            )
+            if persisted is None:
+                return
+            pair = persisted
             self._fire_event(
                 EVENT_SCHEDULE_SKIPPED,
                 pair,
@@ -441,9 +535,14 @@ class ScheduleManager:
 
         if panel_str == "armed_home":
             # Already Home — take ownership so our disarm fires later.
-            pair.last_skip_reason = SkipReason.ALREADY_HOME
-            pair.last_armed_at = self._clock.utcnow()
-            await self._store.async_update(pair)
+            persisted = await self._persist_runtime(
+                pair_id,
+                last_skip_reason=SkipReason.ALREADY_HOME,
+                last_armed_at=self._clock.utcnow(),
+            )
+            if persisted is None:
+                return
+            pair = persisted
             self._fire_event(
                 EVENT_SCHEDULE_SKIPPED,
                 pair,
@@ -456,9 +555,14 @@ class ScheduleManager:
 
         if panel_str != "disarmed":
             # Intermediate state or panel unavailable — conservative: skip.
-            pair.last_skip_reason = SkipReason.PANEL_UNAVAILABLE
-            pair.last_disarmed_at = self._clock.utcnow()
-            await self._store.async_update(pair)
+            persisted = await self._persist_runtime(
+                pair_id,
+                last_skip_reason=SkipReason.PANEL_UNAVAILABLE,
+                last_disarmed_at=self._clock.utcnow(),
+            )
+            if persisted is None:
+                return
+            pair = persisted
             self._fire_event(
                 EVENT_SCHEDULE_SKIPPED,
                 pair,
@@ -484,14 +588,21 @@ class ScheduleManager:
         armed_at = self._clock.utcnow()
         try:
             await async_retry_confirmed(
+                # `pair_id`, not `pair.id`: identical value, but `pair` is
+                # rebound to the re-read record below, and a closure over a
+                # variable reassigned later loses its narrowing.
                 lambda: self._mode_changer.async_set_mode(
-                    "home", ChangeSource.SCHEDULE_ARM, pair_id=pair.id
+                    "home", ChangeSource.SCHEDULE_ARM, pair_id=pair_id
                 ),
                 lambda: self._panel_state() == "armed_home",
             )
         except RetryExhausted as err:
-            pair.last_error = str(err.last_error)[:200]
-            await self._store.async_update(pair)
+            persisted = await self._persist_runtime(
+                pair_id, last_error=str(err.last_error)[:200]
+            )
+            if persisted is None:
+                return
+            pair = persisted
             self._fire_event(
                 EVENT_SCHEDULE_FAILED,
                 pair,
@@ -507,10 +618,15 @@ class ScheduleManager:
             )
             return
 
-        pair.last_armed_at = armed_at
-        pair.last_error = None
-        pair.last_skip_reason = None
-        await self._store.async_update(pair)
+        persisted = await self._persist_runtime(
+            pair_id,
+            last_armed_at=armed_at,
+            last_error=None,
+            last_skip_reason=None,
+        )
+        if persisted is None:
+            return
+        pair = persisted
         self._fire_event(EVENT_SCHEDULE_FIRED, pair, action="arm", target_mode="home")
         self._clear_fire_failed_issue(pair.id)
         _LOGGER.info("Schedule '%s' fired arm", pair.name or pair.id)
@@ -549,9 +665,14 @@ class ScheduleManager:
 
         if panel_str in ("armed_away", "disarmed"):
             # Panel already changed — manual override won.
-            pair.last_skip_reason = SkipReason.MANUAL_OVERRIDE
-            pair.last_disarmed_at = self._clock.utcnow()
-            await self._store.async_update(pair)
+            persisted = await self._persist_runtime(
+                pair_id,
+                last_skip_reason=SkipReason.MANUAL_OVERRIDE,
+                last_disarmed_at=self._clock.utcnow(),
+            )
+            if persisted is None:
+                return
+            pair = persisted
             self._fire_event(
                 EVENT_SCHEDULE_SKIPPED,
                 pair,
@@ -565,9 +686,14 @@ class ScheduleManager:
 
         if panel_str != "armed_home":
             # Intermediate state or unavailable — conservative: skip.
-            pair.last_skip_reason = SkipReason.PANEL_UNAVAILABLE
-            pair.last_disarmed_at = self._clock.utcnow()
-            await self._store.async_update(pair)
+            persisted = await self._persist_runtime(
+                pair_id,
+                last_skip_reason=SkipReason.PANEL_UNAVAILABLE,
+                last_disarmed_at=self._clock.utcnow(),
+            )
+            if persisted is None:
+                return
+            pair = persisted
             self._fire_event(
                 EVENT_SCHEDULE_SKIPPED,
                 pair,
@@ -586,14 +712,19 @@ class ScheduleManager:
         disarmed_at = self._clock.utcnow()
         try:
             await async_retry_confirmed(
+                # `pair_id` for the same reason as the arm edge above.
                 lambda: self._mode_changer.async_set_mode(
-                    "standby", source, pair_id=pair.id
+                    "standby", source, pair_id=pair_id
                 ),
                 lambda: self._panel_state() == "disarmed",
             )
         except RetryExhausted as err:
-            pair.last_error = str(err.last_error)[:200]
-            await self._store.async_update(pair)
+            persisted = await self._persist_runtime(
+                pair_id, last_error=str(err.last_error)[:200]
+            )
+            if persisted is None:
+                return
+            pair = persisted
             self._fire_event(
                 EVENT_SCHEDULE_FAILED,
                 pair,
@@ -609,10 +740,15 @@ class ScheduleManager:
             )
             return
 
-        pair.last_disarmed_at = disarmed_at
-        pair.last_error = None
-        pair.last_skip_reason = None
-        await self._store.async_update(pair)
+        persisted = await self._persist_runtime(
+            pair_id,
+            last_disarmed_at=disarmed_at,
+            last_error=None,
+            last_skip_reason=None,
+        )
+        if persisted is None:
+            return
+        pair = persisted
         self._fire_event(
             EVENT_SCHEDULE_FIRED, pair, action="disarm", target_mode="standby"
         )
@@ -712,7 +848,22 @@ class ScheduleManager:
         tz = dt_util.DEFAULT_TIME_ZONE
         reconciled = 0
 
-        for pair in self._store.get_all():
+        # Iterate ids and re-read each one, rather than holding the objects the
+        # snapshot returned: this loop awaits inside itself, and a WS edit
+        # landing in one iteration's write replaces the record a later iteration
+        # is still holding (#202).  Re-reading is what keeps `ed` below — the
+        # anchor for the disarm timer this loop registers — computed from the
+        # user's current `disarm_time` rather than a superseded one.
+        #
+        # It is the *record* that is re-read, not what it is compared against:
+        # `now` and `panel_str` are deliberately sampled once above, so the whole
+        # pass reconciles against one instant and one panel reading rather than
+        # drifting partway through.  The loop is bounded by one store write per
+        # pair it actually writes, so the drift that would buy is negligible.
+        for pair_id in [p.id for p in self._store.get_all()]:
+            pair = self._store.get(pair_id)
+            if pair is None:
+                continue  # deleted while an earlier iteration was writing
             if not pair.enabled:
                 continue
             if pair.last_armed_at is None:
@@ -734,18 +885,26 @@ class ScheduleManager:
             # marked disarmed WITHOUT auto-disarming the panel hours later. Do
             # NOT add the grace here to "match" derive_state.
             if now >= ed:
-                pair.last_disarmed_at = now
-                pair.last_skip_reason = SkipReason.RECONCILE_WINDOW_ELAPSED
-                await self._store.async_update(pair)
+                persisted = await self._persist_runtime(
+                    pair_id,
+                    last_disarmed_at=now,
+                    last_skip_reason=SkipReason.RECONCILE_WINDOW_ELAPSED,
+                )
+                if persisted is not None:
+                    pair = persisted
                 _LOGGER.info(
                     "Schedule '%s' reconciled (window elapsed)", pair.name or pair.id
                 )
                 continue
 
             if panel_str != "armed_home":
-                pair.last_disarmed_at = now
-                pair.last_skip_reason = SkipReason.RECONCILE_PANEL_NOT_HOME
-                await self._store.async_update(pair)
+                persisted = await self._persist_runtime(
+                    pair_id,
+                    last_disarmed_at=now,
+                    last_skip_reason=SkipReason.RECONCILE_PANEL_NOT_HOME,
+                )
+                if persisted is not None:
+                    pair = persisted
                 _LOGGER.info(
                     "Schedule '%s' reconciled (panel not home)", pair.name or pair.id
                 )
@@ -762,7 +921,7 @@ class ScheduleManager:
                 self._track(self._disarm_impl(p, source=ChangeSource.RECONCILE_DISARM))
 
             handle = async_call_later(self._hass, delay, _reconcile_disarm_cb)
-            self._pending_handles[(pair.id, "disarm")] = handle
+            self._set_disarm_handle(pair.id, handle)
             reconciled += 1
 
         _LOGGER.info("Reconciled %d schedules on startup", reconciled)
@@ -835,18 +994,32 @@ class ScheduleManager:
         now = self._clock.utcnow()
         tz = dt_util.DEFAULT_TIME_ZONE
 
-        for pair in self._store.get_all():
+        # Ids, then a re-read per iteration, for the same reason as the
+        # reconcile loop: this one awaits inside itself too, so the `enabled`
+        # and `derive_state` guards below have to run against the record as it
+        # stands now rather than as the snapshot found it (#202).  `now` is
+        # sampled once for the same reason it is there — one override, one
+        # instant, so the pairs it marks all agree on when it happened.
+        for pair_id in [p.id for p in self._store.get_all()]:
+            pair = self._store.get(pair_id)
+            if pair is None:
+                continue  # deleted while an earlier iteration was writing
             if not pair.enabled:
                 continue
             if derive_state(pair, now=now, tz=tz) != PairState.ARMED:
                 continue
-            handle = self._pending_handles.pop((pair.id, "disarm"), None)
+            handle = self._pending_handles.pop((pair_id, "disarm"), None)
             if handle is not None:
                 handle()
-            pair.last_disarmed_at = now
-            pair.last_skip_reason = SkipReason.MANUAL_OVERRIDE
             # Persist BEFORE firing the event (spec constraint).
-            await self._store.async_update(pair)
+            persisted = await self._persist_runtime(
+                pair_id,
+                last_disarmed_at=now,
+                last_skip_reason=SkipReason.MANUAL_OVERRIDE,
+            )
+            if persisted is None:
+                continue
+            pair = persisted
             self._fire_event(
                 EVENT_SCHEDULE_SKIPPED,
                 pair,

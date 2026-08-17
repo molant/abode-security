@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Generator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -1885,3 +1886,469 @@ class TestShutdown:
         # so yield once — a failed task must not be retained either.
         await asyncio.sleep(0)
         assert manager._inflight == set()
+
+
+class TestConcurrentEdits:
+    """#202 — a WS edit landing mid-flight must survive the arm completing.
+
+    `ScheduledPair` is mutable and `SchedulesStore.async_update` re-inserts the
+    whole record by id, so whichever writer finishes last used to win every
+    field — not just the ones it owns.  State confirmation (#192) holds an arm
+    open for up to ~111 s, which is long enough for a user editing the schedule
+    from the panel UI to lose the edit.
+    """
+
+    async def test_edit_during_in_flight_arm_survives(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The arm keeps its runtime fields and leaves the edited ones alone."""
+        _set_panel(hass, "disarmed")
+        release = fake_mode_changer.block()
+
+        pair = await manager.async_create(
+            name="Nightly", weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        task = hass.async_create_task(manager.async_arm(pair.id))
+        await fake_mode_changer.started.wait()
+
+        # The user edits the schedule while the arm is still confirming.
+        await manager.async_update(
+            pair.id,
+            name="Weeknights",
+            weekdays=["mon", "tue"],
+            arm_time="22:30",
+            disarm_time="06:30",
+        )
+
+        release.set()
+        await task
+        await hass.async_block_till_done()
+
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.name == "Weeknights"
+        assert refreshed.weekdays == ["mon", "tue"]
+        assert refreshed.arm_time == "22:30"
+        assert refreshed.disarm_time == "06:30"
+        # …and the arm still recorded itself: the two field sets are disjoint,
+        # so neither writer may cost the other its half.
+        assert refreshed.last_armed_at is not None
+        assert refreshed.last_error is None
+
+    async def test_disarm_timer_honours_a_disarm_time_edited_mid_arm(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The timer the arm schedules must use the edited window, not the stale one.
+
+        Asserting only on the persisted record would not catch this: writing the
+        stale copy back makes the store and the timer agree with each other on
+        the *old* time.  So anchor the expectation to the 30-minute shift itself.
+        """
+        import custom_components.abode_security.scheduling.manager as manager_mod
+
+        _set_panel(hass, "disarmed")
+        release = fake_mode_changer.block()
+
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        task = hass.async_create_task(manager.async_arm(pair.id))
+        await fake_mode_changer.started.wait()
+
+        await manager.async_update(pair.id, disarm_time="06:30")
+
+        delays: list[float] = []
+        real_call_later = manager_mod.async_call_later
+
+        def _record(hass_: HomeAssistant, delay: float, action: Any) -> CancelHandle:
+            delays.append(delay)
+            return real_call_later(hass_, delay, action)  # type: ignore[no-any-return]
+
+        with patch.object(manager_mod, "async_call_later", _record):
+            release.set()
+            await task
+            await hass.async_block_till_done()
+
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.last_armed_at is not None
+
+        tz = dt_util.DEFAULT_TIME_ZONE
+        edited_boundary = expected_disarm_at(
+            refreshed, last_armed_at=refreshed.last_armed_at, tz=tz
+        )
+        stale_boundary = expected_disarm_at(
+            replace(refreshed, disarm_time="06:00"),
+            last_armed_at=refreshed.last_armed_at,
+            tz=tz,
+        )
+        assert edited_boundary - stale_boundary == timedelta(minutes=30)
+
+        assert len(delays) == 1
+        assert delays[0] == (edited_boundary - fake_clock.utcnow()).total_seconds()
+
+    async def test_edit_during_in_flight_disarm_survives(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The disarm edge has the same shape, and the same fix."""
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            name="Nightly", weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        await manager.async_arm(pair.id)
+        _set_panel(hass, "armed_home")
+
+        release = fake_mode_changer.block()
+        task = hass.async_create_task(manager.async_disarm(pair.id))
+        await fake_mode_changer.started.wait()
+
+        await manager.async_update(
+            pair.id, name="Weeknights", weekdays=["mon", "tue"], arm_time="22:30"
+        )
+
+        release.set()
+        await task
+        await hass.async_block_till_done()
+
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.name == "Weeknights"
+        assert refreshed.weekdays == ["mon", "tue"]
+        assert refreshed.arm_time == "22:30"
+        assert refreshed.last_disarmed_at is not None
+
+    async def test_delete_during_in_flight_arm_is_not_resurrected(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Writing the captured copy back re-created a record the user removed.
+
+        Deleting the pair also drops its disarm obligation — the same trade
+        `async_delete` already makes for a pair deleted just after the arm
+        completed.
+        """
+        _set_panel(hass, "disarmed")
+        release = fake_mode_changer.block()
+
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        task = hass.async_create_task(manager.async_arm(pair.id))
+        await fake_mode_changer.started.wait()
+
+        assert await manager.async_delete(pair.id) is True
+
+        release.set()
+        await task
+        await hass.async_block_till_done()
+
+        assert await manager.async_get(pair.id) is None
+        assert manager._pending_handles == {}
+
+    async def test_delete_clears_the_fire_failed_repair_issue(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Bailing on a deleted pair must not strand an undismissable issue.
+
+        Only the arm and disarm success paths clear it, and both now return
+        early once the pair is gone — so the delete has to clear it instead, or
+        the user keeps an `is_fixable=False` repair issue naming a schedule that
+        no longer exists.  Deleting a schedule that merely failed yesterday
+        stranded it the same way.
+        """
+        _set_panel(hass, "disarmed")
+        fake_mode_changer.set_fail_count(999)
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+
+        with _no_retry_sleeps():
+            await manager.async_arm(pair.id)
+
+        issue_reg = ir.async_get(hass)
+        issue_id = f"{REPAIR_ISSUE_SCHEDULE_FIRE_FAILED}_{pair.id}"
+        assert issue_reg.async_get_issue("abode_security", issue_id) is not None
+
+        assert await manager.async_delete(pair.id) is True
+
+        assert issue_reg.async_get_issue("abode_security", issue_id) is None
+
+    async def test_edit_landing_during_the_store_write_still_wins(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Re-reading before the write is not enough — the write itself suspends.
+
+        `SchedulesStore.async_update` is an immediate, non-debounced
+        `Store.async_save`, so it parks on real disk I/O.  An edit landing in
+        *that* window installs a new record, and the object the arm just wrote
+        is already superseded — returning it would anchor the disarm timer to
+        the old `disarm_time` while the store holds the new one.  The window is
+        one disk write rather than ~111 s, but it is the same bug.
+        """
+        import custom_components.abode_security.scheduling.manager as manager_mod
+
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+
+        # Park the arm's own store write, and only that one: the edit issued
+        # while it is parked has to be able to complete its own save.
+        original_save = manager._store.async_save
+        save_parked = asyncio.Event()
+        resume_save = asyncio.Event()
+        park_next = {"pending": True}
+
+        async def _parking_save() -> None:
+            if park_next["pending"]:
+                park_next["pending"] = False
+                save_parked.set()
+                await resume_save.wait()
+            await original_save()
+
+        manager._store.async_save = _parking_save  # type: ignore[method-assign]
+
+        delays: list[float] = []
+        real_call_later = manager_mod.async_call_later
+
+        def _record(hass_: HomeAssistant, delay: float, action: Any) -> CancelHandle:
+            delays.append(delay)
+            return real_call_later(hass_, delay, action)  # type: ignore[no-any-return]
+
+        with patch.object(manager_mod, "async_call_later", _record):
+            task = hass.async_create_task(manager.async_arm(pair.id))
+            async with asyncio.timeout(5):
+                await save_parked.wait()
+
+            await manager.async_update(pair.id, disarm_time="06:30")
+
+            resume_save.set()
+            await task
+            await hass.async_block_till_done()
+
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.disarm_time == "06:30"
+        assert refreshed.last_armed_at is not None
+
+        tz = dt_util.DEFAULT_TIME_ZONE
+        edited_boundary = expected_disarm_at(
+            refreshed, last_armed_at=refreshed.last_armed_at, tz=tz
+        )
+        stale_boundary = expected_disarm_at(
+            replace(refreshed, disarm_time="06:00"),
+            last_armed_at=refreshed.last_armed_at,
+            tz=tz,
+        )
+        assert edited_boundary - stale_boundary == timedelta(minutes=30)
+
+        assert len(delays) == 1
+        assert delays[0] == (edited_boundary - fake_clock.utcnow()).total_seconds()
+
+    async def test_reconcile_rereads_each_pair_it_visits(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """Reconcile awaits inside its loop, so a later pair can change mid-pass.
+
+        The anchor that matters is `expected_disarm_at`, which feeds the disarm
+        timer this loop registers: reading it off the `get_all()` snapshot
+        computes the boundary from a `disarm_time` the user has already
+        replaced.  The deferred pass runs off EVENT_HOMEASSISTANT_STARTED, when
+        the WS API is live, so this is reachable rather than theoretical.
+        """
+        import custom_components.abode_security.scheduling.manager as manager_mod
+
+        restart_dt = datetime(2030, 1, 7, 23, 30, 0, tzinfo=UTC)
+        fake_clock.set(restart_dt)
+        _set_panel(hass, "armed_home")
+
+        # First in insertion order, and it takes a *write* branch — its store
+        # save is the suspension the edit below has to land in.
+        elapsed = await manager.async_create(
+            name="Elapsed", weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        elapsed.last_armed_at = restart_dt - timedelta(days=3)
+        await manager._store.async_update(elapsed)
+
+        # Second, still in window, and the one that gets edited.
+        in_window = await manager.async_create(
+            name="In window", weekdays=["mon"], arm_time="23:00", disarm_time="06:00"
+        )
+        in_window.last_armed_at = restart_dt
+        await manager._store.async_update(in_window)
+
+        # The store preserves insertion order, and the test depends on it: the
+        # elapsed pair must be visited first so its write is what parks.  Stated
+        # here so a reordering fails on this line rather than on a delay count.
+        assert [p.id for p in await manager.async_get_all()] == [
+            elapsed.id,
+            in_window.id,
+        ]
+
+        original_save = manager._store.async_save
+        save_parked = asyncio.Event()
+        resume_save = asyncio.Event()
+        park_next = {"pending": True}
+
+        async def _parking_save() -> None:
+            if park_next["pending"]:
+                park_next["pending"] = False
+                save_parked.set()
+                await resume_save.wait()
+            await original_save()
+
+        manager._store.async_save = _parking_save  # type: ignore[method-assign]
+
+        delays: list[float] = []
+        real_call_later = manager_mod.async_call_later
+
+        def _record(hass_: HomeAssistant, delay: float, action: Any) -> CancelHandle:
+            delays.append(delay)
+            return real_call_later(hass_, delay, action)  # type: ignore[no-any-return]
+
+        with patch.object(manager_mod, "async_call_later", _record):
+            task = hass.async_create_task(manager.async_reconcile_on_startup())
+            async with asyncio.timeout(5):
+                await save_parked.wait()
+
+            await manager.async_update(in_window.id, disarm_time="06:30")
+
+            resume_save.set()
+            await task
+            await hass.async_block_till_done()
+
+        refreshed = await manager.async_get(in_window.id)
+        assert refreshed is not None
+        assert refreshed.disarm_time == "06:30"
+        assert refreshed.last_armed_at is not None
+        assert refreshed.last_armed_at == restart_dt
+
+        tz = dt_util.DEFAULT_TIME_ZONE
+        edited_boundary = expected_disarm_at(
+            refreshed, last_armed_at=refreshed.last_armed_at, tz=tz
+        )
+        stale_boundary = expected_disarm_at(
+            replace(refreshed, disarm_time="06:00"),
+            last_armed_at=refreshed.last_armed_at,
+            tz=tz,
+        )
+        assert edited_boundary - stale_boundary == timedelta(minutes=30)
+
+        # Only the in-window pair gets a timer; the elapsed one is just marked.
+        assert len(delays) == 1
+        assert delays[0] == (edited_boundary - restart_dt).total_seconds()
+
+    async def test_manual_override_rereads_each_pair_it_visits(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """Same loop shape, and here it is the guards that must see the edit.
+
+        A pair disabled while an earlier iteration is writing must not be
+        recorded as manually overridden — `async_update` owns `enabled`, and the
+        snapshot's copy still says True.
+        """
+        now = datetime(2030, 1, 7, 23, 30, 0, tzinfo=UTC)
+        fake_clock.set(now)
+        _set_panel(hass, "armed_home")
+
+        first = await manager.async_create(
+            name="First", weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        first.last_armed_at = now
+        await manager._store.async_update(first)
+
+        second = await manager.async_create(
+            name="Second", weekdays=["mon"], arm_time="23:00", disarm_time="06:00"
+        )
+        second.last_armed_at = now
+        await manager._store.async_update(second)
+
+        original_save = manager._store.async_save
+        save_parked = asyncio.Event()
+        resume_save = asyncio.Event()
+        park_next = {"pending": True}
+
+        async def _parking_save() -> None:
+            if park_next["pending"]:
+                park_next["pending"] = False
+                save_parked.set()
+                await resume_save.wait()
+            await original_save()
+
+        manager._store.async_save = _parking_save  # type: ignore[method-assign]
+
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+
+        task = hass.async_create_task(manager._handle_manual_override())
+        async with asyncio.timeout(5):
+            await save_parked.wait()
+
+        await manager.async_update(second.id, enabled=False)
+
+        resume_save.set()
+        await task
+        await hass.async_block_till_done()
+
+        refreshed = await manager.async_get(second.id)
+        assert refreshed is not None
+        assert refreshed.last_skip_reason != SkipReason.MANUAL_OVERRIDE
+        assert [e["schedule_id"] for e in skipped] == [first.id]
+
+    async def test_scheduling_a_disarm_cancels_the_handle_it_replaces(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+    ) -> None:
+        """Overwriting the dict entry leaked a live timer nobody could cancel.
+
+        The orphan still fires; only `_disarm_impl`'s `derive_state` guard keeps
+        that harmless, which is an accident rather than a design.
+        """
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        await manager.async_arm(pair.id)
+
+        stored = await manager.async_get(pair.id)
+        assert stored is not None
+
+        # Stand a recorder in for the real handle, so replacing it is observable.
+        manager._pending_handles[(pair.id, "disarm")]()
+        cancelled = False
+
+        def _recording_handle() -> None:
+            nonlocal cancelled
+            cancelled = True
+
+        manager._pending_handles[(pair.id, "disarm")] = _recording_handle
+
+        manager._schedule_disarm(stored)
+
+        assert cancelled
+        assert manager._pending_handles[(pair.id, "disarm")] is not _recording_handle
