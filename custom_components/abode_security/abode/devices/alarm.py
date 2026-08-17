@@ -99,7 +99,17 @@ class Alarm(Switch):
         return await self.set_mode('standby')
 
     async def trigger_manual_alarm(self, alarm_type):
-        """Trigger a manual alarm and fetch the corresponding timeline event ID."""
+        """Trigger a manual alarm.
+
+        Returns as soon as the POST is confirmed — the alarm is raised and the
+        monitoring service notified at that point. The timeline event ID needed
+        for a later dismissal is *not* resolved here: that lookup polls for up
+        to ~67s (`timeline_event_retry_delays`), and every caller downstream —
+        the manual alarm switch, the actions executor, the
+        `action_triggered` event that drives the user's notification — used to
+        wait it out. Callers that need the ID run `find_alarm_event_id()`
+        themselves, off the critical path. See issue #194.
+        """
         if not alarm_type:
             raise Exception(ERROR.MISSING_ALARM_TYPE)
 
@@ -129,30 +139,45 @@ class Alarm(Switch):
 
         log.info('Triggered manual alarm %s of type: %s', self.id, alarm_type)
 
-        # The alarm is raised and the monitoring service has been notified.
-        # Everything below is best-effort metadata for later dismissal, and
-        # must never be able to turn a raised alarm into a reported failure:
-        # callers (the actions executor) treat an exception from this method
-        # as "no alarm was raised" and escalate accordingly. The lookup polls
-        # for up to ~67s, so a transient network error inside it is entirely
-        # plausible. Note the module-level `from ..exceptions import Exception`
-        # shadows the builtin, so the guard inside _find_timeline_alarm_event
-        # does NOT catch TimeoutError/aiohttp errors — hence builtins here.
+        return response_object
+
+    async def find_alarm_event_id(self):
+        """Best-effort lookup of the timeline event ID for a raised alarm.
+
+        Only useful for a later dismissal, and never raises apart from
+        CancelledError, which must keep propagating — callers run this detached
+        from the trigger path and cancel it on teardown. By then the alarm is
+        already raised and the monitoring service already notified, so nothing
+        here may turn a raised alarm into a reported failure, and an escaping
+        exception would surface as nothing more than an unretrieved task
+        traceback. The lookup polls for up to ~67s, so a transient network error
+        inside it is entirely plausible. Note the module-level `from ..exceptions
+        import Exception` shadows the builtin, so the guard inside
+        _find_timeline_alarm_event does NOT catch TimeoutError/aiohttp errors —
+        hence builtins here.
+
+        Returns:
+            Event ID if found, None otherwise.
+        """
         try:
             event_id = await self._find_timeline_alarm_event()
+        except asyncio.CancelledError:
+            # Redundant on any Python this runs on — CancelledError has been a
+            # BaseException since 3.8 — but stated rather than inferred. The
+            # abandoned-dismissal report in switch.py hangs off cancellation
+            # reaching the caller, and this module shadows the builtin
+            # `Exception`, so the guard below is already doing something subtle.
+            raise
         except builtins.Exception as exc:
-            log.warning(
-                'Alarm %s was raised, but the timeline lookup failed: %s', alarm_type, exc
-            )
-            event_id = None
+            log.warning('Timeline lookup for alarm %s failed: %s', self.id, exc)
+            return None
 
         if event_id:
-            response_object['event_id'] = event_id
             log.info('Found alarm event ID: %s', event_id)
         else:
             log.warning('Could not find timeline event for triggered alarm')
 
-        return response_object
+        return event_id
 
     async def _find_timeline_alarm_event(self, timeout_seconds=90):
         """Find the most recent alarm event within the timeout window.

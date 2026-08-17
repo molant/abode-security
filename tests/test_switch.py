@@ -459,11 +459,21 @@ async def test_manual_alarm_switch_turn_on(
         await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        with patch(
-            "custom_components.abode_security.abode.devices.alarm.Alarm.trigger_manual_alarm",
-            new_callable=AsyncMock,
-        ) as mock_trigger:
-            mock_trigger.return_value = {"event_id": "test_event_123"}
+        # `find_alarm_event_id` is stubbed too: the switch now resolves the
+        # timeline event id in a background task, and the real lookup would
+        # poll the mock server for ~67s after the service call has returned.
+        with (
+            patch(
+                "custom_components.abode_security.abode.devices.alarm.Alarm.trigger_manual_alarm",
+                new_callable=AsyncMock,
+            ) as mock_trigger,
+            patch(
+                "custom_components.abode_security.abode.devices.alarm.Alarm.find_alarm_event_id",
+                new_callable=AsyncMock,
+                return_value="test_event_123",
+            ),
+        ):
+            mock_trigger.return_value = {"code": 200}
             await hass.services.async_call(
                 SWITCH_DOMAIN,
                 SERVICE_TURN_ON,

@@ -72,6 +72,28 @@ The frontend panel (`frontend/src/abode-panel.ts`) currently implements Actions 
 - [ ] **E2E scenario tests** (~10 tests) - Full workflow testing — could use mock server approach
 - [ ] **Integration advanced features tests** (~18 tests) — require options flow and complex setup
 
+## Abode API
+
+**Source**: review of #194
+
+- [ ] **Bound `_find_timeline_alarm_event`'s backward recency window against elapsed
+  lookup time.** It accepts the newest `is_alarm == '1'` event whose age is in
+  `[0, 90]` seconds relative to the lookup's start. The forward bound is what keeps a
+  *newer* alarm from being matched; the backward bound is a flat 90 s, so a second
+  alarm raised while the first is still surfacing on the timeline can be handed the
+  first one's event ID. Passing the trigger timestamp down and narrowing the window to
+  roughly the elapsed poll time would close it. Only affects which event a *dismissal*
+  targets, never whether an alarm is raised.
+
+- [ ] **Resolve which dismissal semantics Abode actually has.** Two comments in
+  `switch.py` are in tension: `_alarm_end_callback` says "triggering one alarm dismisses
+  all in Abode" (pre-existing, and why it turns off every manual alarm switch), while
+  `_async_send_dismissal` and `async_turn_off` reason from the HTTP layer, where
+  `dismiss_timeline_event` is `POST timeline_ignore_alarm/<id>` — one specific event. If
+  the first is true, the deferred path's `superseded` conservatism is unnecessary; if the
+  second is, the `_alarm_end_callback` fan-off is over-broad. Needs a check against a live
+  panel; neither comment should be treated as established until then.
+
 ## CI/CD Improvements
 
 **Source**: Phase 7 of better-development
