@@ -9,6 +9,7 @@ mock Abode server.  Time control relies on:
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -16,6 +17,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
@@ -154,9 +156,23 @@ class FakeModeChanger:
         # a test move the panel underneath an in-flight mode change, the way a
         # real ~60 s arm completes while retries are still firing (#192).
         self.on_attempt: Callable[[int], None] | None = None
+        # Set by `block()`: the call parks until released, standing in for an
+        # operation still in flight at teardown (#201).
+        self.started = asyncio.Event()
+        self._release: asyncio.Event | None = None
 
     def set_fail_count(self, n: int) -> None:
         self._fail_times = n
+
+    def block(self) -> asyncio.Event:
+        """Make every call hang until the returned Event is set.
+
+        Stands in for the confirmation wait: a real in-flight operation is
+        parked on an ``asyncio.sleep`` inside the poll, and this parks on an
+        Event instead so a test controls when — and whether — it resumes.
+        """
+        self._release = asyncio.Event()
+        return self._release
 
     async def async_set_mode(
         self,
@@ -168,6 +184,9 @@ class FakeModeChanger:
         self.attempts += 1
         if self.on_attempt is not None:
             self.on_attempt(self.attempts)
+        if self._release is not None:
+            self.started.set()
+            await self._release.wait()
         if self._fail_times > 0:
             self._fail_times -= 1
             raise ModeChangeFailed("transient error")
@@ -1487,3 +1506,382 @@ class TestIdempotency:
 
         standby_calls = [c for c in fake_mode_changer.calls if c["target"] == "standby"]
         assert len(standby_calls) == 1
+
+
+class _Unretryable(BaseException):
+    """Raised past ``async_retry``'s ``catch=Exception``.
+
+    A ``BaseException`` rather than ``KeyboardInterrupt`` so pytest treats it as
+    a normal test failure signal instead of aborting the whole run.
+    """
+
+
+class TestShutdown:
+    """#201 — teardown must not leave arm/disarm work running.
+
+    State confirmation (#192) keeps an arm or disarm alive for up to ~111 s, so a
+    config-entry unload lands mid-flight as the normal case, not an edge one.
+    Whatever is still in flight has to be cancelled and awaited, or its store
+    write, event, and repair issue outlive the manager that was torn down.
+    """
+
+    async def test_shutdown_cancels_in_flight_arm(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """An arm still in flight at shutdown writes nothing afterwards."""
+        _set_panel(hass, "disarmed")
+        fired = _capture_events(hass, EVENT_SCHEDULE_FIRED)
+        failed = _capture_events(hass, EVENT_SCHEDULE_FAILED)
+
+        release = fake_mode_changer.block()
+
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        task = hass.async_create_task(manager.async_arm(pair.id))
+        await fake_mode_changer.started.wait()
+
+        await manager.async_shutdown()
+
+        # Release what shutdown cancelled.  Without cancellation the arm resumes
+        # here and completes against a torn-down manager.
+        release.set()
+        await hass.async_block_till_done()
+
+        assert task.cancelled()
+        assert fired == []
+        assert failed == []
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.last_armed_at is None
+        # A resurrected disarm timer would outlive the manager holding it.
+        assert manager._pending_handles == {}
+
+    async def test_shutdown_awaits_the_tasks_it_cancels(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Shutdown must not return while cancelled work is still unwinding.
+
+        Cancelling without gathering passes every other test in this class —
+        they all let the loop run before asserting — so this pins the gather
+        directly: the task is finished the instant shutdown returns.
+        """
+        _set_panel(hass, "disarmed")
+        fake_mode_changer.block()
+
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        task = hass.async_create_task(manager.async_arm(pair.id))
+        await fake_mode_changer.started.wait()
+
+        inflight = list(manager._inflight)
+        assert len(inflight) == 1
+
+        await manager.async_shutdown()
+
+        assert inflight[0].done()
+        await hass.async_block_till_done()
+        assert task.cancelled()
+
+    async def test_shutdown_cancels_in_flight_disarm(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Same for the disarm edge, which reaches the manager via a timer."""
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        await manager.async_arm(pair.id)
+        _set_panel(hass, "armed_home")
+
+        fired = _capture_events(hass, EVENT_SCHEDULE_FIRED)
+        failed = _capture_events(hass, EVENT_SCHEDULE_FAILED)
+        release = fake_mode_changer.block()
+
+        task = hass.async_create_task(manager.async_disarm(pair.id))
+        await fake_mode_changer.started.wait()
+
+        await manager.async_shutdown()
+
+        release.set()
+        await hass.async_block_till_done()
+
+        assert task.cancelled()
+        assert fired == []
+        assert failed == []
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.last_disarmed_at is None
+
+    async def test_shutdown_cancels_in_flight_manual_override(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The override handler writes the store too, so it is tracked as well.
+
+        Its window is far shorter than an arm's — one store write, no retries —
+        but it is the same class of late write, and it is the only other
+        coroutine the manager spawns on its own.
+        """
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        await manager.async_arm(pair.id)
+        _set_panel(hass, "armed_home")
+        manager._start_panel_listener()
+
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+
+        # A manual disarm from outside the integration (no schedule context).
+        _set_panel(hass, "disarmed")
+        await hass.async_block_till_done()
+        assert len(skipped) == 1  # handler ran to completion while alive
+
+        # Arm again, then tear down with the handler mid-flight.
+        _set_panel(hass, "armed_home")
+        await manager.async_arm(pair.id)
+        skipped.clear()
+
+        block = asyncio.Event()
+        original_update = manager._store.async_update
+
+        async def _blocking_update(updated: Any) -> None:
+            await block.wait()
+            await original_update(updated)
+
+        manager._store.async_update = _blocking_update  # type: ignore[method-assign]
+
+        _set_panel(hass, "disarmed")
+        await asyncio.sleep(0)  # let the listener spawn the handler task
+
+        await manager.async_shutdown()
+
+        block.set()
+        await hass.async_block_till_done()
+
+        assert skipped == []
+
+    async def test_deferred_listener_retry_does_not_resurrect_after_shutdown(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+    ) -> None:
+        """The panel listener must not come back after teardown.
+
+        `_start_panel_listener` defers to EVENT_HOMEASSISTANT_STARTED when the
+        panel is not in `hass.states` yet — exactly the state an entry unloaded
+        during startup is in.  Shutdown clears `_listener_handle`, so without
+        the shutdown guard the retry would subscribe a dead manager with nothing
+        left to unsubscribe it.
+        """
+        manager._start_panel_listener()  # no panel yet — defers
+        assert manager._listener_handle is None
+
+        await manager.async_shutdown()
+
+        _set_panel(hass, "disarmed")
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+        await hass.async_block_till_done()
+
+        assert manager._listener_handle is None
+
+    async def test_deferred_listener_retry_is_silent_after_shutdown(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """And it must not blame a missing panel for its own teardown.
+
+        Unloading the entry removes the alarm_control_panel entity, so the
+        retry's panel lookup fails and it takes the "panel not found" warning
+        branch — a scary log line, during a routine reload, about a manager
+        nobody is using any more.
+        """
+        manager._start_panel_listener()  # no panel yet — defers
+        await manager.async_shutdown()
+
+        caplog.clear()
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)  # panel still absent
+        await hass.async_block_till_done()
+
+        assert "Abode panel entity not found" not in caplog.text
+
+    async def test_timers_are_not_registered_after_shutdown(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+    ) -> None:
+        """CRUD is not tracked work, so it needs the flag rather than the sweep.
+
+        `async_shutdown` yields to the loop at its gather, and the manager is
+        only popped from `hass.data` afterwards — so a WS create landing in that
+        window would otherwise install a daily timer into a `_pending_handles`
+        that will never be swept again.
+        """
+        _set_panel(hass, "disarmed")
+        await manager.async_shutdown()
+
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+
+        assert manager._pending_handles == {}
+        # The pair itself is still persisted — only the timer is refused.
+        assert await manager.async_get(pair.id) is not None
+
+    async def test_arm_after_shutdown_is_a_no_op(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """A timer that fired just before the sweep must not start new work.
+
+        ``async_call_later``'s callback creates its task before the handle is
+        cancelled, so the coroutine can reach the manager after
+        ``async_shutdown`` has already swept.
+        """
+        _set_panel(hass, "disarmed")
+        fired = _capture_events(hass, EVENT_SCHEDULE_FIRED)
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+
+        await manager.async_shutdown()
+        await manager.async_arm(pair.id)
+        await hass.async_block_till_done()
+
+        assert fake_mode_changer.attempts == 0
+        assert fired == []
+        assert manager._pending_handles == {}
+
+    async def test_shutdown_is_idempotent(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+    ) -> None:
+        """Unload runs it, and the manager fixture runs it again at teardown.
+
+        Sequentially only — the docstring on `async_shutdown` is explicit that a
+        concurrent second caller would find `_inflight` already drained.
+        """
+        _set_panel(hass, "disarmed")
+        await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        manager._start_panel_listener()
+        assert manager._pending_handles != {}
+        assert manager._listener_handle is not None
+
+        await manager.async_shutdown()
+        await manager.async_shutdown()
+
+        # The second call is a genuine no-op, not merely non-raising.
+        assert manager._pending_handles == {}
+        assert manager._listener_handle is None
+        assert manager._inflight == set()
+
+    async def test_shutdown_logs_a_task_that_fails_while_unwinding(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A genuine failure during teardown must not vanish into the gather.
+
+        `return_exceptions=True` is required so the CancelledErrors don't cancel
+        the caller unloading the entry — but it also *retrieves* real
+        exceptions, which used to reach asyncio's "task exception was never
+        retrieved" handler instead.  A reload is exactly when someone is reading
+        the log, so shutdown surfaces them itself.
+        """
+        started = asyncio.Event()
+
+        async def _fails_while_unwinding() -> None:
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                raise RuntimeError("store write failed while unwinding") from None
+
+        manager._track(_fails_while_unwinding())
+        await started.wait()
+
+        caplog.clear()
+        await manager.async_shutdown()  # must not propagate
+
+        assert "Schedule task failed during shutdown" in caplog.text
+        assert "store write failed while unwinding" in caplog.text
+
+    async def test_cancelling_the_caller_cancels_the_tracked_task(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """HA shutdown still works: cancellation propagates through the wrapper.
+
+        HA cancels the tasks it tracks; the arm now runs one level deeper, so
+        that cancellation has to reach through `_run_tracked`'s `await task`.
+        It does — `Task.cancel()` cancels the future the task is waiting on —
+        and this pins it against a refactor that shields the inner task.
+        """
+        _set_panel(hass, "disarmed")
+        fired = _capture_events(hass, EVENT_SCHEDULE_FIRED)
+        fake_mode_changer.block()
+
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        task = hass.async_create_task(manager.async_arm(pair.id))
+        await fake_mode_changer.started.wait()
+
+        inflight = list(manager._inflight)
+        assert len(inflight) == 1
+
+        task.cancel()
+        await hass.async_block_till_done()
+
+        assert inflight[0].cancelled()
+        assert fired == []
+
+    async def test_unexpected_errors_still_propagate_to_the_caller(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The task layer must not swallow anything the caller used to see."""
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+
+        # An `Exception` would be absorbed by async_retry's `catch` and reported
+        # as exhaustion, so raise past it: nothing retries a BaseException.
+        def _boom(_attempt: int) -> None:
+            raise _Unretryable
+
+        fake_mode_changer.on_attempt = _boom
+
+        with pytest.raises(_Unretryable):
+            await manager.async_arm(pair.id)
+
+        # The done-callback that drains `_inflight` is scheduled via call_soon,
+        # so yield once — a failed task must not be retained either.
+        await asyncio.sleep(0)
+        assert manager._inflight == set()

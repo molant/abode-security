@@ -22,6 +22,7 @@ from custom_components.abode_security.const import (
     DEFAULT_SNAPSHOT_RETENTION_DAYS,
     DOMAIN,
 )
+from custom_components.abode_security.scheduling.manager import ScheduleManager
 from custom_components.abode_security.services import SERVICE_SETTINGS
 
 from .common import setup_platform
@@ -64,6 +65,36 @@ async def test_unload_entry(hass: HomeAssistant, mock_abode) -> None:
     assert await hass.config_entries.async_unload(mock_entry.entry_id)
     mock_abode.logout.assert_called_once()
     mock_abode.events.stop.assert_called_once()
+
+
+async def test_unload_quiesces_schedules_before_the_session(
+    hass: HomeAssistant, mock_abode
+) -> None:
+    """The schedule manager must be shut down before the Abode session is.
+
+    Otherwise an in-flight arm/disarm spends the rest of its retry window
+    issuing panel commands against a logged-out session, and a failure that
+    resolves inside that window still fires schedule_failed and raises the
+    repair issue (#201).  Ordering is the whole point of the fix, so assert the
+    order and not merely that shutdown was called.
+    """
+    mock_entry = await setup_platform(hass, ALARM_DOMAIN)
+
+    order: list[str] = []
+    real_shutdown = ScheduleManager.async_shutdown
+
+    async def _tracked_shutdown(self: ScheduleManager) -> None:
+        order.append("schedules")
+        await real_shutdown(self)
+
+    # Both are awaited with no arguments by async_unload_entry.
+    mock_abode.events.stop.side_effect = lambda: order.append("events")
+    mock_abode.logout.side_effect = lambda: order.append("logout")
+
+    with patch.object(ScheduleManager, "async_shutdown", _tracked_shutdown):
+        assert await hass.config_entries.async_unload(mock_entry.entry_id)
+
+    assert order == ["schedules", "events", "logout"]
 
 
 async def test_invalid_credentials(hass: HomeAssistant) -> None:
