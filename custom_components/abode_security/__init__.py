@@ -335,6 +335,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
+    # Quiesce the schedule manager before the Abode session is torn down.  An
+    # in-flight arm/disarm would otherwise spend the rest of its retry window
+    # issuing panel commands against a logged-out session, and a failure that
+    # resolved in that window would still fire schedule_failed and raise the
+    # repair issue (#201).
+    if DOMAIN in hass.data and (
+        schedule_mgr := hass.data[DOMAIN].get("schedule_manager")
+    ):
+        await schedule_mgr.async_shutdown()
+
     abode_system: AbodeSystem = entry.runtime_data
     await abode_system.abode.events.stop()
     await abode_system.abode.logout()
@@ -347,8 +357,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if DOMAIN in hass.data:
         if coordinator := hass.data[DOMAIN].get("action_trigger"):
             await coordinator.async_stop()
-        if schedule_mgr := hass.data[DOMAIN].get("schedule_manager"):
-            await schedule_mgr.async_shutdown()
         hass.data[DOMAIN].pop("action_trigger", None)
         hass.data[DOMAIN].pop("action_manager", None)
         hass.data[DOMAIN].pop("config", None)

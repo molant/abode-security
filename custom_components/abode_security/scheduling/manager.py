@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
+from collections.abc import Coroutine
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -72,6 +74,13 @@ class ScheduleManager:
         self._pending_handles: dict[tuple[str, str], CancelHandle] = {}
         self._listener_handle: CancelHandle | None = None
         self._reconcile_deferred = False
+        # In-flight async_arm / async_disarm work, so async_shutdown can cancel
+        # it.  State confirmation (#192) can keep one of these alive for ~111 s,
+        # which a config-entry unload overlaps as the normal case; without this
+        # a late store write, event, or repair issue lands against a manager
+        # that is no longer wired up (#201).
+        self._inflight: set[asyncio.Task[None]] = set()
+        self._shutdown = False
 
     # ------------------------------------------------------------------
     # Panel helpers — single read path; never call hass.states.get directly.
@@ -103,13 +112,102 @@ class ScheduleManager:
         await self.async_reconcile_on_startup()
 
     async def async_shutdown(self) -> None:
-        """Cancel all pending timers and the panel state-change listener."""
+        """Cancel pending timers, the panel listener, and in-flight work.
+
+        There is one production call site, in ``async_unload_entry``; HA's own
+        stop path does not reach it (``ConfigEntries.async_shutdown`` does not
+        unload entries — it cancels the tasks it tracks, which propagates
+        through :meth:`_run_tracked` instead).  The second caller that makes
+        idempotency worth guaranteeing is test teardown, which shuts down a
+        manager some tests have already shut down.
+
+        Safe to call twice in sequence, but not concurrently: the second caller
+        would find ``_inflight`` already drained and return while the first is
+        still awaiting the gather.
+
+        The whole sweep runs without an ``await`` up to the ``gather``, so
+        nothing can re-register a timer between clearing the handles and
+        cancelling the coroutines that create them.  Past that point the
+        ``_shutdown`` flag takes over: the gather yields to the loop, and the
+        timer-registering helpers check the flag so a WS command arriving in
+        that window cannot install a handle nobody will sweep again.
+
+        The two ``EVENT_HOMEASSISTANT_STARTED`` one-shot subscriptions are not
+        unsubscribed here — they hold a reference to this manager until HA
+        start fires — but the same flag makes both of them no-ops.
+        """
+        self._shutdown = True
         for handle in list(self._pending_handles.values()):
             handle()
         self._pending_handles.clear()
         if self._listener_handle is not None:
             self._listener_handle()
             self._listener_handle = None
+        tasks = list(self._inflight)
+        self._inflight.clear()
+        for task in tasks:
+            task.cancel()
+        # Await them: a cancelled task is not yet a finished one, and returning
+        # before it unwinds is the gap this closes.  `return_exceptions=True`
+        # because every one of these resolves as a CancelledError, which would
+        # otherwise cancel the caller unloading the entry.
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Retrieving the results also swallows any genuine failure, which used
+        # to reach asyncio's "Task exception was never retrieved" handler.  A
+        # reload is exactly when someone is reading the log, so keep it visible.
+        for result in results:
+            if isinstance(result, BaseException) and not isinstance(
+                result, asyncio.CancelledError
+            ):
+                _LOGGER.error(
+                    "Schedule task failed during shutdown: %s", result, exc_info=result
+                )
+
+    def _track(self, coro: Coroutine[Any, Any, None]) -> asyncio.Task[None] | None:
+        """Start ``coro`` as a task ``async_shutdown`` can cancel.
+
+        Returns ``None`` — having closed the coroutine — once shut down: a timer
+        creates its task inside its callback, before the handle is cancelled, so
+        work can still arrive after the sweep.
+
+        Every coroutine the manager spawns on its own goes through here or
+        :meth:`_run_tracked` — the two disarm timers, the deferred startup
+        reconcile and the manual-override handler — so that no store write,
+        event, or repair issue can outlive the manager (#201).  The CRUD methods
+        are deliberately not tracked: they are driven by a WS caller that is
+        already awaiting them, and it is only their *timer* side effects that
+        must not outlive the sweep, which the ``_shutdown`` flag handles.
+        """
+        if self._shutdown:
+            # Name the coroutine: four different coroutines reach this, and
+            # "work was dropped" without saying which is not much help to
+            # someone debugging a schedule that skipped a reload.
+            _LOGGER.debug(
+                "Dropped %s; schedule manager is shut down", coro.__qualname__
+            )
+            coro.close()
+            return None
+        # Annotated because HA's PEP-695 `async_create_task[_R]` currently infers
+        # as Any here, which mypy rejects at the return.
+        task: asyncio.Task[None] = self._hass.async_create_task(coro)
+        self._inflight.add(task)
+        task.add_done_callback(self._inflight.discard)
+        return task
+
+    async def _run_tracked(self, coro: Coroutine[Any, Any, None]) -> None:
+        """Await :meth:`_track` — the entry point for callers that await.
+
+        Wrapping ``async_arm`` / ``async_disarm`` rather than only the callbacks
+        that spawn them means a caller that simply awaits them (tests today, any
+        future direct caller) is visible to the sweep too.  The extra task is
+        the price: a coroutine cannot cancel the task that awaits it.
+
+        Cancellation still propagates downwards — cancelling the caller cancels
+        the inner task it is waiting on — so HA shutdown behaves as before.
+        """
+        task = self._track(coro)
+        if task is not None:
+            await task
 
     # ------------------------------------------------------------------
     # Timer management
@@ -121,8 +219,13 @@ class ScheduleManager:
         No-op if the pair is missing, disabled, or already has an arm handle.
         Disarm handles are NOT registered here — they're created on-demand by a
         successful arm (or by reconciliation).
+
+        Also a no-op once shut down: this is reachable from the WS create/update
+        commands, which are not tracked work, so without the guard one landing
+        while ``async_shutdown`` awaits its gather would register a live daily
+        timer into a ``_pending_handles`` nobody will sweep again.
         """
-        if (pair_id, "arm") in self._pending_handles:
+        if self._shutdown or (pair_id, "arm") in self._pending_handles:
             return
         pair = self._store.get(pair_id)
         if pair is None or not pair.enabled:
@@ -159,7 +262,17 @@ class ScheduleManager:
 
         Uses pair.last_armed_at (already set by caller) as the anchor for
         expected_disarm_at so the timer fires at the correct wall-clock time.
+
+        No-op once shut down.  Not dead code, but the reachable window is
+        narrow and worth spelling out: a plain post-shutdown `async_update`
+        cannot get here, because the sweep emptied `_pending_handles` so its
+        `had_pending_disarm` is False.  What reaches it is a WS update that read
+        `had_pending_disarm = True` and is suspended on its own store write when
+        the sweep runs — it resumes afterwards and would re-register a one-shot
+        disarm nobody will cancel.
         """
+        if self._shutdown:
+            return
         assert pair.last_armed_at is not None
         tz = dt_util.DEFAULT_TIME_ZONE
         now = self._clock.utcnow()
@@ -194,7 +307,7 @@ class ScheduleManager:
 
         @callback
         def _disarm_cb(_now: datetime, p: str = pid) -> None:
-            self._hass.async_create_task(self.async_disarm(p))
+            self._track(self._disarm_impl(p, source=ChangeSource.SCHEDULE_DISARM))
 
         handle = async_call_later(self._hass, delay, _disarm_cb)
         self._pending_handles[(pair.id, "disarm")] = handle
@@ -299,8 +412,13 @@ class ScheduleManager:
         """Fire the arm edge for one pair.
 
         Evaluates the skip rule against live panel state, retries on transient
-        failure, and schedules the matching disarm on success.
+        failure, and schedules the matching disarm on success.  Runs as a
+        tracked task so teardown can cancel it — see :meth:`_run_tracked`.
         """
+        await self._run_tracked(self._arm_impl(pair_id))
+
+    async def _arm_impl(self, pair_id: str) -> None:
+        """Body of :meth:`async_arm`; call that instead."""
         pair = self._store.get(pair_id)
         if pair is None or not pair.enabled:
             return
@@ -407,8 +525,18 @@ class ScheduleManager:
         """Fire the disarm edge for one pair.
 
         Guards: pair must be in ARMED state (last_armed_at > last_disarmed_at
-        and still within window).  Skip if panel is no longer Home.
+        and still within window).  Skip if panel is no longer Home.  Runs as a
+        tracked task so teardown can cancel it — see :meth:`_run_tracked`.
         """
+        await self._run_tracked(self._disarm_impl(pair_id, source=source))
+
+    async def _disarm_impl(
+        self,
+        pair_id: str,
+        *,
+        source: ChangeSource,
+    ) -> None:
+        """Body of :meth:`async_disarm`; call that instead."""
         pair = self._store.get(pair_id)
         if pair is None or not pair.enabled:
             return
@@ -570,7 +698,10 @@ class ScheduleManager:
 
             @callback
             def _reconcile_after_start(_event: Event[Any]) -> None:
-                self._hass.async_create_task(self.async_reconcile_on_startup())
+                # Tracked: an entry unloaded before HA finishes starting would
+                # otherwise reconcile — writing to the store and registering a
+                # disarm timer — against a manager nobody holds any more.
+                self._track(self.async_reconcile_on_startup())
 
             self._hass.bus.async_listen_once(
                 EVENT_HOMEASSISTANT_STARTED, _reconcile_after_start
@@ -628,9 +759,7 @@ class ScheduleManager:
 
             @callback
             def _reconcile_disarm_cb(_now: datetime, p: str = pid) -> None:
-                self._hass.async_create_task(
-                    self.async_disarm(p, source=ChangeSource.RECONCILE_DISARM)
-                )
+                self._track(self._disarm_impl(p, source=ChangeSource.RECONCILE_DISARM))
 
             handle = async_call_later(self._hass, delay, _reconcile_disarm_cb)
             self._pending_handles[(pair.id, "disarm")] = handle
@@ -649,14 +778,26 @@ class ScheduleManager:
         entity is not yet in hass.states (e.g. called before platforms load).
         Guards against double-registration: a second call is a no-op if the
         listener handle is already set.
+
+        The shutdown guard is what stops the deferred retry from resurrecting
+        the listener: shutdown sets the handle back to None, so the "already
+        registered" check alone would let a post-teardown retry subscribe a dead
+        manager to panel state changes with nothing left to unsubscribe it.
         """
-        if self._listener_handle is not None:
+        if self._shutdown or self._listener_handle is not None:
             return
         panel_id = self._panel_entity_id()
         if panel_id is None:
 
             @callback
             def _retry(_event: Event[Any]) -> None:
+                if self._shutdown:
+                    # Checked before the panel lookup, not just via
+                    # _start_panel_listener's guard: unloading the entry removes
+                    # the alarm_control_panel entity, so an unloaded manager
+                    # takes the warning branch below and blames a missing panel
+                    # for a teardown it caused itself.
+                    return
                 if self._panel_entity_id() is None:
                     _LOGGER.warning(
                         "Abode panel entity not found after HA start; "
@@ -687,7 +828,7 @@ class ScheduleManager:
             return
 
         # Transition left armed_home via a non-self-driven context.
-        self._hass.async_create_task(self._handle_manual_override())
+        self._track(self._handle_manual_override())
 
     async def _handle_manual_override(self) -> None:
         """Cancel pending disarms for all ARMED pairs and mark them overridden."""
