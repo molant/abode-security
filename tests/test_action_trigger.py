@@ -5,7 +5,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant, ServiceCall
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -153,7 +153,7 @@ class TestStateChangeHandling:
         coordinator = ActionTriggerCoordinator(hass, manager)
         await coordinator.async_start()
 
-        await manager.async_create(
+        action = await manager.async_create(
             name="Test",
             modes=["home"],
             sensor_entity_ids=["binary_sensor.door"],
@@ -168,7 +168,10 @@ class TestStateChangeHandling:
         hass.states.async_set("binary_sensor.door", "off")
         await hass.async_block_till_done()
 
-        # Should not raise error
+        updated = await manager.async_get(action.id)
+        assert updated is not None
+        assert updated.trigger_count == 0
+
         await coordinator.async_stop()
 
     async def test_coordinator_matches_sensor_and_mode(self, hass) -> None:
@@ -1347,6 +1350,161 @@ class TestStateTransitionRegressions:
         await async_fire_time_changed_and_wait(hass, timedelta(seconds=6))
 
         assert service_calls == []
+
+        await coordinator.async_stop()
+
+
+@pytest.mark.usefixtures("mock_abode", "setup_coordinator")
+class TestCloseTransitionNeverTriggers:
+    """A sensor returning to its resting state must not fire an action.
+
+    Issue #149's scenario: arm home on a hot summer night with a bedroom
+    window open, then close that window hours later when it gets chilly.
+    The close is an `on` -> `off` transition and has to be inert, while the
+    *next* open is a genuine activation and still has to fire. The
+    open-before-arming ordering matters — the sensor is already `on` when the
+    mode changes, so nothing in the sequence looks like a fresh activation
+    until the window is opened again.
+
+    Scoped to the transition guard. A sensor that closes *during* an action's
+    delay window is deliberately not covered: `_delayed_execute` re-checks the
+    action and the mode but never re-reads the sensor, so that action still
+    fires — an intruder closing the window behind them does not call the
+    alarm off.
+    """
+
+    WINDOW = "binary_sensor.bedroom_window"
+    ATTRS = {"friendly_name": "Bedroom Window", "device_class": "window"}
+
+    @staticmethod
+    def _listen(hass) -> tuple[list[ServiceCall], list[Event]]:
+        """Record `switch.turn_on` calls and `action_triggered` events."""
+        switch_calls: list[ServiceCall] = []
+        events: list[Event] = []
+
+        async def mock_service(call):
+            switch_calls.append(call)
+
+        hass.services.async_register("switch", "turn_on", mock_service)
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+        return switch_calls, events
+
+    async def _arm_home_over_an_open_window(self, hass, manager):
+        """Open the window, then arm home over it — the #149 starting state."""
+        # Sensor state first, so `async_create` resolves a real entity the way
+        # it would in an install where the user picks the sensor from a list.
+        hass.states.async_set(self.WINDOW, "on", self.ATTRS)
+        await hass.async_block_till_done()
+
+        action = await manager.async_create(
+            name="Bedroom Window",
+            modes=["home"],
+            sensor_entity_ids=[self.WINDOW],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        await hass.async_block_till_done()
+        return action
+
+    async def test_close_of_window_open_since_arming_does_not_trigger(
+        self, hass
+    ) -> None:
+        """Closing a window that was already open at arming fires nothing."""
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        switch_calls, events = self._listen(hass)
+        action = await self._arm_home_over_an_open_window(hass, manager)
+
+        # Middle of the night: the window is closed.
+        hass.states.async_set(self.WINDOW, "off", self.ATTRS)
+        await hass.async_block_till_done()
+
+        assert switch_calls == []
+        assert events == []
+        updated = await manager.async_get(action.id)
+        assert updated is not None
+        assert updated.trigger_count == 0
+        assert updated.last_triggered is None
+
+        await coordinator.async_stop()
+
+    async def test_reopening_after_a_close_still_triggers(self, hass) -> None:
+        """The close arms nothing, but re-opening the window still fires."""
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        switch_calls, events = self._listen(hass)
+        action = await self._arm_home_over_an_open_window(hass, manager)
+
+        hass.states.async_set(self.WINDOW, "off", self.ATTRS)
+        await hass.async_block_till_done()
+        assert events == []
+
+        # Same night, later: the window is opened again. That *is* an
+        # activation — the close must not have left the sensor latched shut.
+        hass.states.async_set(self.WINDOW, "on", self.ATTRS)
+        await hass.async_block_till_done()
+
+        assert len(switch_calls) == 1
+        assert switch_calls[0].data["entity_id"] == "switch.panic_alarm"
+        assert len(events) == 1
+        assert events[0].data["triggered_by"] == self.WINDOW
+        assert events[0].data["previous_state"] == "off"
+        assert events[0].data["new_state"] == "on"
+
+        updated = await manager.async_get(action.id)
+        assert updated is not None
+        assert updated.trigger_count == 1
+
+        await coordinator.async_stop()
+
+    async def test_open_close_reopen_fires_once_per_open(self, hass) -> None:
+        """Across a full cycle, only the two opens count as activations."""
+        # The fixture's 0.1s debounce is there to swallow sensor chatter; a
+        # real open/close/re-open cycle is minutes apart, so take it out of
+        # the picture rather than have it decide this assertion.
+        hass.data[DOMAIN]["config"]["debounce_seconds"] = 0
+
+        manager = _get_manager(hass)
+        coordinator = ActionTriggerCoordinator(hass, manager)
+        await coordinator.async_start()
+
+        switch_calls, events = self._listen(hass)
+
+        hass.states.async_set(self.WINDOW, "off", self.ATTRS)
+        await hass.async_block_till_done()
+
+        action = await manager.async_create(
+            name="Bedroom Window",
+            modes=["home"],
+            sensor_entity_ids=[self.WINDOW],
+            alarm_entity_ids=["switch.panic_alarm"],
+        )
+        hass.states.async_set("alarm_control_panel.abode_alarm", "armed_home")
+        await hass.async_block_till_done()
+
+        hass.states.async_set(self.WINDOW, "on", self.ATTRS)
+        await hass.async_block_till_done()
+        assert len(events) == 1
+
+        hass.states.async_set(self.WINDOW, "off", self.ATTRS)
+        await hass.async_block_till_done()
+        assert len(events) == 1
+
+        hass.states.async_set(self.WINDOW, "on", self.ATTRS)
+        await hass.async_block_till_done()
+        assert len(events) == 2
+
+        assert len(switch_calls) == 2
+        updated = await manager.async_get(action.id)
+        assert updated is not None
+        assert updated.trigger_count == 2
 
         await coordinator.async_stop()
 

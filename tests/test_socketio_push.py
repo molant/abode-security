@@ -533,3 +533,122 @@ async def test_disconnect_mid_emit_does_not_lose_subsequent_events(
             ),
             message="device.update push lost after reconnect",
         )
+
+
+# ---------------------------------------------------------------------------
+# Regression: issue #149 — a close push must not trigger an action
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_close_is_inert_but_reopen_still_triggers(
+    hass: HomeAssistant, mock_server_client: dict[str, str]
+) -> None:
+    """Issue #149, end to end over the real push path.
+
+    The full sequence the user reported, driven entirely by mock pushes:
+
+      1. Open the window while disarmed (hot summer night).
+      2. Arm home *over* the already-open contact.
+      3. Close the window hours later — status Open -> Closed.
+      4. Open it again, still armed.
+
+    Step 3 has to be inert. The coordinator's guard only admits `off` -> `on`,
+    so this test's real job is the layer underneath it: that an Abode
+    ``status: Closed`` refresh drives `binary_sensor.front_door` straight to
+    STATE_OFF without a transient `off` -> `on` blip that would look like an
+    activation. Step 4 then re-opens the window to prove the close didn't
+    latch the sensor shut and a genuine activation still fires.
+    """
+    mock_url = mock_server_client["base_url"]
+    async with (
+        _abode_integration_setup(hass, mock_server_client) as config_entry,
+        aiohttp.ClientSession() as session,
+    ):
+        await _wait_for_socketio_connected(hass, config_entry)
+
+        events: list[Event] = []
+        hass.bus.async_listen(
+            "abode_security.action_triggered", lambda e: events.append(e)
+        )
+
+        # Notification-only action so the assertion is about the trigger
+        # decision, not about arming a switch.
+        manager = hass.data[DOMAIN]["action_manager"]
+        action = await manager.async_create(
+            name="Front window while home",
+            modes=["home"],
+            sensor_entity_ids=[FRONT_DOOR_ENTITY_ID],
+            alarm_entity_ids=[],
+        )
+
+        # 1. Window opened while the system is still disarmed.
+        await _put_device(session, mock_url, FRONT_DOOR_DEVICE_ID, {"status": "Open"})
+        await _emit(
+            session, mock_url, "com.goabode.device.update", FRONT_DOOR_DEVICE_ID
+        )
+        await _wait_for(
+            hass,
+            lambda: (
+                (s := hass.states.get(FRONT_DOOR_ENTITY_ID)) is not None
+                and s.state == STATE_ON
+            ),
+            message=f"{FRONT_DOOR_ENTITY_ID} never transitioned to STATE_ON",
+        )
+
+        # 2. Arm home over the open contact.
+        await _emit(session, mock_url, "com.goabode.gateway.mode", "home")
+        await _wait_for(
+            hass,
+            lambda: (
+                (s := hass.states.get(ALARM_ENTITY_ID)) is not None
+                and s.state == AlarmControlPanelState.ARMED_HOME
+            ),
+            message=f"{ALARM_ENTITY_ID} never transitioned to ARMED_HOME",
+        )
+        assert events == []
+
+        # 3. Middle of the night: the window is closed.
+        await _put_device(session, mock_url, FRONT_DOOR_DEVICE_ID, {"status": "Closed"})
+        await _emit(
+            session, mock_url, "com.goabode.device.update", FRONT_DOOR_DEVICE_ID
+        )
+        await _wait_for(
+            hass,
+            lambda: (
+                (s := hass.states.get(FRONT_DOOR_ENTITY_ID)) is not None
+                and s.state == STATE_OFF
+            ),
+            message=f"{FRONT_DOOR_ENTITY_ID} never transitioned to STATE_OFF",
+        )
+        await hass.async_block_till_done()
+
+        assert events == []
+        stored = await manager.async_get(action.id)
+        assert stored is not None
+        assert stored.trigger_count == 0
+
+        # 4. Opened again while still armed — that one is a real activation.
+        await _put_device(session, mock_url, FRONT_DOOR_DEVICE_ID, {"status": "Open"})
+        await _emit(
+            session, mock_url, "com.goabode.device.update", FRONT_DOOR_DEVICE_ID
+        )
+        await _wait_for(
+            hass,
+            lambda: len(events) >= 1,
+            message="re-opening the window fired no action_triggered event",
+        )
+        await hass.async_block_till_done()
+
+        # Exactly one — `>=` above so a double-fire fails on the count below
+        # with the real reason rather than timing out on an equality predicate
+        # it can never satisfy.
+        assert len(events) == 1
+        assert events[0].data["triggered_by"] == FRONT_DOOR_ENTITY_ID
+        assert events[0].data["previous_state"] == STATE_OFF
+        assert events[0].data["new_state"] == STATE_ON
+        assert events[0].data["mode"] == "home"
+
+        stored = await manager.async_get(action.id)
+        assert stored is not None
+        assert stored.trigger_count == 1
