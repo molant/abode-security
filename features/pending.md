@@ -20,6 +20,22 @@ The review also landed four direct fixes for production bugs (frontend WS contra
       entity_id, which is the most a fire-and-forget path can do. Making the
       service await the entities (or collect results) would close the gap.
 
+- [ ] `Connectivity` is overloaded in the vendored fork, so `water_sensor`,
+      `smoke_detector` and `fix_panic` all resolve to `generic_type`
+      `connectivity` and render with the `connectivity` device class — a
+      moisture sensor shows "Connected"/"Disconnected" rather than
+      "Wet"/"Dry". Splitting them into their own device classes is an upstream
+      shape change beyond #210, which only stopped their offline blips from
+      faking an activation. `smoke_detector` and `fix_panic` also have no
+      upstream mock, so whether they report `Online`/`Offline` or a real
+      payload is unverified against hardware.
+
+- [ ] `switch.py`'s alarm-attached switches assign `_attr_available` directly
+      (7 sites), bypassing `AbodeEntity._resolve_available()`. A CMS switch
+      that marks itself unavailable after repeated poll errors is reset by the
+      next connection-status callback. Migrating them to a `_resolve_available`
+      override with their own poll-health half would close it.
+
 ## Frontend Panel Enhancements
 
 **Source**: Phase 5 & 6 of better-development
