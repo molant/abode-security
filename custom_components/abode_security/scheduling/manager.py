@@ -126,12 +126,16 @@ class ScheduleManager:
     async def async_shutdown(self) -> None:
         """Cancel pending timers, the panel listener, and in-flight work.
 
-        There is one production call site, in ``async_unload_entry``; HA's own
-        stop path does not reach it (``ConfigEntries.async_shutdown`` does not
-        unload entries — it cancels the tasks it tracks, which propagates
-        through :meth:`_run_tracked` instead).  The second caller that makes
-        idempotency worth guaranteeing is test teardown, which shuts down a
-        manager some tests have already shut down.
+        There is one production call site, in ``_async_teardown_runtime``,
+        reached from both ``async_unload_entry`` and ``async_remove_entry``;
+        HA's own stop path does not reach it (``ConfigEntries.async_shutdown``
+        does not unload entries — it cancels the tasks it tracks, which
+        propagates through :meth:`_run_tracked` instead).  Those two entry
+        points cannot double-call it: the helper looks the manager up in
+        ``hass.data`` and pops it, so a remove after a clean unload finds
+        nothing.  The second caller that makes idempotency worth guaranteeing
+        is test teardown, which shuts down a manager some tests have already
+        shut down.
 
         Safe to call twice in sequence, but not concurrently: the second caller
         would find ``_inflight`` already drained and return while the first is

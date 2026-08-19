@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
@@ -41,6 +42,9 @@ from .const import (
     LOGGER,
 )
 from .services import setup_services
+
+if TYPE_CHECKING:
+    from .models import AbodeSystem
 
 ATTR_DEVICE_NAME = "device_name"
 ATTR_DEVICE_TYPE = "device_type"
@@ -321,6 +325,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, _purge_callback, timedelta(days=1), cancel_on_shutdown=True
     )
     entry.async_on_unload(unsub_purge)
+    # HA runs the async_on_unload callbacks only on a successful unload, and the
+    # remove-after-FAILED_UNLOAD path never reaches them, so keep a handle the
+    # teardown helper can cancel itself.  Cancelling twice is harmless (#206).
+    hass.data[DOMAIN]["unsub_purge"] = unsub_purge
     # Run once on startup so a long-offline instance doesn't wait 24h for first purge.
     entry.async_create_background_task(
         hass, _purge_callback(dt_util.utcnow()), "abode_security_purge_startup"
@@ -329,12 +337,47 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    from .models import AbodeSystem  # Avoid circular import
+def _teardown_step(description: str, step: Callable[[], object]) -> None:
+    """Run one synchronous teardown step, logging instead of raising.
 
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    See :func:`_async_teardown_step` for why nothing here may propagate.
+    """
+    try:
+        step()
+    except Exception:
+        LOGGER.warning("Error during Abode teardown: %s", description, exc_info=True)
 
+
+async def _async_teardown_step(description: str, step: Awaitable[object]) -> None:
+    """Run one awaited teardown step, logging instead of raising.
+
+    No step may skip the ones after it: ``cleanup()`` is what closes the aiohttp
+    session, and the ``hass.data`` pops are the last chance to drop the runtime.
+    On the async_remove_entry path an escaping exception is worse than useless —
+    HA swallows it and deletes the entry anyway, leaving a ghost schedule
+    manager, action coordinator, SocketIO stream and purge timer behind with one
+    ERROR line to show for it and no remaining exit short of a restart (#206).
+    """
+    try:
+        await step
+    except Exception:
+        LOGGER.warning("Error during Abode teardown: %s", description, exc_info=True)
+
+
+async def _async_teardown_runtime(
+    hass: HomeAssistant, abode_system: AbodeSystem | None
+) -> None:
+    """Close the Abode session and drop every runtime object the entry owns.
+
+    Idempotent: every step is guarded and ``abode_system`` may be ``None``, so
+    running this against an entry that is already torn down is a no-op.  The
+    caller resolves the runtime, which keeps the unload path strict — only
+    async_remove_entry has a legitimate reason to pass ``None``.
+
+    Every step runs through :func:`_async_teardown_step`, so one failing call
+    cannot strand the rest.  Cancellation still propagates: ``CancelledError``
+    is a BaseException and is not caught there.
+    """
     # Quiesce the schedule manager before the Abode session is torn down.  An
     # in-flight arm/disarm would otherwise spend the rest of its retry window
     # issuing panel commands against a logged-out session, and a failure that
@@ -343,20 +386,28 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if DOMAIN in hass.data and (
         schedule_mgr := hass.data[DOMAIN].get("schedule_manager")
     ):
-        await schedule_mgr.async_shutdown()
+        await _async_teardown_step(
+            "schedule manager shutdown", schedule_mgr.async_shutdown()
+        )
 
-    abode_system: AbodeSystem = entry.runtime_data
-    await abode_system.abode.events.stop()
-    await abode_system.abode.logout()
-    await abode_system.abode.cleanup()
+    if abode_system is not None:
+        await _async_teardown_step(
+            "event stream stop", abode_system.abode.events.stop()
+        )
+        # logout() only swallows ClientError/OSError, so a 4xx — a 429 from a
+        # rate-limiting API being the realistic one — raises straight through.
+        await _async_teardown_step("session logout", abode_system.abode.logout())
+        await _async_teardown_step("client cleanup", abode_system.abode.cleanup())
 
-    if abode_system.logout_listener is not None:
-        abode_system.logout_listener()
+        if abode_system.logout_listener is not None:
+            _teardown_step("logout listener unsubscribe", abode_system.logout_listener)
 
     # Clean up ActionTriggerCoordinator, ActionManager, ConfigStore, ScheduleManager, clocks, mode_changer
     if DOMAIN in hass.data:
         if coordinator := hass.data[DOMAIN].get("action_trigger"):
-            await coordinator.async_stop()
+            await _async_teardown_step(
+                "action trigger coordinator stop", coordinator.async_stop()
+            )
         hass.data[DOMAIN].pop("action_trigger", None)
         hass.data[DOMAIN].pop("action_manager", None)
         hass.data[DOMAIN].pop("config", None)
@@ -365,14 +416,53 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop("clock", None)
         hass.data[DOMAIN].pop("schedule_clock", None)
         hass.data[DOMAIN].pop("mode_changer", None)
+        if unsub_purge := hass.data[DOMAIN].pop("unsub_purge", None):
+            _teardown_step("purge timer cancel", unsub_purge)
 
-    return cast(bool, unload_ok)
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not unload_ok:
+        # HA marks the entry FAILED_UNLOAD and leaves whatever platforms did not
+        # unload holding live entities.  Tearing the session down here would
+        # leave those entities pointing at a logged-out client with no SocketIO
+        # stream feeding them, which is worse than staying up (#206).  The state
+        # is terminal — async_unload short-circuits on it, so this function is
+        # never re-entered for this entry; async_remove_entry does the cleanup
+        # if the user removes the integration instead of restarting HA.
+        LOGGER.warning(
+            "Platform unload failed; leaving the Abode session and runtime in "
+            "place so the entities still loaded keep working. Restart Home "
+            "Assistant to complete the unload"
+        )
+        return False
+
+    abode_system: AbodeSystem = entry.runtime_data
+    await _async_teardown_runtime(hass, abode_system)
+    return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Tear down anything a failed unload left running.
+
+    FAILED_UNLOAD is not recoverable, so async_unload_entry is never called
+    again for the entry and removal is its only exit short of a restart.  The
+    entities go with the entry at that point, so the runtime that #206 keeps
+    alive for them must not outlive it — otherwise a remove-then-re-add without
+    a restart would leave a second schedule manager, action coordinator and
+    SocketIO stream running alongside the new ones.
+
+    runtime_data is absent when the entry unloaded cleanly before removal (HA
+    deletes it on the success branch), which makes this a no-op; it is present
+    but half-initialised when setup failed past the point that assigns it, and
+    the teardown is safe there too — logout() returns early without a token.
+    """
+    await _async_teardown_runtime(hass, getattr(entry, "runtime_data", None))
 
 
 async def async_setup_hass_events(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Home Assistant start and stop callbacks."""
-    from .models import AbodeSystem  # Avoid circular import
-
     abode_system: AbodeSystem = entry.runtime_data
     LOGGER.info("Setting up Home Assistant events (polling=%s)", abode_system.polling)
 
@@ -398,7 +488,6 @@ async def async_setup_hass_events(hass: HomeAssistant, entry: ConfigEntry) -> No
 def setup_abode_events(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Event callbacks."""
     from .abode.helpers.timeline import Groups as GROUPS  # noqa: N814
-    from .models import AbodeSystem  # Avoid circular import
 
     abode_system: AbodeSystem = entry.runtime_data
 
