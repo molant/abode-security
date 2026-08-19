@@ -467,6 +467,57 @@ async def entity_action(self):
 
 Callback registration via `hass.async_add_executor_job(...)` is wrapped in `asyncio.wait_for(..., timeout=10.0)`; timeouts are treated as non-fatal (polling continues). See `ASYNC_AWAIT_PATTERNS.md` for rationale and call sites.
 
+### Entity Availability Composition
+
+Within `AbodeEntity` / `AbodeDevice`, `_attr_available` has two writers — the
+SocketIO connection callback and the device-state sync — so both go through
+`AbodeEntity._resolve_available()` instead of assigning the attribute
+directly. Without that single resolution point a SocketIO reconnect would
+silently mark an offline device available again.
+
+(`switch.py`'s alarm-attached switches predate this and still assign
+`_attr_available` directly, so a CMS switch that marks itself unavailable
+after repeated poll errors is reset by the next connection-status callback.
+Known gap, not covered by the hook.)
+
+```python
+class AbodeEntity(Entity):
+    _connection_available = True          # SocketIO half; assumed up until told
+
+    def _resolve_available(self) -> bool:
+        return self._connection_available
+
+class AbodeBinarySensor(AbodeDevice, BinarySensorEntity):
+    def _resolve_available(self) -> bool:
+        return super()._resolve_available() and self._device.is_reporting
+```
+
+Only binary sensors fold in a per-device signal (`#210`). A contact or motion
+sensor that reports `Offline` — or faults `no_response` — is holding a stale
+status, and letting that stale status read as `off` turned an offline blip on
+an open window into a fresh `off` -> `on` activation, which is exactly what
+`ActionTriggerCoordinator._handle_state_change` fires on. Reporting
+`unavailable` instead lands it on the transition the coordinator already
+rejects.
+
+Two deliberate boundaries:
+
+- **Link-state tags are exempt** (`_LINK_STATE_TAGS` in
+  `abode/devices/binary_sensor.py`): `glass`, `keypad`, `remote_controller`,
+  `siren`, `bx`. These report `Online` as their steady state and deliver real
+  events over the timeline, so `Offline` is the reading itself, not staleness
+  — withholding it would erase the only state those entities report. The
+  exemption is keyed on tag rather than on the `Connectivity` class because
+  that class is overloaded: `water_sensor` reports `On`/`Off` for moisture,
+  and `smoke_detector` / `fix_panic` are unverified, so all three take the
+  staleness treatment instead. Those are exactly the sensors a user wires an
+  action to, and `ActionTriggerCoordinator._handle_state_change` does not
+  filter by device class.
+- **Other device platforms are not covered.** Lights, locks, covers, cameras,
+  and sensors keep showing their last known state while offline. The false
+  trigger lives only on the binary-sensor path, so widening it was left out of
+  `#210` rather than silently bundled in.
+
 ### Dual Operation Modes
 
 - **Polling** — `async_update()` on HA's interval (fallback and CMS-settings refresh)

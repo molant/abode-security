@@ -20,6 +20,29 @@ These changes are deliberate and must not be reverted by a sync:
 - `keyring`-based credential persistence removed — HA owns config storage.
 - Synchronous HTTP (`requests`) replaced with `aiohttp.ClientSession`.
 - `lomond` WebSocket transport replaced with `aiohttp.ClientWebSocketResponse` (issue #61, Phase 3). SocketIO daemon thread folded into the HA event loop.
+- `devices/binary_sensor.py` status mapping (issue #210):
+  - `BinarySensor.is_reporting` added. Upstream has no per-device liveness
+    signal, so `Offline` was folded into `is_on` as "clear" and a stale status
+    read as a closed door. The HA entity uses this for per-device availability.
+    A `no_response` fault counts as not-reporting too, deliberately: it means
+    the panel has stopped hearing from the device, so its status is stale for
+    the same reason.
+  - `_LINK_STATE_TAGS` added, with `Connectivity.is_reporting` overriding for
+    those tags. `glass`, `keypad`, `remote_controller`, `siren` and `bx` report
+    `Online` as their steady state and deliver events over the timeline, so
+    `Offline` is their reading rather than a stale status. The override is
+    keyed on tag, not on the class, because upstream overloads `Connectivity`:
+    `water_sensor` reports `On`/`Off` for moisture, and `smoke_detector` /
+    `fix_panic` have no upstream mock to check, so those three keep the
+    staleness treatment.
+  - `BinarySensor.is_on` returns `False` for a missing or empty `status`.
+    Upstream's `get_value` returns `{}` for an absent key, and
+    `{} not in (...)` is `True`, so a device doc without a `status` field read
+    as active.
+  - `Motion.is_on` compares `Occupancy` status with `not in (STATUS.ONLINE,
+    STATUS.OFFLINE)`. Upstream's `not in STATUS.ONLINE` is a substring test
+    against the string `'Online'`, so `On` read as clear and `Offline` read as
+    occupied.
 
 ## Sync policy
 

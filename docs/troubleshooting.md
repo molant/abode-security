@@ -16,6 +16,19 @@
 - Lower the polling interval in the integration options (15–30 s), or rely on event updates.
 - Check Home Assistant system resources.
 
+**A sensor shows `unavailable` instead of `off`**
+- Contact and motion sensors report `unavailable` when the device itself stops
+  reporting — an `Offline` status or a `no_response` fault — because its last
+  known status is stale, not a reading of "closed". Showing it as `off` is what
+  used to let an offline blip on an open window look like a fresh
+  `off` → `on` activation and fire an alarm action.
+- Search the log for `stopped reporting` to see how often it happens and why:
+  `Abode sensor Front Door stopped reporting (status=Offline, no_response=False)`.
+- Frequent flapping usually means a weak RF link or a low battery — check the
+  sensor's distance from the panel, and its `battery_low` attribute while it is
+  reporting (Home Assistant hides entity attributes during the `unavailable`
+  half of a flap).
+
 **Authentication errors**
 - Verify your Abode password.
 - Two-factor authentication is not currently supported.

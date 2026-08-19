@@ -29,6 +29,11 @@ class AbodeEntity(Entity):
     _attr_attribution = ATTRIBUTION
     _attr_has_entity_name = True
 
+    # SocketIO connectivity, the only availability signal the base class has.
+    # Assumed up until the connection callback says otherwise, so entities
+    # don't start out unavailable before the first event arrives.
+    _connection_available = True
+
     def __init__(self, data: AbodeSystem) -> None:
         """Initialize Abode entity."""
         self._data = data
@@ -66,9 +71,27 @@ class AbodeEntity(Entity):
             self.unique_id,
         )
 
+    def _resolve_available(self) -> bool:
+        """Resolve availability from every signal this entity tracks.
+
+        Subclasses extend this to fold in per-device signals (e.g. a sensor
+        that has dropped off the RF network). Within `AbodeEntity` and
+        `AbodeDevice` both writers of `_attr_available` — the SocketIO
+        callback and the device-state sync — go through here, so neither can
+        clobber the other's half of the answer (#210).
+
+        `switch.py` predates this and still assigns `_attr_available`
+        directly on its alarm-attached switches, so a CMS switch that marked
+        itself unavailable after repeated poll errors is still reset by the
+        next connection-status callback. Migrating those to an override here
+        would fix that; it is out of scope for #210.
+        """
+        return self._connection_available
+
     def _update_connection_status(self) -> None:
         """Update the entity available property."""
-        self._attr_available = self._data.abode.events.connected
+        self._connection_available = self._data.abode.events.connected
+        self._attr_available = self._resolve_available()
         self.schedule_update_ha_state()
 
 
@@ -123,6 +146,7 @@ class AbodeDevice(AbodeEntity):
             "no_response": self._device.no_response,
             "device_type": self._device.type,
         }
+        self._attr_available = self._resolve_available()
 
     def _update_callback(self, _device: AbodeDev) -> None:
         """Update the device state."""
