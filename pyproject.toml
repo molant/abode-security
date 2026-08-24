@@ -38,7 +38,7 @@ dev = [
     # pytest, pytest-cov, pytest-asyncio and pytest-aiohttp are pinned exactly
     # by pytest-homeassistant-custom-component — match its pins rather than
     # PyPI's latest, or uv resolution conflicts.
-    "pytest==9.0.3",
+    "pytest==9.1.1",
     # pytest-homeassistant-custom-component pins homeassistant exactly (and
     # therefore all of HA's transitive deps: aiohttp, aiodns, pycares, etc.).
     # Keep this current with the latest HA to avoid transitive-version drift.
@@ -49,11 +49,11 @@ dev = [
     "aioresponses==0.7.9",
 
     # Code quality
-    "ruff==0.16.3",
+    "ruff==0.16.4",
 
     # Mock server dependencies (for running locally outside Docker)
     "fastapi==0.141.1",
-    "uvicorn[standard]==0.52.3",
+    "uvicorn[standard]==0.52.4",
 
     # Used directly by config_flow.py, conftest.py, and the mock server.
     # Lower-bound only: homeassistant pins requests to a specific patch version
