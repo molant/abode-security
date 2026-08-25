@@ -5,14 +5,23 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
-from homeassistant.core import Event, EventStateChangedData, callback
+from homeassistant.const import (
+    EVENT_HOMEASSISTANT_STARTED,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+    Platform,
+)
+from homeassistant.core import CoreState, Event, EventStateChangedData, callback
 from homeassistant.helpers import issue_registry as ir
-from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_state_added_domain,
+    async_track_state_change_event,
+)
 from homeassistant.util import dt as dt_util
 
 from ..const import (
@@ -50,6 +59,32 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# How long a past-startup deferral waits for the panel entity before deciding it
+# is not coming.  Floored at HA's own `SLOW_SETUP_MAX_WAIT`: platforms normally
+# forward milliseconds after `async_setup`, but HA *permits* them up to 300 s,
+# and undershooting that turns a slow forward into a race we lose badly —
+# reconcile would stamp `last_disarmed_at` against a panel that was merely late,
+# dropping the pair out of ARMED with no way to re-run it.  Waiting the full
+# ceiling costs nothing in the case this exists for (no alarm device on the
+# account), where nothing is watching anyway.
+PANEL_WAIT_TIMEOUT = 300
+
+# Keys for `_panel_wait_handles`; the two deferrals wait independently.
+PANEL_WAIT_LISTENER = "listener"
+PANEL_WAIT_RECONCILE = "reconcile"
+
+
+class _RunWithoutPanel:
+    """Sentinel for "no panel? do it anyway" in ``_defer_until_panel_exists``.
+
+    The alternative is a warning message, and the two are mutually exclusive —
+    one parameter carrying either makes "both" and "neither" unrepresentable
+    rather than merely untested.
+    """
+
+
+RUN_WITHOUT_PANEL = _RunWithoutPanel()
+
 
 class _Unset:
     """Sentinel for "leave this runtime field alone" in ``_persist_runtime``.
@@ -85,6 +120,15 @@ class ScheduleManager:
         # a successful arm (or restored by reconciliation).
         self._pending_handles: dict[tuple[str, str], CancelHandle] = {}
         self._listener_handle: CancelHandle | None = None
+        # Outstanding "wait for the panel entity to appear" subscriptions, used
+        # instead of EVENT_HOMEASSISTANT_STARTED once HA is already running.
+        # Keyed so the listener and the startup reconcile wait independently.
+        self._panel_wait_handles: dict[str, CancelHandle] = {}
+        # Last mode the panel was actually *in*, ignoring unavailable/unknown.
+        # _on_panel_state_changed compares against this rather than the event's
+        # own old_state, so a cloud dropout does not erase the fact that the
+        # panel was Home before it (#216).
+        self._last_panel_state: str | None = None
         self._reconcile_deferred = False
         # In-flight async_arm / async_disarm work, so async_shutdown can cancel
         # it.  State confirmation (#192) can keep one of these alive for ~111 s,
@@ -148,9 +192,14 @@ class ScheduleManager:
         timer-registering helpers check the flag so a WS command arriving in
         that window cannot install a handle nobody will sweep again.
 
-        The two ``EVENT_HOMEASSISTANT_STARTED`` one-shot subscriptions are not
-        unsubscribed here — they hold a reference to this manager until HA
-        start fires — but the same flag makes both of them no-ops.
+        What the sweep can reach depends on how the two panel deferrals were
+        armed.  During startup they are ``EVENT_HOMEASSISTANT_STARTED``
+        one-shots, which are *not* unsubscribed here — they hold a reference to
+        this manager until HA start fires — and the ``_shutdown`` flag is what
+        makes them no-ops.  Past startup they are live state-added
+        subscriptions parked in ``_panel_wait_handles``, and those are
+        genuinely cancelled below; left alone they would keep a torn-down
+        manager subscribed to every alarm_control_panel that appears next.
         """
         self._shutdown = True
         for handle in list(self._pending_handles.values()):
@@ -159,6 +208,12 @@ class ScheduleManager:
         if self._listener_handle is not None:
             self._listener_handle()
             self._listener_handle = None
+        for key in list(self._panel_wait_handles):
+            self._cancel_panel_wait(key)
+        # Cleared with the handle it belongs to: the two are a pair, and a
+        # remembered mode outliving the listener that maintained it would be
+        # stale the moment anything learns to restart a shut-down manager.
+        self._last_panel_state = None
         tasks = list(self._inflight)
         self._inflight.clear()
         for task in tasks:
@@ -827,9 +882,11 @@ class ScheduleManager:
         mark the pair as disarmed without calling mode_changer.
 
         If the panel entity is not yet in hass.states (platforms not loaded yet),
-        defer to EVENT_HOMEASSISTANT_STARTED so reconciliation runs after the
-        alarm_control_panel entity is available.  Only defers once; a second call
-        with a still-missing panel proceeds conservatively (marks PANEL_NOT_HOME).
+        defer via :meth:`_defer_until_panel_exists` so reconciliation runs once
+        the alarm_control_panel entity is available — on HA start during a boot,
+        on the entity appearing after a config-entry reload.  Only defers once;
+        the deferred pass runs even if the panel never showed up, and proceeds
+        conservatively then (marks PANEL_NOT_HOME).
         """
         panel_str = self._panel_state()
 
@@ -837,14 +894,24 @@ class ScheduleManager:
             self._reconcile_deferred = True
 
             @callback
-            def _reconcile_after_start(_event: Event[Any]) -> None:
+            def _reconcile_when_panel_exists() -> None:
                 # Tracked: an entry unloaded before HA finishes starting would
                 # otherwise reconcile — writing to the store and registering a
                 # disarm timer — against a manager nobody holds any more.
                 self._track(self.async_reconcile_on_startup())
 
-            self._hass.bus.async_listen_once(
-                EVENT_HOMEASSISTANT_STARTED, _reconcile_after_start
+            # Same reload trap as the override listener, and the worse half of
+            # it: `_register_all_timers` only restores the daily *arm* callback,
+            # so reconciliation is the only thing that rebuilds a one-shot
+            # disarm.  Waiting on an EVENT_HOMEASSISTANT_STARTED that will never
+            # fire again left a mid-window reload with the panel armed and
+            # nothing scheduled to disarm it (#216).
+            self._defer_until_panel_exists(
+                PANEL_WAIT_RECONCILE,
+                _reconcile_when_panel_exists,
+                # A panel that never materialises still needs reconciling: the
+                # second pass takes the conservative PANEL_NOT_HOME branch.
+                on_missing_panel=RUN_WITHOUT_PANEL,
             )
             return
 
@@ -937,10 +1004,15 @@ class ScheduleManager:
     def _start_panel_listener(self) -> None:
         """Register the alarm-panel state-change listener.
 
-        Defers registration via EVENT_HOMEASSISTANT_STARTED if the panel
-        entity is not yet in hass.states (e.g. called before platforms load).
+        Defers registration via :meth:`_defer_until_panel_exists` if the panel
+        entity is not yet in hass.states — which is every setup, since
+        ``async_setup`` runs before the platforms are forwarded.
         Guards against double-registration: a second call is a no-op if the
-        listener handle is already set.
+        listener handle is already set.  Past startup ``_defer_until_panel_exists``
+        extends that to an outstanding deferral, so a second call cannot orphan
+        the subscription the first one made; the startup branch does not dedup,
+        but its retry is idempotent because this guard makes the second one a
+        no-op.
 
         The shutdown guard is what stops the deferred retry from resurrecting
         the listener: shutdown sets the handle back to None, so the "already
@@ -951,43 +1023,200 @@ class ScheduleManager:
             return
         panel_id = self._panel_entity_id()
         if panel_id is None:
-
-            @callback
-            def _retry(_event: Event[Any]) -> None:
-                if self._shutdown:
-                    # Checked before the panel lookup, not just via
-                    # _start_panel_listener's guard: unloading the entry removes
-                    # the alarm_control_panel entity, so an unloaded manager
-                    # takes the warning branch below and blames a missing panel
-                    # for a teardown it caused itself.
-                    return
-                if self._panel_entity_id() is None:
-                    _LOGGER.warning(
-                        "Abode panel entity not found after HA start; "
-                        "schedule manual-override listener is disabled"
-                    )
-                    return
-                self._start_panel_listener()
-
-            self._hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _retry)
+            self._defer_panel_listener()
             return
 
+        # Seed the remembered mode from wherever the panel stands right now, so
+        # the very first event has something to compare against.  A panel that
+        # is already unavailable seeds None — "we have never seen it Home".
+        current = self._panel_state()
+        self._last_panel_state = (
+            None if current in (None, STATE_UNAVAILABLE, STATE_UNKNOWN) else current
+        )
         self._listener_handle = async_track_state_change_event(
             self._hass, [panel_id], self._on_panel_state_changed
         )
+        # Registered: drop whatever deferral got us here.
+        self._cancel_panel_wait(PANEL_WAIT_LISTENER)
+
+    def _defer_panel_listener(self) -> None:
+        """Arrange a retry for when the panel entity shows up."""
+        self._defer_until_panel_exists(
+            PANEL_WAIT_LISTENER,
+            self._start_panel_listener,
+            on_missing_panel=(
+                "Abode panel entity not found after HA start; "
+                "schedule manual-override listener is disabled"
+            ),
+        )
+
+    def _defer_until_panel_exists(
+        self,
+        key: str,
+        action: Callable[[], None],
+        *,
+        on_missing_panel: _RunWithoutPanel | str,
+    ) -> None:
+        """Run ``action`` once the Abode panel entity exists.
+
+        Both callers need this because ``async_setup`` runs *before*
+        ``async_forward_entry_setups``: the alarm_control_panel entity is never
+        in ``hass.states`` yet, so deferring is the normal path on every setup
+        rather than an unusual one.
+
+        Which trigger to wait on depends on whether HA is already up.
+        ``EVENT_HOMEASSISTANT_STARTED`` is right during startup, but it fires
+        once per process — on a config-entry reload (an options change, a HACS
+        update, the Reload button) it has already fired and never fires again,
+        so a manager waiting on it waits forever (#216).  Past startup, watch
+        for the entity itself instead.
+
+        A panel that never turns up at all — an account with no alarm device,
+        or the ``alarm is None`` branch in ``alarm_control_panel`` — is handled
+        on both triggers, because "wait forever" is the wrong answer for one of
+        the two callers.  ``on_missing_panel`` says which:
+
+        ``RUN_WITHOUT_PANEL``
+            Run the action anyway.  Reconciliation has its own panel-less branch
+            (it marks the pair ``reconcile_panel_not_home``), and skipping it
+            would strand ``last_armed_at`` ahead of ``last_disarmed_at``
+            forever — the very shape this file is fixing elsewhere.
+        a message
+            Log it once as a warning and do not run.  The listener has nothing
+            to listen to without a panel; past startup the subscription is kept
+            so a panel that shows up late is still adopted, while the startup
+            one-shot is spent by then and the listener stays disabled until the
+            next restart.
+        """
+        if self._shutdown:
+            # Self-guarded like `_schedule_disarm` and `_register_pair_timers`,
+            # rather than trusting both callers: `async_shutdown` has already
+            # swept `_panel_wait_handles`, so anything armed past that point is
+            # never cancelled — a dead manager left subscribed to every panel
+            # added for the life of the process.
+            return
+        if self._hass.state is CoreState.running:
+            if key in self._panel_wait_handles:
+                return  # already waiting on this one — do not leak the handle
+
+            handles: list[CancelHandle] = []
+
+            @callback
+            def _cancel_all() -> None:
+                for handle in handles:
+                    handle()
+
+            @callback
+            def _proceed() -> None:
+                self._cancel_panel_wait(key)
+                action()
+
+            @callback
+            def _on_panel_added(_event: Event[EventStateChangedData]) -> None:
+                if self._shutdown:
+                    return
+                if self._panel_entity_id() is None:
+                    # Another integration's alarm_control_panel — keep waiting.
+                    return
+                _proceed()
+
+            @callback
+            def _panel_never_arrived(_now: datetime) -> None:
+                # The state-added subscription alone would wait forever, which
+                # for reconciliation means the pair never leaves ARMED (#216).
+                if self._shutdown or self._panel_entity_id() is not None:
+                    return
+                if isinstance(on_missing_panel, str):
+                    # Keep waiting — unlike the one-shot, this subscription
+                    # survives, so a late panel is still picked up.
+                    _LOGGER.warning(on_missing_panel)
+                    return
+                _LOGGER.debug(
+                    "Abode panel entity still absent after %ss (%s); "
+                    "proceeding without it",
+                    PANEL_WAIT_TIMEOUT,
+                    key,
+                )
+                _proceed()
+
+            handles.append(
+                async_track_state_added_domain(
+                    self._hass, Platform.ALARM_CONTROL_PANEL, _on_panel_added
+                )
+            )
+            handles.append(
+                async_call_later(self._hass, PANEL_WAIT_TIMEOUT, _panel_never_arrived)
+            )
+            self._panel_wait_handles[key] = _cancel_all
+            _LOGGER.debug(
+                "Abode panel entity not present yet (%s); waiting for it to be added",
+                key,
+            )
+            return
+
+        @callback
+        def _retry(_event: Event[Any]) -> None:
+            if self._shutdown:
+                # Checked before the panel lookup, not just via the caller's
+                # own guard: unloading the entry removes the
+                # alarm_control_panel entity, so an unloaded manager takes the
+                # warning branch below and blames a missing panel for a
+                # teardown it caused itself.
+                return
+            if self._panel_entity_id() is None and isinstance(on_missing_panel, str):
+                _LOGGER.warning(on_missing_panel)
+                return
+            action()
+
+        self._hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _retry)
+
+    @callback
+    def _cancel_panel_wait(self, key: str) -> None:
+        """Drop one outstanding state-added subscription, if any."""
+        handle = self._panel_wait_handles.pop(key, None)
+        if handle is not None:
+            handle()
 
     @callback
     def _on_panel_state_changed(self, event: Event[EventStateChangedData]) -> None:
         """Filter state-change events; ignore self-driven schedule transitions."""
+        new_state = event.data.get("new_state")
+
+        # Losing the panel is not a mode change.  An Abode cloud dropout drives
+        # armed_home -> unavailable -> armed_home in a couple of minutes, and HA
+        # mints a fresh context when it marks an entity unavailable, so the
+        # CONTEXT_ID_PREFIX check below cannot filter it out.  Treating that as a
+        # manual override cancelled the pending disarm and stranded the panel
+        # armed for the rest of the night (#216).  Return *without* touching
+        # `_last_panel_state`: the blip must not erase the fact that the panel
+        # was Home going into it.
+        #
+        # Excluding those two by name is exhaustive only because the panel maps
+        # to `disarmed` / `armed_home` / `armed_away` and nothing else (see
+        # AbodeAlarm._sync_attrs in ../alarm_control_panel.py, whose None renders
+        # as `unknown`).  Teaching it a transitional state such as `arming` or
+        # `triggered` means revisiting this guard.
+        if new_state is None or new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return
+
+        # The comparison is against the last mode the panel was known to be in,
+        # not the event's own `old_state`, precisely so a change made while HA
+        # was blind still reads correctly: recovering as `disarmed` or
+        # `armed_away` is a real leave-Home edge and must still register.
+        previous = self._last_panel_state
+        # Recorded before the self-driven early return, and unconditionally: our
+        # own disarm has to move the memory off armed_home too, or the next
+        # genuine change would be misread as leaving Home.  (The old code got
+        # this for free from `old_state`.)
+        self._last_panel_state = new_state.state
+
         ctx_id = event.context.id or ""
         if ctx_id.startswith(CONTEXT_ID_PREFIX):
             return  # our own change — ignore
 
-        old_state = event.data.get("old_state")
-        new_state = event.data.get("new_state")
-        if new_state is None or new_state.state == "armed_home":
+        if new_state.state == "armed_home":
             return
-        if old_state is None or old_state.state != "armed_home":
+        if previous != "armed_home":
             return
 
         # Transition left armed_home via a non-self-driven context.
