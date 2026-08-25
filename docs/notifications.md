@@ -379,6 +379,26 @@ The `reason` field on `schedule_skipped` events takes one of six values:
 | `away_active` | Panel was `armed_away`; arm and disarm both skipped |
 | `already_home` | Panel already `armed_home`; arm skipped but disarm still fires later |
 | `panel_unavailable` | Panel in an intermediate state or entity not registered |
-| `manual_override` | Panel left `armed_home` via a non-schedule context (user changed mode manually) |
-| `reconcile_window_elapsed` | HA restarted after the disarm window had already passed |
-| `reconcile_panel_not_home` | HA restarted mid-window but panel was no longer Home |
+| `manual_override` | Panel left `armed_home` for another *mode* via a non-schedule context (user changed mode manually). Losing the panel does not count — see below |
+| `reconcile_window_elapsed` | HA restarted, or the integration reloaded, after the disarm window had already passed |
+| `reconcile_panel_not_home` | HA restarted or the integration reloaded mid-window and the panel was no longer Home — or never appeared at all (an account with no alarm device) |
+
+### `manual_override` and panel availability
+
+A dropout is not an override. When the Abode cloud connection drops, the panel
+entity goes `unavailable` and comes back a minute or two later — and that is not
+the user changing mode, so it does not fire `schedule_skipped` and does not
+cancel the pending disarm. The schedule resumes as if nothing happened.
+
+A mode change made *while* the panel was unavailable is still an override: the
+integration compares against the last mode the panel was known to be in, so a
+panel that drops out of `armed_home` and returns `disarmed` or `armed_away`
+fires `manual_override` on the way back. The exception is a restart or reload
+*during* the outage: the reloaded integration has no memory of the earlier mode
+and seeds from whatever the panel reports on the way back, so a change made
+across that boundary is not detected as an override.
+
+The one case this does not cover is a dropout that outlasts the window. If the
+panel is still unavailable at `disarm_time`, the disarm is skipped with
+`panel_unavailable` (not `manual_override`) and is not retried when the panel
+returns — so a schedule that matters is worth alerting on for both reasons.

@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
-from homeassistant.core import Context, HomeAssistant
+from homeassistant.core import Context, CoreState, HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
@@ -32,9 +32,19 @@ from custom_components.abode_security.const import (
     REPAIR_ISSUE_SCHEDULE_FIRE_FAILED,
     SCHEDULE_RETRY_TOTAL_ATTEMPTS,
 )
-from custom_components.abode_security.scheduling.manager import ScheduleManager
+from custom_components.abode_security.scheduling.manager import (
+    PANEL_WAIT_LISTENER,
+    PANEL_WAIT_RECONCILE,
+    PANEL_WAIT_TIMEOUT,
+    RUN_WITHOUT_PANEL,
+    ScheduleManager,
+)
 from custom_components.abode_security.scheduling.mode_changer import ModeChangeFailed
-from custom_components.abode_security.scheduling.models import ChangeSource, SkipReason
+from custom_components.abode_security.scheduling.models import (
+    ChangeSource,
+    ScheduledPair,
+    SkipReason,
+)
 from custom_components.abode_security.scheduling.scheduler import CancelHandle
 from custom_components.abode_security.scheduling.state_machine import expected_disarm_at
 from custom_components.abode_security.scheduling.store import SchedulesStore
@@ -1212,7 +1222,7 @@ class TestReconciliation:
         pair = await self._armed_pair(manager, fake_clock, arm_dt)
         # First call with no panel: deferred.
         await manager.async_reconcile_on_startup()
-        # Second call (simulates post-EVENT_HOMEASSISTANT_STARTED, panel still None):
+        # Second call: `_reconcile_deferred` is set, so the body runs:
         # out-of-window check doesn't need panel, proceeds immediately.
         await manager.async_reconcile_on_startup()
 
@@ -1240,6 +1250,160 @@ class TestReconciliation:
         assert (pair.id, "disarm") not in manager._pending_handles
         assert len(fake_mode_changer.calls) == 0
 
+    async def test_reconcile_after_ha_start_with_no_panel_is_conservative(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """A panel that never appears must still leave the pair reconciled.
+
+        Drives the real deferral rather than calling the method twice by hand:
+        an account with no alarm device — or the `alarm is None` path in
+        `alarm_control_panel.async_setup_entry` — reaches HA start with nothing
+        to reconcile against, and reconciliation has to run anyway and mark the
+        pair conservatively.  Skipping it would leave `last_armed_at` ahead of
+        `last_disarmed_at` forever, so `derive_state` reports ARMED for a pair
+        nothing will ever disarm — the same shape as the bug this commit fixes.
+        """
+        arm_dt = datetime(2030, 1, 7, 22, 0, 0, tzinfo=UTC)
+        restart_dt = datetime(2030, 1, 7, 23, 30, 0, tzinfo=UTC)
+        fake_clock.set(restart_dt)
+        hass.set_state(CoreState.starting)
+
+        pair = await self._armed_pair(manager, fake_clock, arm_dt)
+        await manager.async_reconcile_on_startup()  # no panel — defers
+
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.last_skip_reason is None  # not yet reconciled
+
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)  # panel STILL absent
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.last_skip_reason == SkipReason.RECONCILE_PANEL_NOT_HOME
+
+    def test_panel_wait_timeout_floors_ha_platform_ceiling(self) -> None:
+        """The backstop must not undershoot how long HA lets platforms take.
+
+        Pinned against HA's own constant rather than a literal, because the
+        number is not arbitrary: platforms normally forward in milliseconds, but
+        HA permits up to `SLOW_SETUP_MAX_WAIT`.  Tripping before that turns a
+        merely slow forward into reconcile stamping `last_disarmed_at` against a
+        panel that was on its way — dropping the pair out of ARMED with nothing
+        able to re-run it, which is this issue's own symptom.
+
+        `>=`, not `==`: HA raising its ceiling is what must fail here; HA
+        lowering it is harmless, and overshooting costs nothing on the
+        panel-less accounts this backstop exists for.
+        """
+        from homeassistant.setup import SLOW_SETUP_MAX_WAIT
+
+        assert PANEL_WAIT_TIMEOUT >= SLOW_SETUP_MAX_WAIT
+
+    async def test_reconcile_after_reload_with_no_panel_is_conservative(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The reload branch needs the same panel-never-arrives escape.
+
+        Waiting on the entity is right until the entity is never coming — an
+        account with no alarm device reaches this on every reload, and waiting
+        forever means the pair never leaves ARMED.  A backstop timer runs the
+        conservative pass instead.
+        """
+        arm_dt = datetime(2030, 1, 7, 22, 0, 0, tzinfo=UTC)
+        reload_dt = datetime(2030, 1, 7, 23, 30, 0, tzinfo=UTC)
+        fake_clock.set(reload_dt)
+        hass.set_state(CoreState.running)
+
+        pair = await self._armed_pair(manager, fake_clock, arm_dt)
+        # Anchored BEFORE the deferral arms its timer, so the near-edge fire
+        # below is unconditionally earlier than the timer's due instant however
+        # long the awaits in between take.  Reading the anchor afterwards left
+        # about half a second of real wall clock before the "not yet" assertion
+        # started firing the timer for real — a flake pointing at reconcile.
+        armed_at = dt_util.utcnow()
+        await manager.async_reconcile_on_startup()  # no panel — defers
+
+        assert PANEL_WAIT_RECONCILE in manager._panel_wait_handles
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.last_skip_reason is None  # still waiting
+
+        # Not yet: the backstop is real wall-clock, so it must not trip early.
+        # (No `fire_all` — that would fire every timer regardless of its due
+        # time and leave PANEL_WAIT_TIMEOUT's value unpinned.)
+        async_fire_time_changed(
+            hass, armed_at + timedelta(seconds=PANEL_WAIT_TIMEOUT - 1)
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.last_skip_reason is None
+
+        # The panel never arrives; the backstop fires.
+        async_fire_time_changed(
+            hass, dt_util.utcnow() + timedelta(seconds=PANEL_WAIT_TIMEOUT + 1)
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.last_skip_reason == SkipReason.RECONCILE_PANEL_NOT_HOME
+        assert PANEL_WAIT_RECONCILE not in manager._panel_wait_handles
+
+    async def test_reconcile_survives_a_reload_mid_window(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """#216: the reconcile deferral has the same reload trap as the listener.
+
+        This is the worse half of the pair.  `_register_all_timers` only
+        restores the daily *arm* callback, so reconciliation is the only thing
+        that rebuilds a one-shot disarm — waiting on an
+        EVENT_HOMEASSISTANT_STARTED that has already fired left a mid-window
+        reload with the panel armed and nothing scheduled to disarm it.
+        """
+        arm_dt = datetime(2030, 1, 7, 22, 0, 0, tzinfo=UTC)
+        reload_dt = datetime(2030, 1, 7, 23, 30, 0, tzinfo=UTC)
+        fake_clock.set(reload_dt)
+        hass.set_state(CoreState.running)  # a reload, not a boot
+
+        pair = await self._armed_pair(manager, fake_clock, arm_dt)
+        await manager.async_reconcile_on_startup()  # no panel yet — defers
+
+        assert PANEL_WAIT_RECONCILE in manager._panel_wait_handles
+        assert (pair.id, "disarm") not in manager._pending_handles
+
+        # HA start will not fire again; the panel appearing is the real signal.
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert (pair.id, "disarm") not in manager._pending_handles
+
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        assert (pair.id, "disarm") in manager._pending_handles
+        assert PANEL_WAIT_RECONCILE not in manager._panel_wait_handles
+
+        # And it really disarms at the boundary.
+        disarm_dt = await _expected_disarm(manager, pair.id) + timedelta(seconds=2)
+        fake_clock.set(disarm_dt)
+        async_fire_time_changed(hass, disarm_dt, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        assert [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+
     async def test_reconcile_deferred_when_panel_unavailable_at_setup(
         self,
         hass: HomeAssistant,
@@ -1255,7 +1419,10 @@ class TestReconciliation:
         arm_dt = datetime(2030, 1, 7, 22, 0, 0, tzinfo=UTC)
         restart_dt = datetime(2030, 1, 7, 23, 30, 0, tzinfo=UTC)
         fake_clock.set(restart_dt)
-        # No panel at first call → deferred.
+        # No panel at first call → deferred.  This is the *startup* branch;
+        # past startup the deferral waits on the entity instead (see
+        # test_reconcile_survives_a_reload_mid_window).
+        hass.set_state(CoreState.starting)
 
         pair = await self._armed_pair(manager, fake_clock, arm_dt)
         await manager.async_reconcile_on_startup()
@@ -1274,14 +1441,22 @@ class TestReconciliation:
         # After event, reconciliation ran and re-registered the disarm timer.
         assert (pair.id, "disarm") in manager._pending_handles
 
-    async def test_reconcile_second_call_with_no_panel_proceeds_conservatively(
+    async def test_reconcile_only_defers_once(
         self,
         hass: HomeAssistant,
         manager: ScheduleManager,
         fake_clock: FakeClock,
         fake_mode_changer: FakeModeChanger,
     ) -> None:
-        """Second reconcile call with panel still None proceeds conservatively."""
+        """The `_reconcile_deferred` guard, driven directly.
+
+        Production reaches the second pass through the deferral rather than by
+        calling twice (see `test_reconcile_after_ha_start_with_no_panel_is_
+        conservative` and its reload sibling); this one exercises the guard and
+        the panel-less body on their own, so pin the branch explicitly rather
+        than inheriting whatever CoreState the harness defaults to.
+        """
+        hass.set_state(CoreState.starting)
         arm_dt = datetime(2030, 1, 7, 22, 0, 0, tzinfo=UTC)
         restart_dt = datetime(2030, 1, 7, 23, 30, 0, tzinfo=UTC)
         fake_clock.set(restart_dt)
@@ -1289,7 +1464,7 @@ class TestReconciliation:
         pair = await self._armed_pair(manager, fake_clock, arm_dt)
         # First call: deferred.
         await manager.async_reconcile_on_startup()
-        # Second call (simulates post-EVENT_HOMEASSISTANT_STARTED with still-None panel).
+        # Second call: the guard is already set, so this runs the body.
         await manager.async_reconcile_on_startup()
 
         refreshed = await manager.async_get(pair.id)
@@ -1395,6 +1570,433 @@ class TestManualOverrideListener:
         await hass.async_block_till_done()
 
         assert len(skipped) == 0
+
+    # -- #216: availability blips are not manual overrides -------------------
+
+    async def _armed_with_pending_disarm(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+    ) -> ScheduledPair:
+        """Arm a pair, leave the panel Home, and start the override listener."""
+        _set_panel(hass, "disarmed")
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        await manager.async_arm(pair.id)
+        _set_panel(hass, "armed_home")
+        assert (pair.id, "disarm") in manager._pending_handles
+        manager._start_panel_listener()
+        return pair
+
+    @pytest.mark.parametrize("blip", ["unavailable", "unknown"])
+    async def test_availability_blip_keeps_pending_disarm(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+        blip: str,
+    ) -> None:
+        """#216: a cloud dropout inside the window must not cancel the disarm.
+
+        A SocketIO reconnect flips the panel armed_home → unavailable → armed_home
+        in a couple of minutes.  HA mints a fresh context when it marks an entity
+        unavailable, so the CONTEXT_ID_PREFIX check cannot filter it out — the
+        listener has to recognise unavailability itself.
+        """
+        pair = await self._armed_with_pending_disarm(hass, manager)
+        before = await manager.async_get(pair.id)
+        assert before is not None
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+
+        _set_panel(hass, blip)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert (pair.id, "disarm") in manager._pending_handles
+        assert len(skipped) == 0
+        after = await manager.async_get(pair.id)
+        assert after is not None
+        assert after.last_disarmed_at == before.last_disarmed_at
+        assert after.last_skip_reason == before.last_skip_reason
+
+        # …and the original disarm still fires at its own boundary.
+        fired = _capture_events(hass, EVENT_SCHEDULE_FIRED)
+        disarm_dt = await _expected_disarm(manager, pair.id) + timedelta(seconds=2)
+        fake_clock.set(disarm_dt)
+        async_fire_time_changed(hass, disarm_dt, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        assert [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+        assert any(e["action"] == "disarm" for e in fired)
+
+    async def test_change_made_while_unavailable_is_still_an_override(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Panel recovers as disarmed → the user really did leave Home."""
+        pair = await self._armed_with_pending_disarm(hass, manager)
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+
+        _set_panel(hass, "unavailable")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        # The dropout itself is a non-event — asserted here so this test fails
+        # on the #216 bug rather than passing on it: the old code cancelled the
+        # handle on THIS edge, reaching the same end state for the wrong reason.
+        assert (pair.id, "disarm") in manager._pending_handles
+        assert len(skipped) == 0
+
+        _set_panel(hass, "disarmed")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert (pair.id, "disarm") not in manager._pending_handles
+        assert any(e["reason"] == SkipReason.MANUAL_OVERRIDE for e in skipped)
+
+    async def test_recovering_as_away_is_still_an_override(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Panel recovers as armed_away → still counts as leaving Home."""
+        pair = await self._armed_with_pending_disarm(hass, manager)
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+
+        _set_panel(hass, "unavailable")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        # Same reason as the disarmed case above: pin the intermediate edge.
+        assert (pair.id, "disarm") in manager._pending_handles
+        assert len(skipped) == 0
+
+        _set_panel(hass, "armed_away")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert (pair.id, "disarm") not in manager._pending_handles
+        assert any(e["reason"] == SkipReason.MANUAL_OVERRIDE for e in skipped)
+
+    async def test_self_driven_disarm_does_not_arm_a_later_override(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The remembered mode tracks our own transitions too.
+
+        The listener compares against the last mode the panel was known to be in
+        rather than the event's ``old_state``, so a self-driven armed_home →
+        disarmed must still move that memory off armed_home — otherwise the next
+        genuine change would be misread as leaving Home.
+        """
+        pair = await self._armed_with_pending_disarm(hass, manager)
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+
+        ctx = Context(id=f"{CONTEXT_ID_PREFIX}{pair.id}_deadbeef")
+        _set_panel(hass, "disarmed", context=ctx)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert (pair.id, "disarm") in manager._pending_handles
+
+        # A later user-driven change out of `disarmed` is not a leave-Home edge.
+        _set_panel(hass, "armed_away")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert (pair.id, "disarm") in manager._pending_handles
+        assert len(skipped) == 0
+
+    async def test_unavailable_across_disarm_time_skips(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Pins the landing when the panel is *still* out at disarm_time.
+
+        The listener fix keeps the timer alive across a blip, but a dropout that
+        outlasts the window still lands in `_disarm_impl`'s conservative
+        panel_unavailable branch: the pair leaves ARMED and nothing re-attempts
+        the disarm when the panel returns.  Re-adopting the panel on recovery is
+        #212's job; this test exists so that change is a deliberate one.
+        """
+        pair = await self._armed_with_pending_disarm(hass, manager)
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+
+        _set_panel(hass, "unavailable")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert (pair.id, "disarm") in manager._pending_handles
+
+        disarm_dt = await _expected_disarm(manager, pair.id) + timedelta(seconds=2)
+        fake_clock.set(disarm_dt)
+        async_fire_time_changed(hass, disarm_dt, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        assert not [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+        assert any(e["reason"] == SkipReason.PANEL_UNAVAILABLE for e in skipped)
+
+        # Recovering afterwards does not re-attempt: the pair is out of ARMED.
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert not [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+
+    # -- #216: the deferral has to survive a config-entry reload -------------
+
+    async def test_reload_waits_for_the_panel_entity_not_ha_start(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+    ) -> None:
+        """#216: past startup, EVENT_HOMEASSISTANT_STARTED never fires again.
+
+        `async_setup` runs before `async_forward_entry_setups`, so the panel
+        entity is never in `hass.states` yet and the deferral is taken on every
+        setup.  Deferring to EVENT_HOMEASSISTANT_STARTED is fine on first boot,
+        but that event is once-per-process: after a reload the manager waited on
+        something that would never come and the override listener stayed dead
+        until the next restart.
+        """
+        hass.set_state(CoreState.running)  # i.e. a reload, not first boot
+        manager._start_panel_listener()
+
+        # Deferred on the entity, not on HA start.
+        assert manager._listener_handle is None
+        assert PANEL_WAIT_LISTENER in manager._panel_wait_handles
+
+        # Firing HA start again changes nothing — it is not what we waited on.
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+        await hass.async_block_till_done()
+        assert manager._listener_handle is None
+
+        # The panel arriving is.
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done()
+
+        assert manager._listener_handle is not None
+        assert PANEL_WAIT_LISTENER not in manager._panel_wait_handles
+        assert manager._last_panel_state == "armed_home"
+
+    async def test_listener_registered_after_reload_still_sees_overrides(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """End to end: the reload-registered listener does its actual job."""
+        hass.set_state(CoreState.running)
+        manager._start_panel_listener()  # defers on the entity
+        _set_panel(hass, "disarmed")  # panel appears — listener registers
+        await hass.async_block_till_done()
+        assert manager._listener_handle is not None
+
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        await manager.async_arm(pair.id)
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert (pair.id, "disarm") in manager._pending_handles
+
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+        _set_panel(hass, "disarmed")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert (pair.id, "disarm") not in manager._pending_handles
+        assert any(e["reason"] == SkipReason.MANUAL_OVERRIDE for e in skipped)
+
+    async def test_foreign_alarm_panel_does_not_register_the_listener(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+    ) -> None:
+        """Another integration's alarm_control_panel is not ours to watch.
+
+        Asserted on the *identity* of the outstanding subscription, not merely
+        on one being present: without the `_panel_entity_id()` guard a foreign
+        panel re-enters `_start_panel_listener`, finds nothing, and defers
+        again — reaching an observably identical state via a fresh handle.
+        """
+        hass.set_state(CoreState.running)
+        manager._start_panel_listener()
+        waiting_on = manager._panel_wait_handles[PANEL_WAIT_LISTENER]
+
+        hass.states.async_set("alarm_control_panel.someone_elses", "disarmed")
+        await hass.async_block_till_done()
+
+        assert manager._listener_handle is None
+        assert manager._panel_wait_handles.get(PANEL_WAIT_LISTENER) is waiting_on
+
+        _set_panel(hass, "disarmed")
+        await hass.async_block_till_done()
+        assert manager._listener_handle is not None
+
+    async def test_full_setup_arms_both_deferrals_and_both_fire(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The production shape: `async_setup` arms both waits back to back.
+
+        Every other test drives one deferral at a time, but `async_setup`
+        registers the listener and the reconcile wait against the same domain.
+        Correctness then leans on HA copying its listener list before dispatch,
+        so that the first callback cancelling its own subscription mid-dispatch
+        does not stop the second from running.  Pin both firing from one arrival.
+        """
+        arm_dt = datetime(2030, 1, 7, 22, 0, 0, tzinfo=UTC)
+        reload_dt = datetime(2030, 1, 7, 23, 30, 0, tzinfo=UTC)
+        fake_clock.set(reload_dt)
+        hass.set_state(CoreState.running)
+
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        pair.last_armed_at = arm_dt  # armed before the reload
+        await manager._store.async_update(pair)
+
+        await manager.async_setup()  # no panel yet — both defer
+
+        assert PANEL_WAIT_LISTENER in manager._panel_wait_handles
+        assert PANEL_WAIT_RECONCILE in manager._panel_wait_handles
+        assert manager._listener_handle is None
+        assert (pair.id, "disarm") not in manager._pending_handles
+
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        # Listener registered *and* the disarm timer reconciled back.
+        assert manager._listener_handle is not None
+        assert manager._last_panel_state == "armed_home"
+        assert (pair.id, "disarm") in manager._pending_handles
+        assert manager._panel_wait_handles == {}
+
+    async def test_listener_gives_up_when_panel_absent_at_ha_start(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """The startup twin of the warn branch: the one-shot is spent.
+
+        Unlike the state-added deferral, EVENT_HOMEASSISTANT_STARTED does not
+        come round again — so the listener warns and stays disabled until the
+        next restart.  Asserting the empty wait-handle set is what distinguishes
+        this from the reload branch, which keeps waiting.
+        """
+        hass.set_state(CoreState.starting)
+        manager._start_panel_listener()  # no panel — defers on HA start
+        assert manager._panel_wait_handles == {}  # a one-shot, not a subscription
+
+        caplog.clear()
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)  # panel still absent
+        await hass.async_block_till_done()
+
+        assert "Abode panel entity not found" in caplog.text
+        assert manager._listener_handle is None
+        assert manager._panel_wait_handles == {}
+
+    async def test_listener_warns_but_keeps_waiting_when_panel_never_arrives(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """The listener has nothing to do without a panel, so it does not proceed.
+
+        It still says so once — a silently disabled manual-override listener on
+        a security integration is the wrong kind of quiet — but unlike the
+        startup one-shot the subscription survives, so a panel that shows up
+        late is still picked up.
+        """
+        hass.set_state(CoreState.running)
+        armed_at = dt_util.utcnow()  # before arming — see the reconcile twin
+        manager._start_panel_listener()
+        assert PANEL_WAIT_LISTENER in manager._panel_wait_handles
+
+        caplog.clear()
+        # Not due yet — pins the constant, which `fire_all` would ignore.
+        async_fire_time_changed(
+            hass, armed_at + timedelta(seconds=PANEL_WAIT_TIMEOUT - 1)
+        )
+        await hass.async_block_till_done()
+        assert "Abode panel entity not found" not in caplog.text
+
+        async_fire_time_changed(
+            hass, dt_util.utcnow() + timedelta(seconds=PANEL_WAIT_TIMEOUT + 1)
+        )
+        await hass.async_block_till_done()
+
+        assert "Abode panel entity not found" in caplog.text
+        assert manager._listener_handle is None
+        assert PANEL_WAIT_LISTENER in manager._panel_wait_handles  # still waiting
+
+        # A late panel is still adopted.
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done()
+        assert manager._listener_handle is not None
+        assert manager._last_panel_state == "armed_home"
+
+    async def test_deferring_twice_does_not_leak_a_subscription(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+    ) -> None:
+        """A second deferral must not orphan the first subscription.
+
+        `_start_panel_listener`'s own guard only checks `_listener_handle`,
+        which is still None while deferred — so without the per-key check a
+        second call would overwrite the stored handle and leave the first
+        subscription live, holding a torn-down manager for the life of the
+        process.  Asserted on identity: a leak is invisible in the key set.
+        """
+        hass.set_state(CoreState.running)
+        manager._start_panel_listener()
+        first = manager._panel_wait_handles[PANEL_WAIT_LISTENER]
+
+        manager._start_panel_listener()
+
+        assert manager._panel_wait_handles[PANEL_WAIT_LISTENER] is first
+        assert len(manager._panel_wait_handles) == 1
+
+        # And the one that survives is the one shutdown can reach.
+        await manager.async_shutdown()
+        _set_panel(hass, "disarmed")
+        await hass.async_block_till_done()
+        assert manager._listener_handle is None
+
+    async def test_shutdown_cancels_the_pending_entity_subscription(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+    ) -> None:
+        """The reload deferral is a real subscription, so teardown must drop it.
+
+        Unlike the EVENT_HOMEASSISTANT_STARTED one-shot — which the `_shutdown`
+        flag neutralises — this one would otherwise keep a torn-down manager
+        subscribed to every alarm_control_panel that appears afterwards.
+        """
+        hass.set_state(CoreState.running)
+        manager._start_panel_listener()
+        assert PANEL_WAIT_LISTENER in manager._panel_wait_handles
+
+        await manager.async_shutdown()
+        assert manager._panel_wait_handles == {}
+
+        _set_panel(hass, "disarmed")
+        await hass.async_block_till_done()
+        assert manager._listener_handle is None
 
 
 # ---------------------------------------------------------------------------
@@ -1688,6 +2290,10 @@ class TestShutdown:
         the shutdown guard the retry would subscribe a dead manager with nothing
         left to unsubscribe it.
         """
+        # The EVENT_HOMEASSISTANT_STARTED branch is the *startup* one; past
+        # startup the deferral waits on the entity instead (see the reload
+        # tests below), so say which branch this test is about.
+        hass.set_state(CoreState.starting)
         manager._start_panel_listener()  # no panel yet — defers
         assert manager._listener_handle is None
 
@@ -1712,6 +2318,7 @@ class TestShutdown:
         branch — a scary log line, during a routine reload, about a manager
         nobody is using any more.
         """
+        hass.set_state(CoreState.starting)
         manager._start_panel_listener()  # no panel yet — defers
         await manager.async_shutdown()
 
@@ -1720,6 +2327,38 @@ class TestShutdown:
         await hass.async_block_till_done()
 
         assert "Abode panel entity not found" not in caplog.text
+
+    async def test_panel_deferral_is_not_armed_after_shutdown(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+    ) -> None:
+        """The sweep has already run, so anything armed past it is never cancelled.
+
+        Reachable: `async_setup` awaits the store load before it defers, so a
+        setup suspended across a teardown resumes straight into this guard.
+        Without it the dead manager stays subscribed to every alarm panel added
+        for the life of the process — the leak `async_shutdown` exists to avoid.
+        """
+        hass.set_state(CoreState.running)
+        ran = []
+
+        await manager.async_shutdown()
+        manager._defer_until_panel_exists(
+            PANEL_WAIT_RECONCILE,
+            lambda: ran.append(True),
+            on_missing_panel=RUN_WITHOUT_PANEL,
+        )
+
+        assert manager._panel_wait_handles == {}
+
+        # Nothing is listening, so neither trigger can reach the action.
+        _set_panel(hass, "armed_home")
+        async_fire_time_changed(
+            hass, dt_util.utcnow() + timedelta(seconds=PANEL_WAIT_TIMEOUT + 1)
+        )
+        await hass.async_block_till_done()
+        assert ran == []
 
     async def test_timers_are_not_registered_after_shutdown(
         self,
@@ -1794,6 +2433,8 @@ class TestShutdown:
         # The second call is a genuine no-op, not merely non-raising.
         assert manager._pending_handles == {}
         assert manager._listener_handle is None
+        assert manager._panel_wait_handles == {}
+        assert manager._last_panel_state is None
         assert manager._inflight == set()
 
     async def test_shutdown_logs_a_task_that_fails_while_unwinding(
@@ -2175,8 +2816,9 @@ class TestConcurrentEdits:
         The anchor that matters is `expected_disarm_at`, which feeds the disarm
         timer this loop registers: reading it off the `get_all()` snapshot
         computes the boundary from a `disarm_time` the user has already
-        replaced.  The deferred pass runs off EVENT_HOMEASSISTANT_STARTED, when
-        the WS API is live, so this is reachable rather than theoretical.
+        replaced.  The deferred pass runs after HA start — or, past
+        startup, once the panel entity appears — by which point the WS API is
+        live, so this is reachable rather than theoretical.
         """
         import custom_components.abode_security.scheduling.manager as manager_mod
 
