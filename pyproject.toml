@@ -88,6 +88,14 @@ dev = [
     # the removal of that shim, whose own dependency is otherwise its closest
     # guarantor. Lower-bound only: nothing here needs a specific patch.
     "packaging>=22.0",
+
+    # Imported directly by the YAML-asset tests
+    # (tests/test_notification_blueprint.py parses the bundled blueprint,
+    # tests/test_dependabot_config.py parses .github/dependabot.yml).
+    # Available transitively via homeassistant, but declared here so the test
+    # dependency is explicit — the same reasoning as pillow and packaging
+    # above. Lower-bound only: nothing here needs a specific patch.
+    "PyYAML>=6.0",
 ]
 
 [tool.pytest.ini_options]
