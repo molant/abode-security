@@ -86,6 +86,18 @@ class _RunWithoutPanel:
 RUN_WITHOUT_PANEL = _RunWithoutPanel()
 
 
+def _wants_a_panel(on_missing_panel: _RunWithoutPanel | str) -> bool:
+    """Whether this deferral is pointless without a panel, or merely poorer.
+
+    True when ``on_missing_panel`` is a message — the pointless case.  Named
+    rather than left as the bare ``isinstance`` it is, because the two places
+    that ask — the backstop and the startup retry — are asking about caller
+    intent, not about a type, and the answer decides whether a missing panel
+    means "keep waiting" or "get on with it".
+    """
+    return isinstance(on_missing_panel, str)
+
+
 class _Unset:
     """Sentinel for "leave this runtime field alone" in ``_persist_runtime``.
 
@@ -193,13 +205,16 @@ class ScheduleManager:
         that window cannot install a handle nobody will sweep again.
 
         What the sweep can reach depends on how the two panel deferrals were
-        armed.  During startup they are ``EVENT_HOMEASSISTANT_STARTED``
-        one-shots, which are *not* unsubscribed here — they hold a reference to
-        this manager until HA start fires — and the ``_shutdown`` flag is what
-        makes them no-ops.  Past startup they are live state-added
-        subscriptions parked in ``_panel_wait_handles``, and those are
-        genuinely cancelled below; left alone they would keep a torn-down
-        manager subscribed to every alarm_control_panel that appears next.
+        armed, and on when.  A deferral still waiting on its
+        ``EVENT_HOMEASSISTANT_STARTED`` one-shot is *not* unsubscribed here —
+        it holds a reference to this manager until HA start fires — and the
+        ``_shutdown`` flag is what makes it a no-op.  Everything else is a live
+        state-added subscription parked in ``_panel_wait_handles``, genuinely
+        cancelled below; left alone it would keep a torn-down manager
+        subscribed to every alarm_control_panel that appears next.  That
+        includes a deferral that *started* as a one-shot: HA start with no
+        panel hands off to ``_wait_for_panel_entity``, so the sweep can reach
+        it from then on.
         """
         self._shutdown = True
         for handle in list(self._pending_handles.values()):
@@ -1008,11 +1023,11 @@ class ScheduleManager:
         entity is not yet in hass.states — which is every setup, since
         ``async_setup`` runs before the platforms are forwarded.
         Guards against double-registration: a second call is a no-op if the
-        listener handle is already set.  Past startup ``_defer_until_panel_exists``
-        extends that to an outstanding deferral, so a second call cannot orphan
-        the subscription the first one made; the startup branch does not dedup,
-        but its retry is idempotent because this guard makes the second one a
-        no-op.
+        listener handle is already set.  ``_wait_for_panel_entity`` extends that
+        to an outstanding deferral, so a second call cannot orphan the
+        subscription the first one made; the startup one-shot does not dedup,
+        but its retry is idempotent because both of these guards catch the
+        second one.
 
         The shutdown guard is what stops the deferred retry from resurrecting
         the listener: shutdown sets the handle back to None, so the "already
@@ -1045,8 +1060,8 @@ class ScheduleManager:
             PANEL_WAIT_LISTENER,
             self._start_panel_listener,
             on_missing_panel=(
-                "Abode panel entity not found after HA start; "
-                "schedule manual-override listener is disabled"
+                "Abode panel entity not found; schedule manual-override "
+                "listener is disabled until one appears"
             ),
         )
 
@@ -1082,11 +1097,61 @@ class ScheduleManager:
             would strand ``last_armed_at`` ahead of ``last_disarmed_at``
             forever — the very shape this file is fixing elsewhere.
         a message
-            Log it once as a warning and do not run.  The listener has nothing
-            to listen to without a panel; past startup the subscription is kept
-            so a panel that shows up late is still adopted, while the startup
-            one-shot is spent by then and the listener stays disabled until the
-            next restart.
+            Log it once as a warning and do not run, but keep waiting: the
+            listener has nothing to listen to without a panel, yet a panel that
+            shows up late is still worth adopting.  Both triggers end up on the
+            same subscription for this — the startup one-shot is spent once it
+            fires, so a miss there hands off to :meth:`_wait_for_panel_entity`
+            rather than giving up until the next restart.
+        """
+        if self._shutdown:
+            # Not just deferring to the guard in `_wait_for_panel_entity`: the
+            # startup branch below parks a bus one-shot that nothing cancels,
+            # so a dead manager armed past the sweep would be held until HA
+            # start fires.  `_retry` re-checks the flag, but only after the
+            # reference has already been taken.
+            return
+        if self._hass.state is CoreState.running:
+            self._wait_for_panel_entity(key, action, on_missing_panel=on_missing_panel)
+            return
+
+        @callback
+        def _retry(_event: Event[Any]) -> None:
+            # No `_shutdown` guard of its own, deliberately.  It used to need
+            # one to stop an unloaded entry warning about a panel its own
+            # teardown removed, but that branch is gone: every path out of here
+            # now refuses on a dead manager by itself — `_wait_for_panel_entity`
+            # at its own guard, `_start_panel_listener` at its, and the
+            # reconcile action inside `_track`.  A guard here would be one no
+            # test could distinguish from its absence.
+            if self._panel_entity_id() is None and _wants_a_panel(on_missing_panel):
+                # The one-shot is spent, but the entity subscription is not tied
+                # to startup, so hand off rather than give up — a panel that
+                # appears after HA start is still adopted.  The warning moves to
+                # `PANEL_WAIT_TIMEOUT` from here rather than firing immediately,
+                # which only delays it on accounts that genuinely have no alarm
+                # device.
+                self._wait_for_panel_entity(
+                    key, action, on_missing_panel=on_missing_panel
+                )
+                return
+            action()
+
+        self._hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _retry)
+
+    def _wait_for_panel_entity(
+        self,
+        key: str,
+        action: Callable[[], None],
+        *,
+        on_missing_panel: _RunWithoutPanel | str,
+    ) -> None:
+        """Wait on the panel entity itself, backstopped by ``PANEL_WAIT_TIMEOUT``.
+
+        Split out of :meth:`_defer_until_panel_exists` because both of its
+        branches end here: past startup it is the only trigger, and during
+        startup the ``EVENT_HOMEASSISTANT_STARTED`` one-shot hands off to it
+        when the panel still is not there.
         """
         if self._shutdown:
             # Self-guarded like `_schedule_disarm` and `_register_pair_timers`,
@@ -1095,80 +1160,61 @@ class ScheduleManager:
             # never cancelled — a dead manager left subscribed to every panel
             # added for the life of the process.
             return
-        if self._hass.state is CoreState.running:
-            if key in self._panel_wait_handles:
-                return  # already waiting on this one — do not leak the handle
+        if key in self._panel_wait_handles:
+            return  # already waiting on this one — do not leak the handle
 
-            handles: list[CancelHandle] = []
-
-            @callback
-            def _cancel_all() -> None:
-                for handle in handles:
-                    handle()
-
-            @callback
-            def _proceed() -> None:
-                self._cancel_panel_wait(key)
-                action()
-
-            @callback
-            def _on_panel_added(_event: Event[EventStateChangedData]) -> None:
-                if self._shutdown:
-                    return
-                if self._panel_entity_id() is None:
-                    # Another integration's alarm_control_panel — keep waiting.
-                    return
-                _proceed()
-
-            @callback
-            def _panel_never_arrived(_now: datetime) -> None:
-                # The state-added subscription alone would wait forever, which
-                # for reconciliation means the pair never leaves ARMED (#216).
-                if self._shutdown or self._panel_entity_id() is not None:
-                    return
-                if isinstance(on_missing_panel, str):
-                    # Keep waiting — unlike the one-shot, this subscription
-                    # survives, so a late panel is still picked up.
-                    _LOGGER.warning(on_missing_panel)
-                    return
-                _LOGGER.debug(
-                    "Abode panel entity still absent after %ss (%s); "
-                    "proceeding without it",
-                    PANEL_WAIT_TIMEOUT,
-                    key,
-                )
-                _proceed()
-
-            handles.append(
-                async_track_state_added_domain(
-                    self._hass, Platform.ALARM_CONTROL_PANEL, _on_panel_added
-                )
-            )
-            handles.append(
-                async_call_later(self._hass, PANEL_WAIT_TIMEOUT, _panel_never_arrived)
-            )
-            self._panel_wait_handles[key] = _cancel_all
-            _LOGGER.debug(
-                "Abode panel entity not present yet (%s); waiting for it to be added",
-                key,
-            )
-            return
+        handles: list[CancelHandle] = []
 
         @callback
-        def _retry(_event: Event[Any]) -> None:
-            if self._shutdown:
-                # Checked before the panel lookup, not just via the caller's
-                # own guard: unloading the entry removes the
-                # alarm_control_panel entity, so an unloaded manager takes the
-                # warning branch below and blames a missing panel for a
-                # teardown it caused itself.
-                return
-            if self._panel_entity_id() is None and isinstance(on_missing_panel, str):
-                _LOGGER.warning(on_missing_panel)
-                return
+        def _cancel_all() -> None:
+            for handle in handles:
+                handle()
+
+        @callback
+        def _proceed() -> None:
+            self._cancel_panel_wait(key)
             action()
 
-        self._hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _retry)
+        @callback
+        def _on_panel_added(_event: Event[EventStateChangedData]) -> None:
+            if self._shutdown:
+                return
+            if self._panel_entity_id() is None:
+                # Another integration's alarm_control_panel — keep waiting.
+                return
+            _proceed()
+
+        @callback
+        def _panel_never_arrived(_now: datetime) -> None:
+            # The state-added subscription alone would wait forever, which
+            # for reconciliation means the pair never leaves ARMED (#216).
+            if self._shutdown or self._panel_entity_id() is not None:
+                return
+            if _wants_a_panel(on_missing_panel):
+                # Say so once, then keep waiting: the subscription survives the
+                # backstop, so a panel that shows up later is still picked up.
+                _LOGGER.warning(on_missing_panel)
+                return
+            _LOGGER.debug(
+                "Abode panel entity still absent after %ss (%s); proceeding without it",
+                PANEL_WAIT_TIMEOUT,
+                key,
+            )
+            _proceed()
+
+        handles.append(
+            async_track_state_added_domain(
+                self._hass, Platform.ALARM_CONTROL_PANEL, _on_panel_added
+            )
+        )
+        handles.append(
+            async_call_later(self._hass, PANEL_WAIT_TIMEOUT, _panel_never_arrived)
+        )
+        self._panel_wait_handles[key] = _cancel_all
+        _LOGGER.debug(
+            "Abode panel entity not present yet (%s); waiting for it to be added",
+            key,
+        )
 
     @callback
     def _cancel_panel_wait(self, key: str) -> None:
