@@ -50,6 +50,7 @@ from .state_machine import (
     PairState,
     derive_state,
     expected_disarm_at,
+    in_arm_window,
     parse_hhmm,
 )
 from .store import SchedulesStore
@@ -148,6 +149,26 @@ class ScheduleManager:
         # a late store write, event, or repair issue lands against a manager
         # that is no longer wired up (#201).
         self._inflight: set[asyncio.Task[None]] = set()
+        # Serialises the two panel-edge handlers so a rapid Home → Away → Home
+        # is applied in event order.  Both are dispatched as tasks and both
+        # await per pair, so without this they interleave: adoption reaches a
+        # pair the override has not got to yet, sees it still ARMED and skips it
+        # as "already ours", and the override then cancels its handle and marks
+        # it IDLE — leaving the panel finally Home with a pair that is in-window,
+        # timer-less and has no later edge coming to re-adopt it.  That is #212's
+        # own symptom, so the fix for it must not reintroduce it one pair over.
+        # Acquisition is FIFO and the tasks are created in event order, which is
+        # what makes "in event order" true rather than merely "one at a time".
+        # Each handler also samples its own `now` *inside* the lock, so a queued
+        # one stamps an instant strictly later than the pass it waited on;
+        # hoisting that sample above the lock would put the bug back silently.
+        #
+        # Nothing under this lock may talk to the panel.  Both handlers are
+        # store writes and timer bookkeeping, which is why holding it across a
+        # whole pass is cheap; `async_retry_confirmed` can take ~111 s, and one
+        # of those under here would block a genuine override for the whole of
+        # it.
+        self._edge_lock = asyncio.Lock()
         self._shutdown = False
 
     # ------------------------------------------------------------------
@@ -258,14 +279,14 @@ class ScheduleManager:
 
         Every coroutine the manager spawns on its own goes through here or
         :meth:`_run_tracked` — the two disarm timers, the deferred startup
-        reconcile and the manual-override handler — so that no store write,
-        event, or repair issue can outlive the manager (#201).  The CRUD methods
-        are deliberately not tracked: they are driven by a WS caller that is
-        already awaiting them, and it is only their *timer* side effects that
-        must not outlive the sweep, which the ``_shutdown`` flag handles.
+        reconcile, and the manual-override and manual-arm handlers — so that no
+        store write, event, or repair issue can outlive the manager (#201).  The
+        CRUD methods are deliberately not tracked: they are driven by a WS caller
+        that is already awaiting them, and it is only their *timer* side effects
+        that must not outlive the sweep, which the ``_shutdown`` flag handles.
         """
         if self._shutdown:
-            # Name the coroutine: four different coroutines reach this, and
+            # Name the coroutine: five different coroutines reach this, and
             # "work was dropped" without saying which is not much help to
             # someone debugging a schedule that skipped a reload.
             _LOGGER.debug(
@@ -352,6 +373,37 @@ class ScheduleManager:
     # ------------------------------------------------------------------
     # Timer management
     # ------------------------------------------------------------------
+
+    def _clear_spent_disarm_handle(self, pair_id: str) -> None:
+        """Drop the ``_pending_handles`` entry a fired one-shot disarm left behind.
+
+        Nothing else removed it.  ``_disarm_impl`` does not touch the dict, so
+        after any normally-completed disarm the key sat there until something
+        happened to replace it — and the dict quietly stopped meaning "a disarm
+        is pending" and started meaning "a disarm was scheduled at some point
+        since the last reload".  ``_handle_manual_arm`` is what made that fatal
+        rather than untidy (see its docstring), but two smaller effects come out
+        in the wash, both in ``async_update``'s ``had_pending_disarm``:
+
+        * it no longer re-registers a timer for a window that closed hours ago
+          (harmless — ``_schedule_disarm``'s grace guard dropped it — but it
+          logged a warning on an unrelated edit);
+        * and because the pop happens *before* ``_disarm_impl`` starts, the dict
+          now reports no pending disarm for the whole of that call's up-to-111 s
+          confirmation window.  A WS edit landing there used to re-register a
+          ``delay ≈ 0`` timer, firing a *second* ``_disarm_impl`` concurrently
+          with the one already in flight.  That is a real behaviour change on a
+          security path, in the direction of doing less.
+
+        Popping blind is safe.  The only other writer of this key is
+        ``_set_disarm_handle``, which *cancels* what it replaces, and a cancelled
+        timer never reaches us: expired ``TimerHandle``s are moved into asyncio's
+        ready queue as a batch, but the dispatch loop re-checks ``_cancelled``
+        before running each one, so a handle cancelled after being made ready is
+        skipped.  The entry read here is therefore always the one that just
+        fired.
+        """
+        self._pending_handles.pop((pair_id, "disarm"), None)
 
     def _set_disarm_handle(self, pair_id: str, handle: CancelHandle) -> None:
         """Store a one-shot disarm handle, cancelling whatever it replaces.
@@ -459,6 +511,7 @@ class ScheduleManager:
 
         @callback
         def _disarm_cb(_now: datetime, p: str = pid) -> None:
+            self._clear_spent_disarm_handle(p)
             self._track(self._disarm_impl(p, source=ChangeSource.SCHEDULE_DISARM))
 
         handle = async_call_later(self._hass, delay, _disarm_cb)
@@ -1004,6 +1057,7 @@ class ScheduleManager:
 
             @callback
             def _reconcile_disarm_cb(_now: datetime, p: str = pid) -> None:
+                self._clear_spent_disarm_handle(p)
                 self._track(self._disarm_impl(p, source=ChangeSource.RECONCILE_DISARM))
 
             handle = async_call_later(self._hass, delay, _reconcile_disarm_cb)
@@ -1261,6 +1315,38 @@ class ScheduleManager:
             return  # our own change — ignore
 
         if new_state.state == "armed_home":
+            # The mirror of the leave-Home edge below: the panel *entered* Home
+            # from another mode, outside the scheduler.  Until #212 this was an
+            # unconditional return, so a pair whose arm edge had been skipped
+            # (`away_active`) never got a disarm timer no matter what the panel
+            # did afterwards — an Away at 23:00 stranded the panel armed for the
+            # whole of the next day.  The arm-time rule is deliberately *not*
+            # relaxed to fix that: pre-committing to a disarm while the panel is
+            # in Away would plant a timer that unarms an empty house on a
+            # genuine trip.  Adopting the panel once it is actually Home is the
+            # safe half of the same idea.
+            #
+            # `previous is None` is excluded on purpose, but *not* because
+            # reconciliation picks it up — it does not, and saying so would be
+            # wrong in exactly the case that matters.  `async_reconcile_on_startup`
+            # only rebuilds timers for pairs that are already ARMED, and the
+            # `away_active` branch stamps `last_disarmed_at` without ever setting
+            # `last_armed_at`, so a #212-shaped pair fails both of its guards.
+            #
+            # The exclusion is plain conservatism: a seed of None means the panel
+            # was unavailable when the listener started and this is the first mode
+            # it has ever reported, so there is no evidence it *entered* Home
+            # rather than having been there all along.  Adopting on that would
+            # widen a security-relevant path on an inference rather than an
+            # observation.  The residual is a real one and is recorded in
+            # ARCHITECTURE.md next to the sibling dropout gap: a reload that lands
+            # while the panel is unavailable, on a night whose arm was skipped,
+            # strands the panel for the rest of the window.  It fails in the safe
+            # direction — armed, never unarmed — and
+            # `test_first_ever_panel_reading_is_not_a_transition` pins it so
+            # closing it later is a deliberate change.
+            if previous is not None and previous != "armed_home":
+                self._track(self._handle_manual_arm())
             return
         if previous != "armed_home":
             return
@@ -1268,46 +1354,256 @@ class ScheduleManager:
         # Transition left armed_home via a non-self-driven context.
         self._track(self._handle_manual_override())
 
-    async def _handle_manual_override(self) -> None:
-        """Cancel pending disarms for all ARMED pairs and mark them overridden."""
-        now = self._clock.utcnow()
-        tz = dt_util.DEFAULT_TIME_ZONE
+    async def _handle_manual_arm(self) -> None:
+        """Adopt a manually-armed panel for every pair whose window contains now.
 
-        # Ids, then a re-read per iteration, for the same reason as the
-        # reconcile loop: this one awaits inside itself too, so the `enabled`
-        # and `derive_state` guards below have to run against the record as it
-        # stands now rather than as the snapshot found it (#202).  `now` is
-        # sampled once for the same reason it is there — one override, one
-        # instant, so the pairs it marks all agree on when it happened.
-        for pair_id in [p.id for p in self._store.get_all()]:
-            pair = self._store.get(pair_id)
-            if pair is None:
-                continue  # deleted while an earlier iteration was writing
-            if not pair.enabled:
-                continue
-            if derive_state(pair, now=now, tz=tz) != PairState.ARMED:
-                continue
-            handle = self._pending_handles.pop((pair_id, "disarm"), None)
-            if handle is not None:
-                handle()
-            # Persist BEFORE firing the event (spec constraint).
-            persisted = await self._persist_runtime(
-                pair_id,
-                last_disarmed_at=now,
-                last_skip_reason=SkipReason.MANUAL_OVERRIDE,
-            )
-            if persisted is None:
-                continue
-            pair = persisted
-            self._fire_event(
-                EVENT_SCHEDULE_SKIPPED,
-                pair,
-                action="disarm",
-                reason=SkipReason.MANUAL_OVERRIDE,
-            )
-            _LOGGER.info(
-                "Schedule '%s' skipped (manual_override)", pair.name or pair.id
-            )
+        The counterpart to :meth:`_handle_manual_override`: that one gives the
+        panel *up* when it leaves Home, this one takes it *on* when it arrives.
+        Six conditions are what keep it from ever scheduling a disarm the user
+        did not ask for:
+
+        * the panel has not *left*, re-read at the top of every iteration
+          rather than taken from the event or sampled once for the pass — the
+          store write below is an await on real disk I/O, so a multi-pair
+          adoption is not atomic and the pairs behind the one being written must
+          not be taken on behind a panel that has gone.  "Not left" rather than
+          "still Home": this tests the two definite-leave modes by name, the
+          same way the guard before the timer does, and for a sharper version of
+          the same reason — a match here abandons the whole pass;
+        * the pair is enabled;
+        * ``now`` is inside one of its arm→disarm windows;
+        * it does not already own the panel — ``derive_state`` reports ARMED —
+          so a pair the scheduler armed keeps the timer it already has, and one
+          left ARMED-without-a-handle by a reload is left to reconciliation,
+          whose rules for that case are deliberately stricter;
+        * ``derive_state`` again *after* the write settles, before the timer is
+          installed.  Some other writer can stamp ``last_disarmed_at`` at or
+          past our anchor inside that suspension — the merged record then reads
+          IDLE and the pair is not ours after all.  The pre-write guard cannot
+          catch that: the loser of the race has not written yet when the winner
+          reads.
+
+          ``_handle_manual_override`` is *not* one of those writers, and reading
+          this guard as being about it is the trap.  ``_edge_lock`` serialises
+          the two edge handlers, so an override cannot run inside this pass at
+          all.  The condition that matters is broader than any one field: *any*
+          unlocked writer that can leave the merged record non-ARMED.  Two
+          shapes of it exist, and only naming the first is how the wrong branch
+          got listed here once already:
+
+          - writers of ``last_disarmed_at`` — ``_arm_impl``'s ``away_active``
+            and ``panel_unavailable`` branches, ``_disarm_impl`` (including the
+            ``delay ≈ 0`` re-registration a WS edit can trigger), and
+            reconciliation.  (``_arm_impl``'s ``already_home`` branch is *not*
+            one: it writes ``last_armed_at``.)
+          - and the writer that regresses ``last_armed_at`` — ``_arm_impl``'s
+            success path, which anchors the arm to when the edge fired rather
+            than when confirmation returned.  That is the confirmation-poll
+            overlap recorded at the end of this docstring, and it trips the
+            guard by moving the anchor *back* behind an existing
+            ``last_disarmed_at`` rather than by writing one.
+
+          The guard is live; only its cast has changed.
+
+          If it passes and the panel has since bounced back to Home, or gone
+          merely *unavailable*, what is left is an orphan timer — harmless for
+          two reasons argued in two places, this guard's own comment covering
+          the bounce-back and the next guard's the blip.  A panel that plainly
+          left is caught by that next guard instead, and never reaches a timer.
+          ``test_the_post_write_guard_declines_when_another_writer_releases_the_pair``
+          is what reaches this branch, since no edge handler can any more;
+        * the panel one last time, after the second write (see below) and before
+          the timer, so that write's own suspension leaves the orphan window no
+          wider than one write did.  It tests for the two definite-leave modes
+          by name rather than for "not Home", as does the panel read at the top
+          of the loop: an availability blip must be let *through*, because
+          nothing would re-adopt the pair afterwards.  The comment at the guard
+          has the full argument.
+
+        A seventh lives in the caller: ``_on_panel_state_changed`` dispatches
+        here only on the *edge* into Home, never on a repeat ``armed_home`` event.
+        Attribute-only refreshes on an already-Home panel are routine, and that
+        condition is the whole of what separates them from a real arrival.
+
+        Deliberately *not* a guard: whether ``_pending_handles`` already holds a
+        disarm for the pair.  It reads like the obvious check and is actively
+        wrong here — a fired one-shot used to leave its entry behind (nothing
+        removed it; ``_disarm_impl`` does not touch the dict), so the night
+        after any completed disarm the stale key swallowed the adoption and #212
+        reappeared in full.  ``_clear_spent_disarm_handle`` fixes that drift, but
+        the guard stays out regardless, because it is redundant:
+        ``derive_state`` already covers the pair-owns-the-panel case, and for
+        the rest ``_set_disarm_handle`` does the right thing on its own — it
+        cancels whatever it replaces, so two arrivals in quick succession
+        converge on one timer at the right instant instead of double-booking.
+
+        Adoption reuses ``already_home``: it is the same physical situation as
+        the arm-edge branch of that name — panel found in Home, take ownership
+        so our disarm fires later — reached at a different instant, and the
+        documented set of skip reasons stays closed at six.  It is written in a
+        *second* ``_persist_runtime`` call, after the confirmation rather than
+        with the anchor, so that a declined adoption never leaves the reason
+        behind; the cost is one extra store write per adoption, on the success
+        path only, on top of the per-cycle write ARCHITECTURE.md already
+        accounts for.
+
+        One known overlap is left alone as cosmetic: a user arming Home *during*
+        a scheduled arm's confirmation poll trips both this path and the arm
+        edge, so the pair reports ``schedule_skipped(already_home)`` as well as
+        ``schedule_fired``.  ``_set_disarm_handle`` cancels whichever timer it
+        replaces, so one disarm survives and it is at the right instant.
+        """
+        async with self._edge_lock:
+            now = self._clock.utcnow()
+            tz = dt_util.DEFAULT_TIME_ZONE
+
+            # Ids, then a re-read per iteration — same reason as the reconcile and
+            # override loops: this one awaits inside itself, so every guard below
+            # has to run against the record as it stands now (#202).  `now` is
+            # sampled once so the pairs one adoption takes on all agree on when it
+            # happened, and on which window they were judged against; the panel
+            # reading is not, for the reason in the docstring.
+            for pair_id in [p.id for p in self._store.get_all()]:
+                # The definite-leave modes by name, for the same reason as the guard
+                # before the timer below — and it matters more here, because the
+                # match abandons the whole *pass*.  Under `!= "armed_home"` a blip
+                # landing inside pair 1's write stranded pairs 2..N for the rest of
+                # the window with no handle and no later edge to re-adopt them: #212
+                # again, by a narrower route.  A blip is not evidence the panel left,
+                # so it falls through to the per-pair guards and, ultimately, to
+                # `_disarm_impl`'s own fire-time re-read.
+                if self._panel_state() in ("armed_away", "disarmed"):
+                    return
+                pair = self._store.get(pair_id)
+                if pair is None:
+                    continue  # deleted while an earlier iteration was writing
+                if not pair.enabled:
+                    continue
+                if derive_state(pair, now=now, tz=tz) == PairState.ARMED:
+                    continue
+                if not in_arm_window(pair, now=now, tz=tz):
+                    continue
+
+                # `last_armed_at` alone: the reason field is deliberately held back
+                # until the adoption is known to have stuck.  Writing both here made
+                # the decline below leave `already_home` on a pair that was never
+                # adopted, clobbering the `manual_override` the winner of the race
+                # had just written — a row in `schedules/list` reading IDLE while
+                # claiming the scheduler had taken the panel on.
+                persisted = await self._persist_runtime(pair_id, last_armed_at=now)
+                if persisted is None:
+                    continue
+                pair = persisted
+                # The write above suspended on real disk I/O, and another writer
+                # can leave the merged record non-ARMED inside it, so the pair
+                # is not ours after all.  NOT `_handle_manual_override` —
+                # `_edge_lock` keeps it out of this pass entirely.  What remains
+                # is any *unlocked* writer, in either of two shapes: one that
+                # stamps `last_disarmed_at` at or past our anchor (`_arm_impl`'s
+                # `away_active` and `panel_unavailable` branches, `_disarm_impl`,
+                # reconciliation), or one that regresses `last_armed_at` behind
+                # an existing `last_disarmed_at` (`_arm_impl`'s success path —
+                # the confirmation-poll overlap).  See the docstring for why the
+                # second shape is easy to leave off the list.
+                # Installing a timer at that point leaves a live orphan: harmless
+                # when it fires (`_disarm_impl` re-checks both `derive_state` and
+                # the panel) but alive until its own boundary passes.  Re-deriving
+                # from the record the write actually settled on is what catches
+                # it — the guard before the write cannot, because the loser of
+                # this race has not written yet when the winner reads.
+                if (
+                    derive_state(pair, now=self._clock.utcnow(), tz=tz)
+                    != PairState.ARMED
+                ):
+                    continue
+
+                persisted = await self._persist_runtime(
+                    pair_id, last_skip_reason=SkipReason.ALREADY_HOME
+                )
+                if persisted is None:
+                    continue
+                pair = persisted
+                # Second write, second suspension, so re-read the panel before the
+                # timer goes in.  Synchronous and therefore free, and it keeps the
+                # window for the harmless orphan above no wider than the single
+                # write left it.  It is not a `derive_state` re-check: that would
+                # need a third write to undo the reason this one just set, and the
+                # panel leaving again is the cause of a late decline that a panel
+                # reading actually turns on.
+                #
+                # The two definite-leave modes by name, not `!= "armed_home"`, and
+                # the difference is #212 all over again.  `unavailable`/`unknown`
+                # would match the negative form, and nothing heals that: the #216
+                # guard in `_on_panel_state_changed` returns on a blip *before*
+                # dispatching the override and before updating `_last_panel_state`,
+                # so no one stamps `last_disarmed_at`, and on recovery `previous` is
+                # still `armed_home` — no edge, no re-adoption, and the pair sits
+                # ARMED with no handle until the next restart.  Declining on a blip
+                # would strand exactly the pair this method exists to rescue.
+                # Letting it through instead installs a timer that `_disarm_impl`
+                # re-checks at fire time (`armed_away`/`disarmed` there too), which
+                # is what the single write did before the split and is the same
+                # distinction the listener's own blip guard draws.
+                if self._panel_state() in ("armed_away", "disarmed"):
+                    continue
+                self._fire_event(
+                    EVENT_SCHEDULE_SKIPPED,
+                    pair,
+                    action="arm",
+                    reason=SkipReason.ALREADY_HOME,
+                )
+                _LOGGER.info(
+                    "Schedule '%s' adopted a manual arm (already_home)",
+                    pair.name or pair.id,
+                )
+                self._schedule_disarm(pair)
+
+    async def _handle_manual_override(self) -> None:
+        """Cancel pending disarms for all ARMED pairs and mark them overridden.
+
+        Holds ``_edge_lock`` for the whole pass, so it cannot interleave with an
+        adoption dispatched by a later edge — see the lock's own comment in
+        ``__init__`` for the stranding that allowed.
+        """
+        async with self._edge_lock:
+            now = self._clock.utcnow()
+            tz = dt_util.DEFAULT_TIME_ZONE
+
+            # Ids, then a re-read per iteration, for the same reason as the
+            # reconcile loop: this one awaits inside itself too, so the `enabled`
+            # and `derive_state` guards below have to run against the record as
+            # it stands now rather than as the snapshot found it (#202).  `now`
+            # is sampled once for the same reason it is there — one override,
+            # one instant, so the pairs it marks all agree on when it happened.
+            for pair_id in [p.id for p in self._store.get_all()]:
+                pair = self._store.get(pair_id)
+                if pair is None:
+                    continue  # deleted while an earlier iteration was writing
+                if not pair.enabled:
+                    continue
+                if derive_state(pair, now=now, tz=tz) != PairState.ARMED:
+                    continue
+                handle = self._pending_handles.pop((pair_id, "disarm"), None)
+                if handle is not None:
+                    handle()
+                # Persist BEFORE firing the event (spec constraint).
+                persisted = await self._persist_runtime(
+                    pair_id,
+                    last_disarmed_at=now,
+                    last_skip_reason=SkipReason.MANUAL_OVERRIDE,
+                )
+                if persisted is None:
+                    continue
+                pair = persisted
+                self._fire_event(
+                    EVENT_SCHEDULE_SKIPPED,
+                    pair,
+                    action="disarm",
+                    reason=SkipReason.MANUAL_OVERRIDE,
+                )
+                _LOGGER.info(
+                    "Schedule '%s' skipped (manual_override)", pair.name or pair.id
+                )
 
     # ------------------------------------------------------------------
     # Validation

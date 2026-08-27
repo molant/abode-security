@@ -1178,6 +1178,43 @@ class TestReconciliation:
         standby_calls = [c for c in fake_mode_changer.calls if c["target"] == "standby"]
         assert len(standby_calls) == 1
 
+    async def test_reconcile_disarm_clears_its_own_spent_handle(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The reconcile one-shot cleans up after itself, like the arm one does.
+
+        A fired `async_call_later` leaves its `_pending_handles` entry behind
+        unless the callback removes it — `_disarm_impl` never touches the dict.
+        Both one-shots therefore call `_clear_spent_disarm_handle`, and both need
+        pinning: a stale reconcile key misleads `async_update`'s
+        `had_pending_disarm` into re-registering a timer for a closed window.
+        """
+        arm_dt = datetime(2030, 1, 7, 22, 0, 0, tzinfo=UTC)
+        fake_clock.set(datetime(2030, 1, 7, 23, 30, 0, tzinfo=UTC))
+        _set_panel(hass, "armed_home")
+
+        pair = await self._armed_pair(manager, fake_clock, arm_dt)
+        await manager.async_reconcile_on_startup()
+        assert (pair.id, "disarm") in manager._pending_handles
+
+        # Derived, not hardcoded: the runtime `hass` fixture is not on UTC, so a
+        # literal "06:00 UTC" is eight hours off the boundary and only passes
+        # because `fire_all=True` fires every timer regardless of its deadline.
+        disarm_dt = await _expected_disarm(manager, pair.id) + timedelta(seconds=2)
+        fake_clock.set(disarm_dt)
+        async_fire_time_changed(hass, disarm_dt, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert [c["target"] for c in fake_mode_changer.calls] == ["standby"]
+
+        # Spent, so gone — and a later edit does not resurrect a timer from it.
+        assert (pair.id, "disarm") not in manager._pending_handles
+        await manager.async_update(pair.id, name="renamed")
+        assert (pair.id, "disarm") not in manager._pending_handles
+
     async def test_reconcile_in_window_panel_not_home(
         self,
         hass: HomeAssistant,
@@ -1725,8 +1762,12 @@ class TestManualOverrideListener:
         The listener fix keeps the timer alive across a blip, but a dropout that
         outlasts the window still lands in `_disarm_impl`'s conservative
         panel_unavailable branch: the pair leaves ARMED and nothing re-attempts
-        the disarm when the panel returns.  Re-adopting the panel on recovery is
-        #212's job; this test exists so that change is a deliberate one.
+        the disarm when the panel returns.  #212 did not change that, twice
+        over: the blip guard never moved the remembered mode off `armed_home`,
+        so recovery is not a *transition into* Home and adoption is not
+        considered — and by then the window has closed anyway, so
+        `in_arm_window` would refuse it.  Recovering into a window that is still
+        open finds the pending timer already there.
         """
         pair = await self._armed_with_pending_disarm(hass, manager)
         skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
@@ -2043,6 +2084,1108 @@ class TestManualOverrideListener:
         _set_panel(hass, "disarmed")
         await hass.async_block_till_done()
         assert manager._listener_handle is None
+
+
+# ---------------------------------------------------------------------------
+# #212: adopting a panel that enters Home mid-window
+# ---------------------------------------------------------------------------
+
+
+def _local(hour: int, minute: int = 0, *, day: int = 7) -> datetime:
+    """A UTC instant for a January 2030 local wall-clock time (2030-01-07 = Mon).
+
+    The runtime `hass` fixture runs on a non-UTC timezone, and #212 is entirely
+    about wall-clock windows, so these tests have to say what they mean in local
+    time and convert — hardcoding UTC would silently drift with the fixture.
+    """
+    tz = dt_util.DEFAULT_TIME_ZONE
+    return datetime(2030, 1, day, hour, minute, tzinfo=tz).astimezone(UTC)
+
+
+class TestManualArmAdoption:
+    """#212: a panel that *enters* Home inside a window gets a disarm timer.
+
+    The arm edge deliberately refuses to schedule a disarm while the panel is in
+    Away — that would unarm an empty house on a real trip.  The consequence was
+    that an Away at arm time left the pair with no disarm at all, however the
+    panel moved afterwards.  These pin the mirror path that closes it.
+    """
+
+    ALL_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+    async def _night_pair(
+        self,
+        manager: ScheduleManager,
+        *,
+        enabled: bool = True,
+        arm_time: str = "23:00",
+        disarm_time: str = "06:00",
+    ) -> ScheduledPair:
+        return await manager.async_create(
+            weekdays=list(self.ALL_DAYS),
+            arm_time=arm_time,
+            disarm_time=disarm_time,
+            enabled=enabled,
+        )
+
+    async def _away_then_home(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        *,
+        at: datetime,
+        context: Context | None = None,
+    ) -> None:
+        """Seed the listener's memory with Away, then move the panel to Home."""
+        fake_clock.set(at)
+        _set_panel(hass, "armed_away")
+        manager._start_panel_listener()
+        _set_panel(hass, "armed_home", context=context)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+    async def test_away_at_arm_time_no_longer_strands_the_panel(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The reported failure, end to end.
+
+        23:00 arm skipped `away_active` (panel was in Away), panel manually
+        armed to Home at 23:37, and before #212 nothing was scheduled to release
+        it — the household woke to an `armed_home` panel.
+        """
+        fake_clock.set(_local(23, 0))
+        _set_panel(hass, "armed_away")
+        pair = await self._night_pair(manager)
+        manager._start_panel_listener()
+
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+        await manager.async_arm(pair.id)
+        await hass.async_block_till_done()
+        assert [e["reason"] for e in skipped] == [SkipReason.AWAY_ACTIVE]
+        assert (pair.id, "disarm") not in manager._pending_handles
+
+        # 23:37 — armed to Home by hand, outside the scheduler.
+        fake_clock.set(_local(23, 37))
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert (pair.id, "disarm") in manager._pending_handles
+        assert skipped[-1]["reason"] == SkipReason.ALREADY_HOME
+
+        # …and the adopted timer actually releases the panel at 06:00.
+        disarm_dt = await _expected_disarm(manager, pair.id) + timedelta(seconds=2)
+        assert disarm_dt - timedelta(seconds=2) == _local(6, 0, day=8)
+        fake_clock.set(disarm_dt)
+        async_fire_time_changed(hass, disarm_dt, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        disarm_calls = [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+        assert len(disarm_calls) == 1
+        assert disarm_calls[0]["pair_id"] == pair.id
+
+    async def test_adoption_a_minute_before_the_boundary_still_releases_on_time(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The sharpest user-visible edge of the new path, pinned deliberately.
+
+        A manual arm at 05:59 under a 23:00 → 06:00 schedule is inside the
+        window, so the pair adopts it — and releases the panel 60 seconds later.
+        That is correct under the ownership contract (it is what the arm edge's
+        `already_home` branch would have done at 23:00, evaluated at a different
+        instant), and it is the case a user is most likely to report as
+        surprising, which is why it is written down rather than left implied.
+
+        Adoption never moves a boundary: `_schedule_disarm` anchors on `now`, and
+        because `in_arm_window` guarantees `anchor <= now < expected(anchor)` no
+        `disarm_time` occurrence can fall in between — so `expected(now)` is the
+        same 06:00 the schedule always meant.
+        """
+        fake_clock.set(_local(5, 59, day=8))
+        _set_panel(hass, "armed_away")
+        pair = await self._night_pair(manager)
+        manager._start_panel_listener()
+
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+        assert (pair.id, "disarm") in manager._pending_handles
+
+        # The boundary is the schedule's own 06:00, not 05:59 + a window.
+        assert await _expected_disarm(manager, pair.id) == _local(6, 0, day=8)
+
+        disarm_dt = _local(6, 0, day=8) + timedelta(seconds=2)
+        fake_clock.set(disarm_dt)
+        async_fire_time_changed(hass, disarm_dt, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        standby = [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+        assert len(standby) == 1
+        assert standby[0]["pair_id"] == pair.id
+
+    async def test_manual_arm_a_minute_after_the_boundary_is_not_adopted(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """The other side of the same edge: the window end is exclusive."""
+        fake_clock.set(_local(6, 1, day=8))
+        _set_panel(hass, "armed_away")
+        pair = await self._night_pair(manager)
+        manager._start_panel_listener()
+
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert (pair.id, "disarm") not in manager._pending_handles
+        assert skipped == []
+
+    async def test_manual_arm_outside_any_window_registers_nothing(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """21:00 is two hours before the window opens — not ours to adopt.
+
+        With every weekday enabled the weekday test can never reject, so this is
+        what pins the `expected_disarm_at` half of `in_arm_window`: the most
+        recent arm edge is *last night's*, and its window shut at 06:00.
+        """
+        pair = await self._night_pair(manager)
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+
+        await self._away_then_home(hass, manager, fake_clock, at=_local(21, 0))
+
+        assert (pair.id, "disarm") not in manager._pending_handles
+        assert skipped == []
+        stored = await manager.async_get(pair.id)
+        assert stored is not None and stored.last_armed_at is None
+
+    async def test_manual_arm_on_an_unscheduled_weekday_registers_nothing(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """A weekend-only pair is not adopted by a Monday-night arm."""
+        pair = await manager.async_create(
+            weekdays=["sat", "sun"], arm_time="23:00", disarm_time="06:00"
+        )
+
+        await self._away_then_home(hass, manager, fake_clock, at=_local(23, 37))
+
+        assert (pair.id, "disarm") not in manager._pending_handles
+
+    async def test_overnight_window_is_matched_on_the_arm_edges_weekday(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """Tuesday 02:00 is inside the *Monday* 23:00→06:00 window.
+
+        Matching `pair.weekdays` against `now` rather than the arm edge would
+        reject this, which is the whole reason `in_arm_window` walks back to the
+        anchor first.
+        """
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="23:00", disarm_time="06:00"
+        )
+
+        await self._away_then_home(
+            hass,
+            manager,
+            fake_clock,
+            at=_local(2, 0, day=8),  # Tue 02:00
+        )
+
+        assert (pair.id, "disarm") in manager._pending_handles
+
+    async def test_disabled_pair_is_not_adopted(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """A disabled pair owns nothing, mid-window or not."""
+        pair = await self._night_pair(manager, enabled=False)
+
+        await self._away_then_home(hass, manager, fake_clock, at=_local(23, 37))
+
+        assert (pair.id, "disarm") not in manager._pending_handles
+
+    async def test_existing_disarm_handle_is_not_double_registered(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """A pair the scheduler already armed keeps the timer it already has."""
+        fake_clock.set(_local(23, 0))
+        _set_panel(hass, "disarmed")
+        pair = await self._night_pair(manager)
+        manager._start_panel_listener()  # seeds "disarmed"
+
+        await manager.async_arm(pair.id)
+        handle = manager._pending_handles[(pair.id, "disarm")]
+
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+        # The panel arriving in Home is a real transition, but this pair is
+        # already ARMED and already holds a timer.
+        fake_clock.set(_local(23, 1))
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert manager._pending_handles[(pair.id, "disarm")] is handle
+        assert skipped == []
+
+    async def test_self_driven_arm_is_not_adopted(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """A transition carrying our own context prefix stays invisible."""
+        pair = await self._night_pair(manager)
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+
+        await self._away_then_home(
+            hass,
+            manager,
+            fake_clock,
+            at=_local(23, 37),
+            context=Context(id=f"{CONTEXT_ID_PREFIX}{pair.id}_deadbeef"),
+        )
+
+        assert (pair.id, "disarm") not in manager._pending_handles
+        assert skipped == []
+
+    async def test_adopted_pair_is_released_by_a_later_manual_disarm(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Adoption hands the pair to the existing leave-Home path unchanged."""
+        pair = await self._night_pair(manager)
+
+        await self._away_then_home(hass, manager, fake_clock, at=_local(23, 37))
+        assert (pair.id, "disarm") in manager._pending_handles
+
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+        fake_clock.set(_local(1, 0, day=8))
+        _set_panel(hass, "disarmed")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert (pair.id, "disarm") not in manager._pending_handles
+        assert [e["reason"] for e in skipped] == [SkipReason.MANUAL_OVERRIDE]
+
+        # The cancelled timer's instant passes with no disarm attempted.
+        later = _local(6, 0, day=8) + timedelta(seconds=2)
+        fake_clock.set(later)
+        async_fire_time_changed(hass, later, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert not [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+
+    async def test_overlapping_pairs_each_get_one_handle(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """Two enabled windows containing the same instant adopt independently."""
+        night = await self._night_pair(manager)
+        wide = await self._night_pair(manager, arm_time="22:00", disarm_time="07:00")
+
+        await self._away_then_home(hass, manager, fake_clock, at=_local(23, 37))
+
+        assert (night.id, "disarm") in manager._pending_handles
+        assert (wide.id, "disarm") in manager._pending_handles
+        assert sum(1 for k in manager._pending_handles if k[1] == "disarm") == 2
+
+        # Each releases at its own boundary, not at a shared one.
+        for pair, boundary in (
+            (night, _local(6, 0, day=8)),
+            (wide, _local(7, 0, day=8)),
+        ):
+            assert await _expected_disarm(manager, pair.id) == boundary
+
+    async def test_a_second_night_is_adopted_too(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The reported pattern recurs; the fix has to survive a completed night.
+
+        A fired one-shot used to leave its `_pending_handles` entry behind — the
+        dict drifted from "a disarm is pending" to "a disarm was scheduled at
+        some point".  Guarding adoption on that key therefore worked exactly
+        once per reload: night one adopted, and from night two on the stale entry
+        swallowed it and the panel was stranded again.  Adoption leans on
+        `derive_state` instead, and `_clear_spent_disarm_handle` keeps the dict
+        honest for `async_update`.
+        """
+        # -- Night one: a normal scheduled arm and disarm, start to finish. ---
+        fake_clock.set(_local(23, 0))
+        _set_panel(hass, "disarmed")
+        pair = await self._night_pair(manager)
+        manager._start_panel_listener()
+
+        await manager.async_arm(pair.id)
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        disarm_dt = _local(6, 0, day=8) + timedelta(seconds=2)
+        fake_clock.set(disarm_dt)
+        async_fire_time_changed(hass, disarm_dt, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert [c["target"] for c in fake_mode_changer.calls] == ["home", "standby"]
+        # The spent one-shot cleared itself.
+        assert (pair.id, "disarm") not in manager._pending_handles
+        _set_panel(hass, "disarmed")
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        # -- Night two: Away at 23:00, manual arm at 23:37 — as reported. -----
+        fake_clock.set(_local(22, 30, day=8))
+        _set_panel(hass, "armed_away")
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+        fake_clock.set(_local(23, 0, day=8))
+        await manager.async_arm(pair.id)
+        await hass.async_block_till_done()
+        assert [e["reason"] for e in skipped] == [SkipReason.AWAY_ACTIVE]
+
+        fake_clock.set(_local(23, 37, day=8))
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert skipped[-1]["reason"] == SkipReason.ALREADY_HOME
+        assert (pair.id, "disarm") in manager._pending_handles
+
+        night_two_disarm = _local(6, 0, day=9) + timedelta(seconds=2)
+        fake_clock.set(night_two_disarm)
+        async_fire_time_changed(hass, night_two_disarm, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        standby = [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+        assert len(standby) == 2
+
+    async def test_first_ever_panel_reading_is_not_a_transition(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """A panel that was unavailable when the listener started is a discovery.
+
+        `_start_panel_listener` seeds `_last_panel_state` to None in that case —
+        "we have never seen it Home" — and the first mode it then reports is no
+        evidence it *entered* Home rather than having been there all along.
+        Adopting on that inference is the trade this path declines to make.
+
+        This pins a real residual gap rather than a covered one, so it is worth
+        being explicit: reconciliation does **not** pick the case up either.  It
+        only rebuilds timers for pairs already ARMED, and a pair whose arm was
+        skipped `away_active` has `last_disarmed_at` set with `last_armed_at`
+        still None, so it fails both of that loop's guards.  A reload landing
+        while the panel is unavailable, on a night whose arm was skipped, does
+        therefore strand the panel for the rest of the window — in the safe
+        direction (armed, never unarmed).  Closing it means teaching
+        reconciliation about in-window pairs with no anchor; this test is here so
+        that is a deliberate change.
+        """
+        fake_clock.set(_local(23, 37))
+        _set_panel(hass, "unavailable")
+        pair = await self._night_pair(manager)
+        manager._start_panel_listener()
+        assert manager._last_panel_state is None
+
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert (pair.id, "disarm") not in manager._pending_handles
+        assert skipped == []
+
+    async def test_pair_that_already_owns_the_panel_is_left_to_reconciliation(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """ARMED with no handle is the post-reload state; reconciliation owns it.
+
+        Adoption deliberately does not look at `_pending_handles`, so
+        `derive_state` is the only thing keeping it off a pair that is still
+        mid-window from before a reload.  Re-stamping `last_armed_at` here would
+        move the pair's disarm boundary forward by however long the reload took.
+        """
+        fake_clock.set(_local(23, 0))
+        _set_panel(hass, "disarmed")
+        pair = await self._night_pair(manager)
+        manager._start_panel_listener()
+        await manager.async_arm(pair.id)
+        armed = await manager.async_get(pair.id)
+        assert armed is not None
+        armed_at = armed.last_armed_at
+
+        # Stand in for a config-entry reload: `_register_all_timers` restores the
+        # daily arm callback but never the one-shot disarm, so the pair is ARMED
+        # with nothing pending until reconciliation runs.
+        manager._pending_handles.pop((pair.id, "disarm"))()
+
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+        fake_clock.set(_local(23, 37))
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert (pair.id, "disarm") not in manager._pending_handles
+        assert skipped == []
+        stored = await manager.async_get(pair.id)
+        assert stored is not None and stored.last_armed_at == armed_at
+
+    @pytest.mark.parametrize("leave", ["disarmed", "armed_away"])
+    async def test_a_panel_that_leaves_home_mid_pass_stops_the_adoption(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+        leave: str,
+    ) -> None:
+        """The panel is re-read per iteration, not sampled once for the pass.
+
+        `_persist_runtime` awaits a real `Store.async_save`, so a multi-pair
+        adoption is not atomic: the panel can leave Home between one pair's
+        write and the next pair's guards.  The store write is stubbed to move it
+        there deliberately — the suspension is what the guard exists for, and
+        nothing else in the suite produces one at that exact point.
+
+        The pair already committed is released by `_handle_manual_override` once
+        this pass drops `_edge_lock`, and the *final panel guard* is what stops
+        this method installing a timer for it first — an orphan that would stay
+        live until its own boundary passed.  (Before the lock the post-write
+        `derive_state` re-check did that job; the override can no longer run
+        inside this pass to make it fire.)  What the per-iteration re-read buys
+        is everything behind it: nothing is adopted at all.
+        """
+        fake_clock.set(_local(23, 37))
+        _set_panel(hass, "armed_away")
+        first = await self._night_pair(manager)
+        second = await self._night_pair(manager, arm_time="22:00", disarm_time="07:00")
+        manager._start_panel_listener()
+
+        original_update = manager._store.async_update
+        writes = 0
+
+        async def _write_then_move_the_panel(pair: ScheduledPair) -> None:
+            nonlocal writes
+            await original_update(pair)
+            writes += 1
+            if writes == 1:
+                _set_panel(hass, leave)
+                await asyncio.sleep(0)
+
+        with patch.object(manager._store, "async_update", _write_then_move_the_panel):
+            _set_panel(hass, "armed_home")
+            await hass.async_block_till_done(wait_background_tasks=True)
+            await hass.async_block_till_done()
+
+        # The second pair was never touched — the loop saw the panel move.
+        stored_second = await manager.async_get(second.id)
+        assert stored_second is not None
+        assert stored_second.last_armed_at is None
+        assert (second.id, "disarm") not in manager._pending_handles
+
+        # The first was adopted and then released; it ends IDLE, holding nothing.
+        stored_first = await manager.async_get(first.id)
+        assert stored_first is not None
+        assert stored_first.last_armed_at is not None
+        assert stored_first.last_disarmed_at is not None
+        assert stored_first.last_disarmed_at >= stored_first.last_armed_at
+        assert (first.id, "disarm") not in manager._pending_handles
+        # ...and it reports *why* it is idle — but by a different route than
+        # before `_edge_lock`.  The override now blocks on the lock instead of
+        # running inside the patched write, so the post-write `derive_state`
+        # still reads ARMED, the decline is *not* taken and `already_home` *is*
+        # written; the pass then bails at the final panel guard, releases the
+        # lock, and the override overwrites the reason.  Last writer wins, and
+        # the last writer is the correct one.
+        assert stored_first.last_skip_reason == SkipReason.MANUAL_OVERRIDE
+
+        # Nothing disarms when the boundary the adoption would have used passes.
+        later = _local(6, 0, day=8) + timedelta(seconds=2)
+        fake_clock.set(later)
+        async_fire_time_changed(hass, later, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert not [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+
+    @pytest.mark.parametrize("leave", ["disarmed", "armed_away"])
+    async def test_a_panel_that_leaves_during_the_reason_write_installs_no_timer(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+        leave: str,
+    ) -> None:
+        """The reason write is a second suspension, and it is guarded too.
+
+        Holding `already_home` back until after the `derive_state` confirmation
+        is what stops a declined adoption mislabelling the pair, but it puts a
+        second `Store.async_save` between that confirmation and the timer.  The
+        panel can leave inside *that* one as easily as inside the first, so it
+        is re-read synchronously before `_schedule_disarm` — otherwise the split
+        would have widened the orphan window it was meant to leave alone.
+
+        The panel is moved on the second write and the loop is *not* yielded to,
+        so `_handle_manual_override` has not run: the record still reads ARMED
+        and only the panel reading says the adoption is stale.  That is the
+        interleaving `derive_state` cannot see.
+
+        The assertion is on `_schedule_disarm` *not being called*, not on the
+        handle being absent afterwards.  The end states are indistinguishable —
+        the same leave event that trips the guard also dispatches
+        `_handle_manual_override`, which cancels the handle either way — so an
+        assertion on the residue passes just as well with the guard deleted, and
+        pins nothing.  The call is observable before the override task runs; the
+        residue is not.
+        """
+        fake_clock.set(_local(23, 37))
+        _set_panel(hass, "armed_away")
+        pair = await self._night_pair(manager)
+        manager._start_panel_listener()
+
+        original_update = manager._store.async_update
+        writes = 0
+
+        async def _move_the_panel_on_the_reason_write(pair: ScheduledPair) -> None:
+            nonlocal writes
+            await original_update(pair)
+            writes += 1
+            if writes == 2:
+                _set_panel(hass, leave)
+
+        scheduled: list[str] = []
+        original_schedule = manager._schedule_disarm
+
+        def _record(pair: ScheduledPair) -> None:
+            scheduled.append(pair.id)
+            original_schedule(pair)
+
+        with (
+            patch.object(
+                manager._store, "async_update", _move_the_panel_on_the_reason_write
+            ),
+            patch.object(manager, "_schedule_disarm", _record),
+        ):
+            _set_panel(hass, "armed_home")
+            await hass.async_block_till_done(wait_background_tasks=True)
+            await hass.async_block_till_done()
+
+        assert writes >= 2  # the split write happened at all
+        assert scheduled == []  # the guard declined; no timer was ever built
+        assert (pair.id, "disarm") not in manager._pending_handles
+
+        # Nothing disarms when the boundary the adoption would have used passes.
+        later = _local(6, 0, day=8) + timedelta(seconds=2)
+        fake_clock.set(later)
+        async_fire_time_changed(hass, later, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert not [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+
+    async def test_a_blip_mid_pass_does_not_strand_the_pairs_behind_it(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """The loop-top panel read tests for a *leave* too, and here it matters most.
+
+        A match there abandons the whole pass, not one pair.  Under a plain
+        `!= "armed_home"` an availability blip landing inside the first pair's
+        `Store.async_save` took every pair behind it down with it — no handle,
+        and no later edge to re-adopt them, because recovery from a blip is not
+        an edge into Home.  That is #212's own symptom by a narrower route, and
+        it is the sibling of the guard
+        `test_a_blip_during_the_reason_write_still_installs_the_timer` pins.
+
+        A genuine leave still stops the pass — that is
+        `test_a_panel_that_leaves_home_mid_pass_stops_the_adoption`.
+        """
+        fake_clock.set(_local(23, 37))
+        _set_panel(hass, "armed_away")
+        first = await self._night_pair(manager)
+        second = await self._night_pair(manager, arm_time="22:00", disarm_time="07:00")
+        manager._start_panel_listener()
+
+        original_update = manager._store.async_update
+        writes = 0
+
+        async def _blip_on_the_first_write(pair: ScheduledPair) -> None:
+            nonlocal writes
+            await original_update(pair)
+            writes += 1
+            if writes == 1:
+                _set_panel(hass, "unavailable")
+
+        with patch.object(manager._store, "async_update", _blip_on_the_first_write):
+            _set_panel(hass, "armed_home")
+            await hass.async_block_till_done(wait_background_tasks=True)
+            await hass.async_block_till_done()
+
+        # Both pairs were adopted; the blip stopped neither.
+        assert (first.id, "disarm") in manager._pending_handles
+        assert (second.id, "disarm") in manager._pending_handles
+        stored_second = await manager.async_get(second.id)
+        assert stored_second is not None
+        assert stored_second.last_armed_at is not None
+
+        # The panel comes back and both adopted pairs release.  One step, at the
+        # *earlier* of the two boundaries, and it drains both timers: the fake
+        # clock puts the manager in 2030 while HA's own `utcnow` is near real
+        # time, so any `async_fire_time_changed` to a 2030 instant is years into
+        # the future and fires every pending handle regardless of when it was
+        # due.  Stepping to 07:00 instead — which reads like the more thorough
+        # thing — would put `first`'s 06:00 timer an hour past
+        # `DISARM_WINDOW_GRACE`, and `_disarm_impl` would drop it at its
+        # `derive_state` guard, leaving a `standby` list that `second` alone had
+        # filled and an assertion that passed while the adoption under test had
+        # done nothing.
+        #
+        # So this pins *that both adopted pairs release*, which is what the
+        # loop-top guard is on trial for here.  That each releases at its own
+        # instant is a different claim, and one this harness cannot make;
+        # `test_overlapping_pairs_each_get_one_handle` pins it directly instead.
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        moment = _local(6, 0, day=8) + timedelta(seconds=2)
+        fake_clock.set(moment)
+        async_fire_time_changed(hass, moment, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        released = {
+            c["pair_id"] for c in fake_mode_changer.calls if c["target"] == "standby"
+        }
+        assert released == {first.id, second.id}
+
+    @pytest.mark.parametrize("blip", ["unavailable", "unknown"])
+    async def test_a_blip_during_the_reason_write_still_installs_the_timer(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+        blip: str,
+    ) -> None:
+        """The guard above tests for a *leave*, not for "not Home".
+
+        `unavailable`/`unknown` match the negative form and nothing would heal a
+        decline on them.  `_on_panel_state_changed`'s #216 guard returns on a
+        blip before dispatching the override and before updating
+        `_last_panel_state`, so nothing stamps `last_disarmed_at`, and recovery
+        is not an edge into Home — the pair would sit ARMED with no handle until
+        the next restart, which is #212's own symptom.
+
+        So the blip is let through and the timer goes in; `_disarm_impl` re-reads
+        the panel when it fires, exactly as it did before the write was split.
+        Here the panel is back by the boundary and the release happens on time.
+        """
+        fake_clock.set(_local(23, 37))
+        _set_panel(hass, "armed_away")
+        pair = await self._night_pair(manager)
+        manager._start_panel_listener()
+
+        original_update = manager._store.async_update
+        writes = 0
+
+        async def _blip_on_the_reason_write(pair: ScheduledPair) -> None:
+            nonlocal writes
+            await original_update(pair)
+            writes += 1
+            if writes == 2:
+                _set_panel(hass, blip)
+
+        with patch.object(manager._store, "async_update", _blip_on_the_reason_write):
+            _set_panel(hass, "armed_home")
+            await hass.async_block_till_done(wait_background_tasks=True)
+            await hass.async_block_till_done()
+
+        assert writes >= 2
+        assert (pair.id, "disarm") in manager._pending_handles
+
+        # The panel comes back, and the schedule's own boundary still releases it.
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        later = _local(6, 0, day=8) + timedelta(seconds=2)
+        fake_clock.set(later)
+        async_fire_time_changed(hass, later, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert [c for c in fake_mode_changer.calls if c["target"] == "standby"]
+
+    async def test_an_override_cannot_interleave_with_a_later_adoption(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """A rapid Home → Away → Home is applied in event order, not interleaved.
+
+        Both edge handlers are dispatched as tasks and both await per pair, so
+        without `_edge_lock` they overlap: the adoption reaches a pair the
+        override has not got to yet, sees it still ARMED and skips it at the
+        `derive_state` ownership guard, and the override then cancels that pair's
+        handle and marks it IDLE.  The panel ends Home, in-window, with a
+        timer-less pair and no later edge coming to re-adopt it — #212's own
+        symptom, one pair over from the fix for it.
+
+        Reaching it needs two things the suite does not otherwise produce.  The
+        override's first store write is stalled, which is what lets the adoption
+        run past the *second* pair before the override arrives at it.  And the
+        clock is advanced inside that stall, because `FakeClock` is frozen and
+        a real one is not: with both handlers stamping the same instant,
+        `derive_state`'s strict `last_armed_at > last_disarmed_at` would decline
+        every adoption for a harness reason and hide the behaviour under test.
+        """
+        fake_clock.set(_local(23, 37))
+        _set_panel(hass, "armed_away")
+        first = await self._night_pair(manager)
+        second = await self._night_pair(manager, arm_time="22:00", disarm_time="07:00")
+        manager._start_panel_listener()
+
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+        assert (first.id, "disarm") in manager._pending_handles
+        assert (second.id, "disarm") in manager._pending_handles
+
+        original_update = manager._store.async_update
+        writes = 0
+
+        async def _stall_the_first_write(pair: ScheduledPair) -> None:
+            nonlocal writes
+            writes += 1
+            await original_update(pair)
+            if writes == 1:
+                # *After* delegating, so the stall sits where a production one
+                # does.  `async_update` assigns into `_schedules` synchronously
+                # and only then awaits `async_save`, and `_persist_runtime`
+                # mutates the cached pair in place before either — so a real
+                # suspension is always observed with the current pair already
+                # IDLE in memory.  Stalling first would show pair 1 in a state
+                # production cannot produce; pair 2 strands either way.
+                fake_clock.set(_local(23, 38))
+                # One yield is enough to hand control to the adoption task (I
+                # bisected it); 30 is margin.  Under-yielding fails *open* — the
+                # test would still pass while pinning nothing — so the margin is
+                # the point.
+                for _ in range(30):
+                    await asyncio.sleep(0)
+
+        with patch.object(manager._store, "async_update", _stall_the_first_write):
+            _set_panel(hass, "armed_away")
+            _set_panel(hass, "armed_home")
+            await hass.async_block_till_done(wait_background_tasks=True)
+            await hass.async_block_till_done()
+
+        # Both pairs were released by the override and re-adopted by the arm.
+        for pair in (first, second):
+            stored = await manager.async_get(pair.id)
+            assert stored is not None
+            assert stored.last_skip_reason == SkipReason.ALREADY_HOME
+            assert stored.last_armed_at is not None
+            assert stored.last_disarmed_at is not None
+            assert stored.last_armed_at > stored.last_disarmed_at
+            assert (pair.id, "disarm") in manager._pending_handles
+
+    async def test_the_post_write_guard_declines_when_another_writer_releases_the_pair(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Reaches the post-write `derive_state` guard, which no edge can now.
+
+        `_edge_lock` keeps `_handle_manual_override` out of an adoption pass, so
+        the interleaving that guard was originally written against is gone — and
+        with it the only test that reached the branch.  The guard is still live
+        for any *unlocked* writer that can leave the record non-ARMED: those
+        that stamp `last_disarmed_at` (`_arm_impl`'s `away_active` and
+        `panel_unavailable` branches, `_disarm_impl`, reconciliation), and
+        `_arm_impl`'s success path, which trips it the other way — by regressing
+        `last_armed_at` behind an existing `last_disarmed_at`.
+
+        One of those is stood in for here by stamping the cached pair during the
+        anchor write, which is exactly the shape they have — `_persist_runtime`
+        mutates the cached instance in place, so a concurrent write is observed
+        as a mutation landing inside our suspension.  The panel never moves, so
+        the final panel guard cannot be what declines: this isolates the
+        `derive_state` one.
+        """
+        fake_clock.set(_local(23, 37))
+        _set_panel(hass, "armed_away")
+        pair = await self._night_pair(manager)
+        manager._start_panel_listener()
+
+        original_update = manager._store.async_update
+        writes = 0
+
+        async def _release_the_pair_during_the_anchor_write(
+            stored: ScheduledPair,
+        ) -> None:
+            nonlocal writes
+            writes += 1
+            await original_update(stored)
+            if writes == 1:
+                cached = manager._store.get(pair.id)
+                assert cached is not None
+                cached.last_disarmed_at = fake_clock.utcnow() + timedelta(seconds=1)
+
+        scheduled: list[str] = []
+        original_schedule = manager._schedule_disarm
+
+        def _record(p: ScheduledPair) -> None:
+            scheduled.append(p.id)
+            original_schedule(p)
+
+        with (
+            patch.object(
+                manager._store,
+                "async_update",
+                _release_the_pair_during_the_anchor_write,
+            ),
+            patch.object(manager, "_schedule_disarm", _record),
+        ):
+            _set_panel(hass, "armed_home")
+            await hass.async_block_till_done(wait_background_tasks=True)
+            await hass.async_block_till_done()
+
+        assert manager._panel_state() == "armed_home"  # not the panel guard
+        assert scheduled == []  # declined before any timer was built
+        assert (pair.id, "disarm") not in manager._pending_handles
+        # The reason write sits *after* the guard, so it never ran: the pair
+        # does not claim an adoption that did not happen.
+        stored_pair = await manager.async_get(pair.id)
+        assert stored_pair is not None
+        assert stored_pair.last_skip_reason != SkipReason.ALREADY_HOME
+
+    async def test_a_manual_arm_during_the_confirmation_poll_double_reports(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+    ) -> None:
+        """Pins the one overlap #212 accepts, because it is on an event surface.
+
+        The arm edge proceeded (panel read `disarmed`), so the listener's
+        remembered mode is `disarmed` — and a user arming Home by hand during
+        the confirmation poll carries a foreign context, so as far as the
+        listener can tell it is a genuine edge into Home.  Both paths therefore
+        report the same physical situation: `schedule_skipped(already_home)` from
+        adoption and `schedule_fired` from the arm.
+
+        That is cosmetic rather than harmful, and this is what says so out loud:
+        `_set_disarm_handle` cancels whichever timer it replaces, so exactly one
+        disarm survives, and both paths anchor inside the same window so it lands
+        on the schedule's own boundary either way.  Before #212 this situation
+        produced one event; it now produces two, which is a change on a surface
+        users build notifications against.
+        """
+        fake_clock.set(_local(23, 0))
+        _set_panel(hass, "disarmed")
+        pair = await self._night_pair(manager)
+        manager._start_panel_listener()
+        assert manager._last_panel_state == "disarmed"
+
+        fired = _capture_events(hass, EVENT_SCHEDULE_FIRED)
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+
+        release = fake_mode_changer.block()
+        arm_task = hass.async_create_task(manager.async_arm(pair.id))
+        await fake_mode_changer.started.wait()
+
+        # The user arms Home by hand while the poll is still in flight.
+        #
+        # Wait on the condition rather than yielding a guessed number of times.
+        # `async_block_till_done` is not available here — it waits on *every*
+        # background task, including the arm parked on `release`, so it would
+        # deadlock — and a fixed yield count would silently encode how many
+        # suspension points the adoption path happens to have under this
+        # harness.  Today it has none (the storage mock patches the async write,
+        # and the uncontended `asyncio.Lock` takes its fast path), so one pass
+        # is enough; spinning on the event it fires survives that changing.
+        _set_panel(hass, "armed_home")
+        for _ in range(50):
+            if skipped:
+                break
+            await asyncio.sleep(0)
+        else:
+            pytest.fail("adoption never committed while the arm was in flight")
+
+        release.set()
+        with _no_retry_sleeps():
+            await arm_task
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        # Two reports of one situation…
+        assert [e["reason"] for e in skipped] == [SkipReason.ALREADY_HOME]
+        assert [e["action"] for e in fired] == ["arm"]
+
+        # …and exactly one surviving timer, on the schedule's own boundary.
+        assert sum(1 for k in manager._pending_handles if k[1] == "disarm") == 1
+        assert await _expected_disarm(manager, pair.id) == _local(6, 0, day=8)
+
+        disarm_dt = _local(6, 0, day=8) + timedelta(seconds=2)
+        fake_clock.set(disarm_dt)
+        async_fire_time_changed(hass, disarm_dt, fire_all=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert (
+            len([c for c in fake_mode_changer.calls if c["target"] == "standby"]) == 1
+        )
+
+    async def test_a_flapping_mode_source_re_adopts_every_cycle(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """Pins the churn a flapping mode source now costs, as a deliberate trade.
+
+        Before adoption existed, a panel oscillating Home → Away → Home inside a
+        window cost one store write total: the first leave-Home edge marked the
+        pair IDLE and every later one was a `derive_state` no-op.  Each full
+        cycle now re-arms the pair, so it costs three writes — two for the
+        adoption, anchor then reason, and one for the release — and two
+        `schedule_skipped` events — and `schedule_skipped` is a documented
+        notification surface, so a presence automation flapping at 01:00 sends a
+        notification pair per flap.
+
+        That is accepted rather than guarded.  The obvious guard — refuse
+        adoption when the pair was last released by `manual_override` inside this
+        same window — would also refuse the legitimate flow it is hard to tell
+        apart from a flap: disarm by hand at 01:00, re-arm Home at 01:30, still
+        want the 06:00 release.  Re-adopting a genuine leave-and-return is the
+        behaviour worth having; the churn is bounded, self-consistent, and ends
+        in the right state whichever edge lands last.
+        """
+        fake_clock.set(_local(23, 30))
+        _set_panel(hass, "armed_away")
+        pair = await self._night_pair(manager)
+        manager._start_panel_listener()
+
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+        minute = 31
+        for _ in range(3):
+            fake_clock.set(_local(23, minute))
+            _set_panel(hass, "armed_home")
+            await hass.async_block_till_done(wait_background_tasks=True)
+            fake_clock.set(_local(23, minute + 1))
+            _set_panel(hass, "armed_away")
+            await hass.async_block_till_done(wait_background_tasks=True)
+            minute += 2
+        await hass.async_block_till_done()
+
+        assert [e["reason"] for e in skipped] == [
+            SkipReason.ALREADY_HOME,
+            SkipReason.MANUAL_OVERRIDE,
+        ] * 3
+        # Ends on a leave-Home edge: released, holding nothing.
+        assert (pair.id, "disarm") not in manager._pending_handles
+
+        # One more arrival still adopts — the churn costs nothing in correctness.
+        fake_clock.set(_local(23, minute))
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+        assert (pair.id, "disarm") in manager._pending_handles
+
+    async def test_an_attribute_refresh_on_a_home_panel_is_not_an_arrival(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """Only the *edge* into Home counts — `previous != "armed_home"`.
+
+        This is the condition separating "someone put the panel in Home" from
+        "the panel's battery attribute refreshed", and the second is routine:
+        `AbodeAlarm._update_callback` calls `schedule_update_ha_state()` on every
+        SocketIO device event, and its `extra_state_attributes` carry the backup
+        flags, so armed_home → armed_home events arrive all night.
+
+        The pair is created *after* the listener seeds its memory from an
+        already-Home panel, so it is IDLE and in-window with nothing else to
+        reject it — dropping the edge condition adopts it on the next attribute
+        refresh.  Creating a schedule must not retroactively claim a panel;
+        the next arm edge's `already_home` branch is what takes ownership.
+        """
+        fake_clock.set(_local(23, 37))
+        _set_panel(hass, "armed_home")
+        manager._start_panel_listener()
+        assert manager._last_panel_state == "armed_home"
+
+        pair = await self._night_pair(manager)
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+
+        hass.states.async_set(_PANEL, "armed_home", {"battery_backup": False})
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert (pair.id, "disarm") not in manager._pending_handles
+        assert skipped == []
+        stored = await manager.async_get(pair.id)
+        assert stored is not None and stored.last_armed_at is None
+
+    async def test_a_repeat_armed_home_event_does_not_re_adopt(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+    ) -> None:
+        """An already-adopted pair is not adopted a second time.
+
+        Belt to the edge condition's braces: even if a repeat `armed_home` event
+        did reach `_handle_manual_arm`, `derive_state` rejects a pair that
+        already owns the panel, so the timer it holds is left untouched.
+        """
+        pair = await self._night_pair(manager)
+
+        await self._away_then_home(hass, manager, fake_clock, at=_local(23, 37))
+        handle = manager._pending_handles[(pair.id, "disarm")]
+
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+        hass.states.async_set(_PANEL, "armed_home", {"changed_by": "someone"})
+        await hass.async_block_till_done(wait_background_tasks=True)
+        await hass.async_block_till_done()
+
+        assert manager._pending_handles[(pair.id, "disarm")] is handle
+        assert skipped == []
 
 
 # ---------------------------------------------------------------------------
