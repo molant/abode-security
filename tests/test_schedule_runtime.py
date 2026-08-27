@@ -1882,30 +1882,76 @@ class TestManualOverrideListener:
         assert (pair.id, "disarm") in manager._pending_handles
         assert manager._panel_wait_handles == {}
 
-    async def test_listener_gives_up_when_panel_absent_at_ha_start(
+    async def test_listener_keeps_waiting_when_panel_absent_at_ha_start(
         self,
         hass: HomeAssistant,
         manager: ScheduleManager,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """The startup twin of the warn branch: the one-shot is spent.
+        """A miss on the startup one-shot hands off, it does not give up.
 
-        Unlike the state-added deferral, EVENT_HOMEASSISTANT_STARTED does not
-        come round again — so the listener warns and stays disabled until the
-        next restart.  Asserting the empty wait-handle set is what distinguishes
-        this from the reload branch, which keeps waiting.
+        EVENT_HOMEASSISTANT_STARTED does not come round again, so stopping here
+        would leave the manual-override listener dead until the next restart.
+        The entity subscription is not tied to startup, so the two branches can
+        converge on it rather than behaving differently.
         """
         hass.set_state(CoreState.starting)
         manager._start_panel_listener()  # no panel — defers on HA start
         assert manager._panel_wait_handles == {}  # a one-shot, not a subscription
 
         caplog.clear()
+        # Realism, not a precondition: HA does set `running` just before firing
+        # this, but the hand-off never consults `hass.state`.
+        hass.set_state(CoreState.running)
         hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)  # panel still absent
+        await hass.async_block_till_done()
+
+        # Handed off, and quiet until the backstop — not warned-and-done.
+        assert manager._listener_handle is None
+        assert PANEL_WAIT_LISTENER in manager._panel_wait_handles
+        assert "Abode panel entity not found" not in caplog.text
+
+        # A panel that arrives after HA start is still adopted.
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done()
+        assert manager._listener_handle is not None
+        assert manager._last_panel_state == "armed_home"
+        assert manager._panel_wait_handles == {}
+
+    async def test_listener_warns_after_ha_start_when_panel_never_arrives(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """The hand-off moves the warning to the backstop, it does not drop it.
+
+        A silently disabled manual-override listener on a security integration
+        is the wrong kind of quiet, so the account-with-no-alarm-device case
+        still says so — just PANEL_WAIT_TIMEOUT later than it used to.
+        """
+        hass.set_state(CoreState.starting)
+        manager._start_panel_listener()
+        hass.set_state(CoreState.running)
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)  # panel still absent
+        await hass.async_block_till_done()
+
+        caplog.clear()
+        async_fire_time_changed(
+            hass, dt_util.utcnow() + timedelta(seconds=PANEL_WAIT_TIMEOUT + 1)
+        )
         await hass.async_block_till_done()
 
         assert "Abode panel entity not found" in caplog.text
         assert manager._listener_handle is None
-        assert manager._panel_wait_handles == {}
+        assert PANEL_WAIT_LISTENER in manager._panel_wait_handles  # still waiting
+
+        # Structurally implied by the line above, but "the warning does not
+        # consume the subscription" is the property the hand-off turns on, so
+        # assert it behaviourally too — as the running-branch twin does.
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done()
+        assert manager._listener_handle is not None
 
     async def test_listener_warns_but_keeps_waiting_when_panel_never_arrives(
         self,
@@ -1916,9 +1962,9 @@ class TestManualOverrideListener:
         """The listener has nothing to do without a panel, so it does not proceed.
 
         It still says so once — a silently disabled manual-override listener on
-        a security integration is the wrong kind of quiet — but unlike the
-        startup one-shot the subscription survives, so a panel that shows up
-        late is still picked up.
+        a security integration is the wrong kind of quiet — but the
+        subscription survives the warning, so a panel that shows up late is
+        still picked up.
         """
         hass.set_state(CoreState.running)
         armed_at = dt_util.utcnow()  # before arming — see the reconcile twin
@@ -2304,29 +2350,94 @@ class TestShutdown:
         await hass.async_block_till_done()
 
         assert manager._listener_handle is None
+        assert manager._panel_wait_handles == {}
 
-    async def test_deferred_listener_retry_is_silent_after_shutdown(
+    async def test_startup_retry_arms_nothing_after_shutdown(
         self,
         hass: HomeAssistant,
         manager: ScheduleManager,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """And it must not blame a missing panel for its own teardown.
+        """End to end: an HA-start retry on a dead manager is inert.
 
         Unloading the entry removes the alarm_control_panel entity, so the
-        retry's panel lookup fails and it takes the "panel not found" warning
-        branch — a scary log line, during a routine reload, about a manager
-        nobody is using any more.
+        retry's panel lookup fails and it takes the hand-off branch — which on
+        a dead manager would mean a live state-added subscription plus a 300 s
+        timer the sweep has already run past.  Asserted as behaviour rather
+        than as a barrier: `_retry` holds no `_shutdown` check of its own, the
+        refusal comes from `_wait_for_panel_entity`'s (pinned on its own by
+        `test_panel_entity_wait_is_not_armed_after_shutdown`), and this test
+        says the two compose.
         """
         hass.set_state(CoreState.starting)
         manager._start_panel_listener()  # no panel yet — defers
         await manager.async_shutdown()
 
         caplog.clear()
+        hass.set_state(CoreState.running)
         hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)  # panel still absent
         await hass.async_block_till_done()
 
+        assert manager._panel_wait_handles == {}
         assert "Abode panel entity not found" not in caplog.text
+
+    async def test_shutdown_cancels_a_wait_armed_by_the_startup_hand_off(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+    ) -> None:
+        """The hand-off is what brings a startup deferral within the sweep's reach.
+
+        Armed as an EVENT_HOMEASSISTANT_STARTED one-shot, which `async_shutdown`
+        cannot cancel and only the `_shutdown` flag neutralises — but once HA
+        start fires with no panel it becomes a real subscription, and from then
+        on teardown has to cancel it like any other.
+        """
+        hass.set_state(CoreState.starting)
+        manager._start_panel_listener()  # no panel — defers on HA start
+        hass.set_state(CoreState.running)
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)  # panel still absent
+        await hass.async_block_till_done()
+        assert PANEL_WAIT_LISTENER in manager._panel_wait_handles
+
+        await manager.async_shutdown()
+
+        assert manager._panel_wait_handles == {}
+        _set_panel(hass, "armed_home")
+        await hass.async_block_till_done()
+        assert manager._listener_handle is None
+
+    async def test_panel_entity_wait_is_not_armed_after_shutdown(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+    ) -> None:
+        """`_wait_for_panel_entity` is self-guarded, not merely well-called.
+
+        Both of its callers check `_shutdown` synchronously first, so this
+        guard is defence rather than a live path — and defence that nothing
+        exercises is defence that silently rots.  Called directly, because
+        going through `_defer_until_panel_exists` stops at the outer guard and
+        pins that one instead (see the test below).
+        """
+        hass.set_state(CoreState.running)
+        ran = []
+
+        await manager.async_shutdown()
+        manager._wait_for_panel_entity(
+            PANEL_WAIT_RECONCILE,
+            lambda: ran.append(True),
+            on_missing_panel=RUN_WITHOUT_PANEL,
+        )
+
+        assert manager._panel_wait_handles == {}
+
+        _set_panel(hass, "armed_home")
+        async_fire_time_changed(
+            hass, dt_util.utcnow() + timedelta(seconds=PANEL_WAIT_TIMEOUT + 1)
+        )
+        await hass.async_block_till_done()
+        assert ran == []
 
     async def test_panel_deferral_is_not_armed_after_shutdown(
         self,
@@ -2339,6 +2450,10 @@ class TestShutdown:
         setup suspended across a teardown resumes straight into this guard.
         Without it the dead manager stays subscribed to every alarm panel added
         for the life of the process — the leak `async_shutdown` exists to avoid.
+
+        The startup leg is why this guard cannot just be left to
+        `_wait_for_panel_entity`'s: that branch parks a bus one-shot nothing
+        cancels, so the reference is taken before `_retry` can re-check.
         """
         hass.set_state(CoreState.running)
         ran = []
@@ -2359,6 +2474,17 @@ class TestShutdown:
         )
         await hass.async_block_till_done()
         assert ran == []
+
+        # The startup branch leaks differently — a bus one-shot, not a
+        # subscription — so it needs saying separately.
+        before = hass.bus.async_listeners().get(EVENT_HOMEASSISTANT_STARTED, 0)
+        hass.set_state(CoreState.starting)
+        manager._defer_until_panel_exists(
+            PANEL_WAIT_RECONCILE,
+            lambda: ran.append(True),
+            on_missing_panel=RUN_WITHOUT_PANEL,
+        )
+        assert hass.bus.async_listeners().get(EVENT_HOMEASSISTANT_STARTED, 0) == before
 
     async def test_timers_are_not_registered_after_shutdown(
         self,

@@ -120,6 +120,16 @@ The frontend panel (`frontend/src/abode-panel.ts`) currently implements Actions 
 - [ ] Add bundle size tracking/alerting
 - [ ] Add test coverage reporting to PR comments
 
+## Scheduling
+
+- [ ] Pin or drop the two remaining unexercised `_shutdown` guards in
+      `scheduling/manager.py` — `_on_panel_added`'s and `_panel_never_arrived`'s.
+      Same family as the two the #217 follow-up pinned directly and the retry
+      guard it dropped as untestable; deciding each one deliberately beats
+      letting them accumulate. (`_start_panel_listener`'s is *not* in this set:
+      `test_deferred_listener_retry_does_not_resurrect_after_shutdown` already
+      pins it, and the retry comment depends on that.)
+
 ## Documentation
 
 - [ ] Add API documentation for frontend components
