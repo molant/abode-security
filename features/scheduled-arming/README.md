@@ -26,7 +26,7 @@ One row in the schedules list. Pair fields:
 - `disarm_time` — `"HH:MM"` 24-hour, **local wall-clock**.
 - `enabled` — bool. Defaults to `true`. When `false`, neither arm nor disarm fires; the row remains in the list.
 - `created_at` — ISO-8601 UTC datetime, server-generated on create. Used as the stable sort key for `schedules/list`. Immutable after create.
-- `last_armed_at` — ISO-8601 UTC datetime or `null`. Set when this pair's arm fires successfully, or when the arm is skipped via the `already_home` "take ownership" branch. Used for restart reconciliation and the disarm-only-if-armed rule.
+- `last_armed_at` — ISO-8601 UTC datetime or `null`. Set when this pair's arm fires successfully, when the arm is skipped via the `already_home` "take ownership" branch, or when the override listener adopts a panel that entered `armed_home` mid-window (#212). Used for restart reconciliation and the disarm-only-if-armed rule.
 - `last_disarmed_at` — ISO-8601 UTC datetime or `null`. Set when this pair's disarm fires, when the pair completes its window without firing (skipped both sides), or when reconciliation clears it.
 - `last_skip_reason` — optional short string (one of the `SkipReason` values, see below). UI hint only.
 - `last_error` — optional short string. Set after retries are exhausted. UI hint only.
@@ -85,7 +85,7 @@ On `ModeChanger.async_set_mode` failure (transient panel error, network blip), r
 The `SkipReason` enum (used in `last_skip_reason` and in the `schedule_skipped` event `reason` field) is the closed set:
 
 - `away_active` — panel was `armed_away` at arm time.
-- `already_home` — panel was `armed_home` at arm time (we "take ownership" for disarm).
+- `already_home` — panel found in `armed_home`, either at arm time or when it is manually armed partway through the window (#212). Either way we "take ownership" for disarm.
 - `panel_unavailable` — panel in `arming`, `pending`, `triggered`, `unavailable`, `unknown`, or unregistered at evaluation time.
 - `manual_override` — panel left `armed_home` via a non-self-driven Context (cancel-pending-disarm rule).
 - `reconcile_window_elapsed` — restart reconciliation found the pair's window had already passed.
@@ -113,9 +113,9 @@ The `SkipReason` enum (used in `last_skip_reason` and in the `schedule_skipped` 
 - `HAModeChanger` stamps the HA `Context` with id `f"abode_sched_{pair_id}_{nonce}"` for schedule-initiated calls; user/external calls get `Context()` (default id).
 
 ### Runtime behavior
-- Manager registers one daily `async_track_time_change` callback per pair for the **arm** edge only, restricted to the pair's `weekdays`. The **disarm** edge is scheduled as a one-shot `async_call_later` after a successful arm (and recomputed on restart by reconciliation). This avoids the day-after-arm weekday ambiguity for overnight pairs. See phase-3 for details.
+- Manager registers one daily `async_track_time_change` callback per pair for the **arm** edge only, restricted to the pair's `weekdays`. The **disarm** edge is scheduled as a one-shot `async_call_later` by any of four things: a successful arm, the `already_home` skip, restart reconciliation, or the override listener adopting a panel that entered `armed_home` mid-window (#212). This avoids the day-after-arm weekday ambiguity for overnight pairs. See phase-3 for details.
 - Skip rule applied at arm fire time (see Concepts).
-- Pending-disarm cancellation: listen `EVENT_STATE_CHANGED` for the alarm panel entity; if `event.context.id` does **not** start with `abode_sched_` and the transition leaves `armed_home`, cancel any pending disarm timers belonging to pairs currently in `ARMED` state, set their `last_disarmed_at = now()`, fire `schedule_skipped` with `reason: "manual_override"`. No re-arm.
+- Pending-disarm cancellation: listen `EVENT_STATE_CHANGED` for the alarm panel entity; if `event.context.id` does **not** start with `abode_sched_` and the transition leaves `armed_home`, cancel any pending disarm timers belonging to pairs currently in `ARMED` state, set their `last_disarmed_at = now()`, fire `schedule_skipped` with `reason: "manual_override"`. The listener is bidirectional (#212): a transition *into* `armed_home` from a non-schedule context, inside an enabled pair's window, adopts the panel and registers the one-shot disarm — reported as `schedule_skipped` with `reason: "already_home"`. It never calls `mode_changer`, so it can only ever schedule a release, never arm anything.
 - HA events fired (always via `hass.bus.async_fire`):
   - `abode_security.schedule_fired` — payload: `{schedule_id, schedule_name, action: "arm"|"disarm", target_mode, fired_at}`
   - `abode_security.schedule_skipped` — payload: `{schedule_id, schedule_name, action: "arm"|"disarm", reason, skipped_at}`

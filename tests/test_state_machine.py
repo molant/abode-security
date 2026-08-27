@@ -5,18 +5,33 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from custom_components.abode_security.scheduling.models import ScheduledPair
 from custom_components.abode_security.scheduling.state_machine import (
     DISARM_WINDOW_GRACE,
     PairState,
     derive_state,
     expected_disarm_at,
+    in_arm_window,
     parse_hhmm,
 )
 
 _UTC = UTC
 _EASTERN = ZoneInfo("America/New_York")
 _BERLIN = ZoneInfo("Europe/Berlin")
+_MADRID = ZoneInfo("Europe/Madrid")
+_PACIFIC = ZoneInfo("America/Los_Angeles")
+
+
+def _pacific(hour: int, minute: int = 0, *, day: int = 7) -> datetime:
+    """A UTC instant for a January 2030 US/Pacific wall-clock time.
+
+    2030-01-07 is a Monday, so `day=8` is Tuesday.  Winter, so no DST edge is
+    in play — the fall-back and spring-forward cases are pinned separately
+    against Europe/Madrid below.
+    """
+    return datetime(2030, 1, day, hour, minute, tzinfo=_PACIFIC).astimezone(_UTC)
 
 
 def _pair(
@@ -196,3 +211,129 @@ class TestParseHhmm:
         t = parse_hhmm("23:59")
         assert t.hour == 23
         assert t.minute == 59
+
+
+class TestInArmWindow:
+    """`in_arm_window` — is *this instant* inside one of a pair's windows?
+
+    The adoption path added for #212 leans on this to decide whether a panel
+    that just entered `armed_home` is one a schedule should take ownership of.
+    """
+
+    @pytest.mark.parametrize(
+        ("now", "expected"),
+        [
+            # A `mon`-only pair, so anything before Monday's own arm edge walks
+            # the anchor back to Sunday and is rejected on the weekday branch —
+            # noted because the times read like disarm-boundary cases and are
+            # not.  The exclusive *end* of the window is pinned by the two
+            # `day=8` cases straddling 06:00, which reach `expected_disarm_at`.
+            (_pacific(22, 59), False),  # Mon, a minute early (weekday branch)
+            (_pacific(23, 0), True),  # Mon, exactly the arm edge — inclusive
+            (_pacific(23, 37), True),  # Mon night
+            (_pacific(2, 0, day=8), True),  # Tue 02:00 — still Monday's window
+            (_pacific(5, 59, day=8), True),  # Tue, a minute before the boundary
+            (_pacific(6, 0, day=8), False),  # Tue, the disarm edge — exclusive
+            (_pacific(12, 0, day=8), False),  # Tue midday
+            (_pacific(23, 37, day=8), False),  # Tue night — not a Monday window
+        ],
+    )
+    def test_overnight_window_boundaries(self, now: datetime, expected: bool) -> None:
+        pair = _pair(arm_time="23:00", disarm_time="06:00")
+        assert in_arm_window(pair, now=now, tz=_PACIFIC) is expected
+
+    @pytest.mark.parametrize(
+        ("now", "expected"),
+        [
+            # Same caveat as above: the two `False`s before 08:00 are weekday
+            # rejections, and 17:00 is the one that pins the exclusive end.
+            (_pacific(7, 59), False),  # weekday branch
+            (_pacific(8, 0), True),  # arm edge — inclusive
+            (_pacific(12, 0), True),
+            (_pacific(16, 59), True),
+            (_pacific(17, 0), False),  # disarm edge — exclusive
+            (_pacific(2, 0), False),  # before the day's own arm edge
+        ],
+    )
+    def test_same_day_window_boundaries(self, now: datetime, expected: bool) -> None:
+        pair = _pair(arm_time="08:00", disarm_time="17:00")
+        assert in_arm_window(pair, now=now, tz=_PACIFIC) is expected
+
+    def test_every_weekday_pair_still_closes_its_window(self) -> None:
+        """With all seven days enabled the weekday test can never reject.
+
+        The `expected_disarm_at` comparison is then the only thing separating
+        "inside tonight's window" from "after last night's closed".
+        """
+        pair = _pair(arm_time="23:00", disarm_time="06:00")
+        pair.weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        assert in_arm_window(pair, now=_pacific(23, 30), tz=_PACIFIC) is True
+        assert in_arm_window(pair, now=_pacific(3, 0, day=8), tz=_PACIFIC) is True
+        assert in_arm_window(pair, now=_pacific(21, 0, day=8), tz=_PACIFIC) is False
+
+    # -- DST ----------------------------------------------------------------
+    #
+    # Europe/Madrid, 2030-10-27: 03:00 CEST falls back to 02:00 CET, so 02:00 ->
+    # 03:00 local happens twice.  A pair whose `arm_time` sits inside that
+    # repeated hour is the case that breaks if the anchor inherits `fold` from
+    # `now` instead of pinning `fold=0`.
+
+    @pytest.mark.parametrize(
+        ("utc_hour", "utc_minute"),
+        [
+            (0, 40),  # 02:40 CEST — first pass through the repeated hour
+            (1, 0),  # 02:00 CET  — second pass, fold=1
+            (1, 20),  # 02:20 CET  — second pass, fold=1
+            (1, 50),  # 02:50 CET  — second pass, fold=1
+            (5, 0),  # 06:00 CET  — well clear of the fold, still in window
+        ],
+    )
+    def test_fall_back_repeated_hour_stays_in_window(
+        self, utc_hour: int, utc_minute: int
+    ) -> None:
+        """Every instant between the arm edge and 08:00 reads as in-window.
+
+        Inheriting `fold=1` resolved the anchor to the later of the two 02:30s,
+        which lands *after* `now`, rolls the anchor back a full day, and reports
+        a window the panel is squarely inside as closed.
+        """
+        pair = _pair(arm_time="02:30", disarm_time="08:00")
+        pair.weekdays = ["sun"]
+        now = datetime(2030, 10, 27, utc_hour, utc_minute, tzinfo=_UTC)
+        assert in_arm_window(pair, now=now, tz=_MADRID) is True
+
+    def test_fall_back_night_still_closes_its_window(self) -> None:
+        """The fold fix must not wedge the window permanently open."""
+        pair = _pair(arm_time="02:30", disarm_time="08:00")
+        pair.weekdays = ["sun"]
+        # 08:00 CET on the 27th — the disarm edge, exclusive.
+        assert (
+            in_arm_window(
+                pair, now=datetime(2030, 10, 27, 7, 0, tzinfo=_UTC), tz=_MADRID
+            )
+            is False
+        )
+        # 00:00 CEST on the 27th — before that day's own arm edge, and the
+        # previous day is not a Sunday.
+        assert (
+            in_arm_window(
+                pair, now=datetime(2030, 10, 26, 22, 0, tzinfo=_UTC), tz=_MADRID
+            )
+            is False
+        )
+
+    def test_spring_forward_skipped_arm_hour_reads_as_in_window(self) -> None:
+        """Documents a deliberate divergence from the arm timer, not a bug.
+
+        On 2030-03-31 Madrid jumps 02:00 CET -> 03:00 CEST, so an `arm_time` of
+        02:30 never occurs and HA's `async_track_time_change` does not fire the
+        arm that day (see `test_scheduler.py`).  `in_arm_window` still reports
+        the window open, because `replace()` on a non-existent local time
+        resolves rather than raising.  The consequence is benign — adoption can
+        only ever *schedule a disarm*, and only for a panel already in Home — so
+        it is pinned here rather than papered over.
+        """
+        pair = _pair(arm_time="02:30", disarm_time="08:00")
+        pair.weekdays = ["sun"]
+        now = datetime(2030, 3, 31, 2, 0, tzinfo=_UTC)  # 04:00 CEST
+        assert in_arm_window(pair, now=now, tz=_MADRID) is True

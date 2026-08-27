@@ -377,11 +377,41 @@ The `reason` field on `schedule_skipped` events takes one of six values:
 | Reason | Meaning |
 |---|---|
 | `away_active` | Panel was `armed_away`; arm and disarm both skipped |
-| `already_home` | Panel already `armed_home`; arm skipped but disarm still fires later |
+| `already_home` | Panel found in `armed_home` — either at arm time (arm skipped) or on a manual arm partway through the window (#212). Either way the schedule takes ownership and its disarm still fires later |
 | `panel_unavailable` | Panel in an intermediate state or entity not registered |
 | `manual_override` | Panel left `armed_home` for another *mode* via a non-schedule context (user changed mode manually). Losing the panel does not count — see below |
 | `reconcile_window_elapsed` | HA restarted, or the integration reloaded, after the disarm window had already passed |
 | `reconcile_panel_not_home` | HA restarted or the integration reloaded mid-window and the panel was no longer Home — or never appeared at all (an account with no alarm device) |
+
+### `already_home` in the middle of a window
+
+`already_home` no longer only means "the arm edge found the panel in Home". A
+panel manually armed to Home *partway through* an enabled schedule's window is
+adopted by that schedule, which fires `schedule_skipped` with
+`action: "arm"`, `reason: "already_home"` and then releases the panel at the
+schedule's `disarm_time`. This is what stops a night that began in Away (so the
+arm was skipped `away_active`) from leaving the panel armed all the next day.
+
+Adoption uses the schedule's own boundary, never "now plus a window": arming
+Home at 05:59 under a `23:00` → `06:00` schedule is inside the window, so the
+panel is adopted and released at 06:00 a minute later. That is the same thing
+the arm edge's `already_home` branch would have done at 23:00, decided at a
+different moment.
+
+One situation now reports twice. If you arm Home by hand while a scheduled arm
+is still confirming (arming takes ~60 s on real hardware), the pair fires both
+`schedule_skipped` with `reason: "already_home"` and `schedule_fired` with
+`action: "arm"` — the schedule's own path and the adoption path both see the
+same physical event. Only the events double up: one disarm is scheduled, at the
+schedule's own `disarm_time`.
+
+The other visible consequence is that a mode source which *flaps* — a misbehaving
+presence automation toggling vacation mode, say — now produces a paired
+`already_home` / `manual_override` event per cycle rather than a single
+`manual_override` for the first one. If your automation notifies on
+`schedule_skipped`, either debounce it or filter on `reason`; the underlying
+schedule state stays consistent either way, and the panel ends in whatever mode
+the last edge left it.
 
 ### `manual_override` and panel availability
 
