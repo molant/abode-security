@@ -42,7 +42,7 @@ dev = [
     # pytest-homeassistant-custom-component pins homeassistant exactly (and
     # therefore all of HA's transitive deps: aiohttp, aiodns, pycares, etc.).
     # Keep this current with the latest HA to avoid transitive-version drift.
-    "pytest-homeassistant-custom-component==0.13.356",
+    "pytest-homeassistant-custom-component==0.13.357",
     "pytest-cov==7.1.0",
     "pytest-asyncio==1.4.0",
     "pytest-aiohttp==1.1.1",
