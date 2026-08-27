@@ -1,4 +1,4 @@
-# Dependabot configuration — see issue #59.
+# Dependabot configuration — see issues #59 and #218.
 #
 # Grouping is used to reduce PR noise. Group majors still produce one PR
 # per group when an update arrives. `pytest-homeassistant-custom-component`
@@ -8,13 +8,33 @@
 version: 2
 
 updates:
-  # Python deps declared in pyproject.toml + uv.lock.
-  - package-ecosystem: pip
+  # Python deps in pyproject.toml + uv.lock.
+  #
+  # The `uv` ecosystem, not `pip` (#218). `pip` rewrites pyproject.toml and
+  # leaves uv.lock untouched, so every bump PR it opened arrived with a stale
+  # lockfile and died on CI's `uv sync --locked` (#170, #173, #176, #199,
+  # #215). `uv` regenerates both, which is also what makes the `+ uv.lock` in
+  # this block's opening line true rather than aspirational.
+  - package-ecosystem: uv
     directory: /
     schedule:
       interval: weekly
       day: monday
     open-pull-requests-limit: 10
+    allow:
+      # Extends version updates to the dependencies of direct dependencies,
+      # which the `uv` ecosystem supports. Transitive packages appear only in
+      # uv.lock — the file pip-audit scans — so without this they have no bump
+      # path but a security update, and security updates fire on the GitHub
+      # Advisory Database. `pip` 26.1.2 had no GHSA entry for PYSEC-2026-3721
+      # and so reached neither path; it had to be relocked by hand. A version
+      # update needs no advisory at all.
+      #
+      # Cost is churn, and it is smaller than the size of uv.lock suggests:
+      # pytest-homeassistant-custom-component pins most of the tree exactly,
+      # so only the loose ones (pip, pipdeptree, ...) can move, and the
+      # dev-deps group collects them into one PR.
+      - dependency-type: "all"
     ignore:
       # PyTurboJPEG is not imported by this project; it ships in [dev] only
       # so HA's camera/stream integrations can load during tests. We pin to
@@ -22,9 +42,9 @@ updates:
       # Dependabot must not propose its own bumps past 1.x. Revisit when HA
       # bumps past 1.x.
       #
-      # pip ignore conditions take PEP 440 specifiers, not the `2.x` wildcard
-      # form npm/bundler accept — Dependabot rejects the whole config file if
-      # you use the wildcard here.
+      # Python ignore conditions take PEP 440 specifiers, not the `2.x`
+      # wildcard form npm/bundler accept — Dependabot rejects the whole config
+      # file if you use the wildcard here.
       - dependency-name: "pyturbojpeg"
         versions: [">=2.0"]
     groups:
