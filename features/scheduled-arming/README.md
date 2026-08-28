@@ -27,7 +27,7 @@ One row in the schedules list. Pair fields:
 - `enabled` — bool. Defaults to `true`. When `false`, neither arm nor disarm fires; the row remains in the list.
 - `created_at` — ISO-8601 UTC datetime, server-generated on create. Used as the stable sort key for `schedules/list`. Immutable after create.
 - `last_armed_at` — ISO-8601 UTC datetime or `null`. Set when this pair's arm fires successfully, when the arm is skipped via the `already_home` "take ownership" branch, or when the override listener adopts a panel that entered `armed_home` mid-window (#212). Used for restart reconciliation and the disarm-only-if-armed rule.
-- `last_disarmed_at` — ISO-8601 UTC datetime or `null`. Set when this pair's disarm fires, when the disarm edge finds the panel already changed, when the override listener cancels a pending disarm, or when reconciliation clears it. Never set by a skipped *arm*: that edge disarms nothing (#213).
+- `last_disarmed_at` — ISO-8601 UTC datetime or `null`. Set when this pair's disarm fires, when the disarm edge finds the panel already changed (`manual_override`) or not actionable (`panel_unavailable`), when the override listener cancels a pending disarm, or when reconciliation clears it. Never set by a skipped *arm*: that edge disarms nothing (#213).
 - `last_skip_reason` — optional short string (one of the `SkipReason` values, see below). UI hint only.
 - `last_error` — optional short string. Set after retries are exhausted. UI hint only.
 
