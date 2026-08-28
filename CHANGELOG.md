@@ -181,6 +181,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -  stop pinning logger level so logger.set_level works
 -  add dark-mode icon variant (fixes #153)
 
+## v1.2.3 (2026-08-28)
+
+### Fixes
+-  stop skipped arms stamping last_disarmed_at (fixes #213)
+-  adopt a manually-armed panel mid-window (fixes #212)
+-  give uv.lock an automated bump path (fixes #218)
+-  keep waiting for a late panel after HA start
+-  ignore panel unavailability in the override listener
+-  stop offline sensors reading as clear (fixes #210)
+-  keep the runtime up when platform unload fails
+-  merge runtime fields instead of writing back a stale pair
+-  quiesce in-flight schedule work at teardown
+-  move the alarm timeline lookup off the trigger path
+-  reject untriggerable alarm targets at write time
+-  confirm panel state before calling a schedule failed
+-  stop offering alarm types Abode rejects, and surface failures
+
 ## [1.0.0] - 2024-11-23
 
 ### ✨ Initial Release

@@ -22,7 +22,7 @@
     "aiohttp"
   ],
   "single_config_entry": true,
-  "version": "1.2.2",
+  "version": "1.2.3",
   "minimum_home_assistant_version": "2024.1.0",
   "diagnostics": true
 }
