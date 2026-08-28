@@ -642,11 +642,16 @@ class ScheduleManager:
         panel_str = self._panel_state()
 
         if panel_str == "armed_away":
-            # Away is a higher-priority state — skip both arm and disarm.
+            # Away is a higher-priority state — skip the arm.
+            #
+            # Neither this branch nor the `panel_unavailable` one below stamps
+            # `last_disarmed_at` (#213): the arm never fired, so they disarm
+            # nothing, and `derive_state` reads that field — writing it also
+            # released a pair that still owned the panel.  `last_skip_reason`
+            # and EVENT_SCHEDULE_SKIPPED carry the skip.
             persisted = await self._persist_runtime(
                 pair_id,
                 last_skip_reason=SkipReason.AWAY_ACTIVE,
-                last_disarmed_at=self._clock.utcnow(),
             )
             if persisted is None:
                 return
@@ -685,7 +690,6 @@ class ScheduleManager:
             persisted = await self._persist_runtime(
                 pair_id,
                 last_skip_reason=SkipReason.PANEL_UNAVAILABLE,
-                last_disarmed_at=self._clock.utcnow(),
             )
             if persisted is None:
                 return
@@ -1330,8 +1334,8 @@ class ScheduleManager:
             # reconciliation picks it up — it does not, and saying so would be
             # wrong in exactly the case that matters.  `async_reconcile_on_startup`
             # only rebuilds timers for pairs that are already ARMED, and the
-            # `away_active` branch stamps `last_disarmed_at` without ever setting
-            # `last_armed_at`, so a #212-shaped pair fails both of its guards.
+            # `away_active` branch never sets `last_armed_at`, so a #212-shaped
+            # pair is filtered out by that loop's anchor guards.
             #
             # The exclusion is plain conservatism: a seed of None means the panel
             # was unavailable when the listener started and this is the first mode
@@ -1391,11 +1395,11 @@ class ScheduleManager:
           shapes of it exist, and only naming the first is how the wrong branch
           got listed here once already:
 
-          - writers of ``last_disarmed_at`` — ``_arm_impl``'s ``away_active``
-            and ``panel_unavailable`` branches, ``_disarm_impl`` (including the
-            ``delay ≈ 0`` re-registration a WS edit can trigger), and
-            reconciliation.  (``_arm_impl``'s ``already_home`` branch is *not*
-            one: it writes ``last_armed_at``.)
+          - writers of ``last_disarmed_at`` — ``_disarm_impl`` (including the
+            ``delay ≈ 0`` re-registration a WS edit can trigger) and
+            reconciliation.  (No ``_arm_impl`` branch is one: ``already_home``
+            writes ``last_armed_at``, and the two skip branches stopped writing
+            the anchor at all in #213.)
           - and the writer that regresses ``last_armed_at`` — ``_arm_impl``'s
             success path, which anchors the arm to when the edge fired rather
             than when confirmation returned.  That is the confirmation-poll
@@ -1499,9 +1503,8 @@ class ScheduleManager:
                 # is not ours after all.  NOT `_handle_manual_override` —
                 # `_edge_lock` keeps it out of this pass entirely.  What remains
                 # is any *unlocked* writer, in either of two shapes: one that
-                # stamps `last_disarmed_at` at or past our anchor (`_arm_impl`'s
-                # `away_active` and `panel_unavailable` branches, `_disarm_impl`,
-                # reconciliation), or one that regresses `last_armed_at` behind
+                # stamps `last_disarmed_at` at or past our anchor (`_disarm_impl`
+                # or reconciliation), or one that regresses `last_armed_at` behind
                 # an existing `last_disarmed_at` (`_arm_impl`'s success path —
                 # the confirmation-poll overlap).  See the docstring for why the
                 # second shape is easy to leave off the list.

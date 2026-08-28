@@ -401,10 +401,11 @@ class TestArmFlow:
 
         refreshed = await manager.async_get(pair.id)
         assert refreshed is not None
-        assert refreshed.last_disarmed_at is not None
         assert refreshed.last_armed_at is None
+        assert refreshed.last_disarmed_at is None  # nothing was disarmed (#213)
 
-        # Disarm timer must NOT fire (last_disarmed_at is set, pair is IDLE).
+        # Disarm timer must NOT fire: the arm never happened, so no one-shot was
+        # ever registered and the pair is IDLE on `last_armed_at is None`.
         _set_panel(hass, "armed_home")
         async_fire_time_changed(
             hass, datetime(2030, 1, 8, 6, 0, 0, tzinfo=UTC), fire_all=True
@@ -487,6 +488,56 @@ class TestArmFlow:
 
         assert len(skipped) == 1
         assert skipped[0]["reason"] == SkipReason.PANEL_UNAVAILABLE
+
+    @pytest.mark.parametrize(
+        ("panel", "reason"),
+        [
+            ("armed_away", SkipReason.AWAY_ACTIVE),
+            ("unavailable", SkipReason.PANEL_UNAVAILABLE),
+        ],
+    )
+    async def test_a_skipped_arm_leaves_both_anchors_alone(
+        self,
+        hass: HomeAssistant,
+        manager: ScheduleManager,
+        fake_clock: FakeClock,
+        fake_mode_changer: FakeModeChanger,
+        panel: str,
+        reason: SkipReason,
+    ) -> None:
+        """A skipped arm reports itself with the reason, not a fake disarm (#213).
+
+        Both branches used to stamp `last_disarmed_at = utcnow()`, and on a live
+        install that read back as "this schedule disarmed the panel at 23:00" —
+        the opposite of what happened, at the *arm* edge.  Seeding a completed
+        prior cycle and asserting it is untouched is stronger than asserting the
+        anchors are `None`: `derive_state` reads `last_disarmed_at`, so a skip
+        must not rewrite the record of the last real cycle either.
+        """
+        now = fake_clock.utcnow()
+        armed_at = now - timedelta(days=1)
+        disarmed_at = now - timedelta(hours=16)
+        _set_panel(hass, panel)
+        skipped = _capture_events(hass, EVENT_SCHEDULE_SKIPPED)
+
+        pair = await manager.async_create(
+            weekdays=["mon"], arm_time="22:00", disarm_time="06:00"
+        )
+        pair.last_armed_at = armed_at
+        pair.last_disarmed_at = disarmed_at
+        await manager._store.async_update(pair)
+
+        await manager.async_arm(pair.id)
+        await hass.async_block_till_done()
+
+        assert len(fake_mode_changer.calls) == 0
+        assert [e["reason"] for e in skipped] == [reason]
+
+        refreshed = await manager.async_get(pair.id)
+        assert refreshed is not None
+        assert refreshed.last_armed_at == armed_at
+        assert refreshed.last_disarmed_at == disarmed_at
+        assert refreshed.last_skip_reason == reason
 
     async def test_disabled_pair_noop(
         self,
@@ -2506,8 +2557,8 @@ class TestManualArmAdoption:
         This pins a real residual gap rather than a covered one, so it is worth
         being explicit: reconciliation does **not** pick the case up either.  It
         only rebuilds timers for pairs already ARMED, and a pair whose arm was
-        skipped `away_active` has `last_disarmed_at` set with `last_armed_at`
-        still None, so it fails both of that loop's guards.  A reload landing
+        skipped `away_active` still has `last_armed_at` of None, so it is
+        filtered out by that loop's anchor guards.  A reload landing
         while the panel is unavailable, on a night whose arm was skipped, does
         therefore strand the panel for the rest of the window — in the safe
         direction (armed, never unarmed).  Closing it means teaching
@@ -2934,8 +2985,7 @@ class TestManualArmAdoption:
         the interleaving that guard was originally written against is gone — and
         with it the only test that reached the branch.  The guard is still live
         for any *unlocked* writer that can leave the record non-ARMED: those
-        that stamp `last_disarmed_at` (`_arm_impl`'s `away_active` and
-        `panel_unavailable` branches, `_disarm_impl`, reconciliation), and
+        that stamp `last_disarmed_at` (`_disarm_impl`, reconciliation), and
         `_arm_impl`'s success path, which trips it the other way — by regressing
         `last_armed_at` behind an existing `last_disarmed_at`.
 
