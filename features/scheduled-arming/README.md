@@ -27,7 +27,7 @@ One row in the schedules list. Pair fields:
 - `enabled` — bool. Defaults to `true`. When `false`, neither arm nor disarm fires; the row remains in the list.
 - `created_at` — ISO-8601 UTC datetime, server-generated on create. Used as the stable sort key for `schedules/list`. Immutable after create.
 - `last_armed_at` — ISO-8601 UTC datetime or `null`. Set when this pair's arm fires successfully, when the arm is skipped via the `already_home` "take ownership" branch, or when the override listener adopts a panel that entered `armed_home` mid-window (#212). Used for restart reconciliation and the disarm-only-if-armed rule.
-- `last_disarmed_at` — ISO-8601 UTC datetime or `null`. Set when this pair's disarm fires, when the pair completes its window without firing (skipped both sides), or when reconciliation clears it.
+- `last_disarmed_at` — ISO-8601 UTC datetime or `null`. Set when this pair's disarm fires, when the disarm edge finds the panel already changed, when the override listener cancels a pending disarm, or when reconciliation clears it. Never set by a skipped *arm*: that edge disarms nothing (#213).
 - `last_skip_reason` — optional short string (one of the `SkipReason` values, see below). UI hint only.
 - `last_error` — optional short string. Set after retries are exhausted. UI hint only.
 
@@ -47,7 +47,7 @@ Every mode change has a `ChangeSource`: `USER_WS`, `SCHEDULE_ARM`, `SCHEDULE_DIS
 ### Skip rule
 At arm time, the manager evaluates the **live** alarm panel state via `hass.states.get(panel_entity_id).state`:
 
-- `armed_away` → skip both arm and disarm; fire `schedule_skipped` (`reason: "away_active"`); set `last_disarmed_at = now()`.
+- `armed_away` → skip the arm; fire `schedule_skipped` (`reason: "away_active"`); set `last_skip_reason` only — the anchors are left alone, since nothing was armed or disarmed (#213).
 - `armed_home` → skip arm (already Home); but mark the pair as armed-by-us **only if no prior arm-by-us is currently pending** (so we don't extend someone else's pair). Pair extension semantics: see Overlapping pairs.
 - `disarmed` → arm.
 - Intermediate states (`arming`, `pending`, `triggered`, `unavailable`, `unknown`) — or the panel entity is unregistered (`hass.states.get(...)` returns `None`) → skip arm; fire `schedule_skipped` (`reason: "panel_unavailable"`).

@@ -225,7 +225,7 @@ class TestScheduleIntegration:
         assert panel_state is not None
         assert panel_state.state == "armed_away"  # Panel unchanged
 
-        # Disarm timer not scheduled (last_disarmed_at set) → no disarm fires.
+        # The arm never fired, so no one-shot disarm was ever registered.
         await _advance(hass, _DISARM_DT)
         panel_state = hass.states.get(_PANEL)
         assert panel_state is not None
