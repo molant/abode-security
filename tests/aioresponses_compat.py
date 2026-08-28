@@ -9,7 +9,7 @@ the latest release, and the last one before the project went quiet in April
     ClientResponse.__init__() missing 1 required keyword-only argument:
     'stream_writer'
 
-Home Assistant pins aiohttp exactly (2026.8.2 → 3.14.3), and that pin is what
+Home Assistant pins aiohttp exactly (2026.8.3 → 3.14.3), and that pin is what
 clears the aiohttp advisories the `pip-audit` CI job fails on, so downgrading
 aiohttp is not an option. The fixes exist upstream but only as unmerged pull
 requests:

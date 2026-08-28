@@ -7,8 +7,8 @@ name = "abode-security"
 version = "0.1.0"
 description = "Custom Home Assistant integration for Abode Security Systems"
 readme = "README.md"
-# Constrained by pytest-homeassistant-custom-component==0.13.356, which pins
-# homeassistant==2026.8.2 (requires Python 3.14.2+). Bump in lock-step with
+# Constrained by pytest-homeassistant-custom-component==0.13.357, which pins
+# homeassistant==2026.8.3 (requires Python 3.14.2+). Bump in lock-step with
 # the pinned HA version. The HA *runtime* version target is governed by
 # `minimum_home_assistant_version` in manifest.json, not this field.
 requires-python = ">=3.14.2"
@@ -42,18 +42,18 @@ dev = [
     # pytest-homeassistant-custom-component pins homeassistant exactly (and
     # therefore all of HA's transitive deps: aiohttp, aiodns, pycares, etc.).
     # Keep this current with the latest HA to avoid transitive-version drift.
-    "pytest-homeassistant-custom-component==0.13.356",
+    "pytest-homeassistant-custom-component==0.13.357",
     "pytest-cov==7.1.0",
     "pytest-asyncio==1.4.0",
     "pytest-aiohttp==1.1.1",
     "aioresponses==0.7.9",
 
     # Code quality
-    "ruff==0.16.3",
+    "ruff==0.16.4",
 
     # Mock server dependencies (for running locally outside Docker)
     "fastapi==0.141.1",
-    "uvicorn[standard]==0.52.3",
+    "uvicorn[standard]==0.52.4",
 
     # Used directly by config_flow.py, conftest.py, and the mock server.
     # Lower-bound only: homeassistant pins requests to a specific patch version
