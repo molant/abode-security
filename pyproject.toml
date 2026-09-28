@@ -27,12 +27,12 @@ dependencies = [
 dev = [
     # Type checking
     "mypy==2.3.1",
-    "types-requests==2.33.0.20260712",
+    "types-requests==2.33.0.20260906",
     # Pyright complements mypy by catching cached_property / variable-override
     # compatibility issues against HA's entity base classes (issue #70). Pinned
     # to match the locally-validated version; bump deliberately with the next
     # pyright release.
-    "pyright==1.1.411",
+    "pyright==1.1.414",
 
     # Testing
     # pytest, pytest-cov, pytest-asyncio and pytest-aiohttp are pinned exactly
@@ -42,18 +42,18 @@ dev = [
     # pytest-homeassistant-custom-component pins homeassistant exactly (and
     # therefore all of HA's transitive deps: aiohttp, aiodns, pycares, etc.).
     # Keep this current with the latest HA to avoid transitive-version drift.
-    "pytest-homeassistant-custom-component==0.13.357",
+    "pytest-homeassistant-custom-component==0.13.367",
     "pytest-cov==7.1.0",
     "pytest-asyncio==1.4.0",
     "pytest-aiohttp==1.1.1",
     "aioresponses==0.7.9",
 
     # Code quality
-    "ruff==0.16.4",
+    "ruff==0.16.9",
 
     # Mock server dependencies (for running locally outside Docker)
     "fastapi==0.141.1",
-    "uvicorn[standard]==0.52.4",
+    "uvicorn[standard]==0.53.0",
 
     # Used directly by config_flow.py, conftest.py, and the mock server.
     # Lower-bound only: homeassistant pins requests to a specific patch version
