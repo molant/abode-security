@@ -3,5 +3,5 @@ uvicorn[standard]==0.52.3
 # Latest v3-compatible majors so the mock server speaks Engine.IO v3,
 # matching the vendored Abode SocketIO client (and real Abode). See #105.
 # Pinned exactly to keep the Docker build reproducible.
-python-socketio==4.6.1
-python-engineio==3.14.2
+python-socketio==5.16.2
+python-engineio==4.13.2
