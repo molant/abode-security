@@ -15,4 +15,4 @@ sleep 2
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
   --user-data-dir=/tmp/chrome-debug-profile \
   --remote-debugging-port=9222 \
-  http://192.168.1.60:8123
+  http://10.10.10.60:8123
