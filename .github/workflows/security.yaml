@@ -9,7 +9,7 @@
 #    list for CVEs in HA-pinned transitive deps tracked by #79.
 #  - npm audit: --audit-level=high on both jobs.
 #
-# Not covered: tests/mock_server/requirements.txt. pip-audit reads uv.lock
+# Not covered: tests/mock_server/uv.lock. pip-audit reads the root uv.lock
 # only, and the mock server's python-socketio/python-engineio are held on
 # Engine.IO v3 majors on purpose (#105), so they would be permanent ignores
 # anyway. Test-only and container-scoped.

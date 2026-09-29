@@ -12,11 +12,12 @@ docker-compose up mock-abode
 ### Standalone
 ```bash
 cd tests/mock_server
-pip install -r requirements.txt
-python main.py
+uv run python main.py
 ```
 
-Server starts on http://localhost:8000
+Server starts on http://localhost:8000. Run `main.py`, not `uvicorn main:app`:
+the Socket.IO mount lives on `socket_app`, so serving `app` 403s every
+Socket.IO handshake.
 
 ## API Documentation
 

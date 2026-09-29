@@ -51,11 +51,7 @@ dev = [
     # Code quality
     "ruff==0.16.9",
 
-    # Mock server dependencies (for running locally outside Docker)
-    "fastapi==0.141.1",
-    "uvicorn[standard]==0.53.0",
-
-    # Used directly by config_flow.py, conftest.py, and the mock server.
+    # Used directly by config_flow.py and conftest.py.
     # Lower-bound only: homeassistant pins requests to a specific patch version
     # via pytest-homeassistant-custom-component, and that patch changes across
     # HA releases.
