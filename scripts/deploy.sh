@@ -10,7 +10,7 @@
 #   DEPLOY_HOST=ha.lan ./scripts/deploy.sh   # override per-invocation
 #
 # Required env vars (set in .deploy.env or your shell):
-#   DEPLOY_HOST   SSH host or IP of the HA instance (e.g. 192.168.1.60)
+#   DEPLOY_HOST   SSH host or IP of the HA instance (e.g. 10.10.10.60)
 #   DEPLOY_USER   SSH user on that host (e.g. molant)
 #
 # Optional:
