@@ -7,7 +7,7 @@ description = "Mock Abode API for integration and E2E tests"
 requires-python = ">=3.14.2"
 dependencies = [
     "fastapi==0.141.1",
-    "uvicorn[standard]==0.53.0",
+    "uvicorn[standard]==0.54.0",
     # Engine.IO v3 majors, to match the vendored Abode SocketIO client and
     # real Abode (#105). dependabot.yml ignores the v4 majors.
     "python-socketio==4.6.1",
