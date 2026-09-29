@@ -57,6 +57,29 @@ updates:
         patterns:
           - "pytest-homeassistant-custom-component"
 
+  # Mock Abode server (tests/mock_server/pyproject.toml + uv.lock).
+  - package-ecosystem: uv
+    directory: /tests/mock_server
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    allow:
+      # Same reason as the root block: transitive pins in uv.lock otherwise
+      # move only on a GHSA-backed security update.
+      - dependency-type: "all"
+    ignore:
+      # Held on the Engine.IO v3 majors to match the vendored client and
+      # real Abode (#105). v5/v4 fail to start the server.
+      - dependency-name: "python-socketio"
+        versions: [">=5"]
+      - dependency-name: "python-engineio"
+        versions: [">=4"]
+    groups:
+      mock-server:
+        patterns:
+          - "*"
+
   # Frontend (Lit panel + build tooling + tests).
   - package-ecosystem: npm
     directory: /frontend
@@ -72,6 +95,10 @@ updates:
       # wants its own commit. Drop this once that happens.
       - dependency-name: "prettier"
         versions: ["3.9.x"]
+      # typescript-eslint 8.x peers on `typescript <6.1.0`, so 7.x fails
+      # `npm ci` with ERESOLVE. Drop once typescript-eslint supports 7.
+      - dependency-name: "typescript"
+        versions: [">=7"]
     groups:
       lit:
         patterns:
