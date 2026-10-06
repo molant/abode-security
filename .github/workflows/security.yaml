@@ -7,7 +7,8 @@
 # Severity thresholds:
 #  - pip-audit: defaults (fails on any finding) plus an explicit ignore
 #    list for CVEs in HA-pinned transitive deps tracked by #79.
-#  - npm audit: --audit-level=high on both jobs.
+#  - npm audit: --audit-level=high on both jobs; the frontend job filters
+#    out allowlisted GHSAs (see its Audit step).
 #
 # Not covered: tests/mock_server/uv.lock. pip-audit reads the root uv.lock
 # only, and the mock server's python-socketio/python-engineio are held on
@@ -86,6 +87,8 @@ jobs:
         #   PYSEC-2026-3553 — cryptography 48.0.1 (HA pins; fix 49.0.0)
         #   PYSEC-2026-3554 — cryptography 48.0.1 (HA pins; fix 49.0.0)
         #   CVE-2026-102274 — pyjwt 2.13.0 (HA pins; fix 2.14.0)
+        #   CVE-2026-102275 — pyjwt 2.13.0 (HA pins; fix 2.15.0)
+        #   PYSEC-2026-4140..4151 — pyjwt 2.13.0 (HA pins; fix 2.14.0, 4141 needs 2.15.0)
         #
         # `--python 3.14` is load-bearing: pip-audit resolves the requirement
         # set in a throwaway venv, and on a default (older) interpreter that
@@ -96,7 +99,20 @@ jobs:
             --ignore-vuln PYSEC-2026-3552 \
             --ignore-vuln PYSEC-2026-3553 \
             --ignore-vuln PYSEC-2026-3554 \
-            --ignore-vuln CVE-2026-102274
+            --ignore-vuln CVE-2026-102274 \
+            --ignore-vuln CVE-2026-102275 \
+            --ignore-vuln PYSEC-2026-4140 \
+            --ignore-vuln PYSEC-2026-4141 \
+            --ignore-vuln PYSEC-2026-4142 \
+            --ignore-vuln PYSEC-2026-4143 \
+            --ignore-vuln PYSEC-2026-4144 \
+            --ignore-vuln PYSEC-2026-4145 \
+            --ignore-vuln PYSEC-2026-4146 \
+            --ignore-vuln PYSEC-2026-4147 \
+            --ignore-vuln PYSEC-2026-4148 \
+            --ignore-vuln PYSEC-2026-4149 \
+            --ignore-vuln PYSEC-2026-4150 \
+            --ignore-vuln PYSEC-2026-4151
 
   npm-audit-frontend:
     name: npm audit (frontend)
@@ -118,7 +134,25 @@ jobs:
         run: npm ci
 
       - name: Audit
-        run: npm audit --audit-level=high
+        # Same as `npm audit --audit-level=high`, minus allowlisted advisories.
+        # Current entries:
+        #   GHSA-vfj7-8cjw-p6xm — braces <=3.0.3, no fixed release; dev-only
+        #     via @web/test-runner. Remove once braces ships a fix.
+        # Fails closed: empty output or an npm error response (no
+        # `.vulnerabilities` object) makes jq error out.
+        run: |
+          npm audit --json > /tmp/npm-audit.json || true
+          remaining=$(jq -n -r --argjson ignore '["GHSA-vfj7-8cjw-p6xm"]' '
+            input | if (.vulnerabilities | type) != "object" then error("unexpected npm audit output") else . end
+            | [.vulnerabilities[].via[] | objects
+             | select(.severity == "high" or .severity == "critical")
+             | select(.url | split("/") | last | IN($ignore[]) | not)
+             | "\(.severity) \(.name): \(.title) \(.url)"]
+            | unique | .[]' /tmp/npm-audit.json)
+          if [ -n "$remaining" ]; then
+            echo "$remaining"
+            exit 1
+          fi
 
   npm-audit-root:
     name: npm audit (root / E2E)
