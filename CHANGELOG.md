@@ -201,7 +201,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## v1.2.4 (2026-10-06)
 
 ### Other Changes
-- Point HA host at 10.10.10.60 after LAN renumber
+- Update deploy host after LAN renumber
 
 ## [1.0.0] - 2024-11-23
 

@@ -530,24 +530,24 @@ docker-compose up --build
 
 ### SSH Access
 ```bash
-ssh molant@192.168.1.60
+ssh <user>@<ha-host>
 ```
 
 ### Deploy Integration
 ```bash
 # From local machine
-scp -r custom_components/abode_security molant@192.168.1.60:/homeassistant/custom_components/
+scp -r custom_components/abode_security <user>@<ha-host>:/homeassistant/custom_components/
 ```
 
 ### Restart Home Assistant
 ```bash
 # On remote machine
-ssh molant@192.168.1.60 'ha core restart'
+ssh <user>@<ha-host> 'ha core restart'
 ```
 
 ### View Logs
 ```bash
-ssh molant@192.168.1.60 'ha core logs'
+ssh <user>@<ha-host> 'ha core logs'
 ```
 
 ### Production Checklist
@@ -781,14 +781,14 @@ npm run test:e2e               # E2E browser tests
 ### Production Deployment
 
 **SSH and SCP**:
-- **IP**: 192.168.1.60
-- **User**: molant
+- **IP**: <ha-host>
+- **User**: <user>
 - **Remote path**: `/homeassistant/custom_components/abode_security`
-- **Logs**: `ssh molant@192.168.1.60 'ha core logs'`
+- **Logs**: `ssh <user>@<ha-host> 'ha core logs'`
 
 **Deploy**:
 ```bash
-scp -r custom_components/abode_security molant@192.168.1.60:/homeassistant/custom_components/
+scp -r custom_components/abode_security <user>@<ha-host>:/homeassistant/custom_components/
 ```
 
 ### Git Workflow

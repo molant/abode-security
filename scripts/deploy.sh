@@ -10,8 +10,8 @@
 #   DEPLOY_HOST=ha.lan ./scripts/deploy.sh   # override per-invocation
 #
 # Required env vars (set in .deploy.env or your shell):
-#   DEPLOY_HOST   SSH host or IP of the HA instance (e.g. 10.10.10.60)
-#   DEPLOY_USER   SSH user on that host (e.g. molant)
+#   DEPLOY_HOST   SSH host or IP of the HA instance (e.g. ha.example.lan)
+#   DEPLOY_USER   SSH user on that host (e.g. your-ha-user)
 #
 # Optional:
 #   DEPLOY_PATH   Remote install path. Default: /homeassistant/custom_components/abode_security

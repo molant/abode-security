@@ -551,26 +551,11 @@ docker-compose up --build
 
 ## Production Deployment
 
-### SSH Access
-```bash
-ssh molant@192.168.1.60
-```
+Copy `.deploy.env.example` to `.deploy.env` (gitignored) and set the host and user, then:
 
-### Deploy Integration
 ```bash
-# From local machine
-scp -r custom_components/abode_security molant@192.168.1.60:/homeassistant/custom_components/
-```
-
-### Restart Home Assistant
-```bash
-# On remote machine
-ssh molant@192.168.1.60 'ha core restart'
-```
-
-### View Logs
-```bash
-ssh molant@192.168.1.60 'ha core logs'
+./scripts/deploy.sh               # rsync + restart HA
+./scripts/deploy.sh --dry-run     # preview only
 ```
 
 ### Production Checklist
