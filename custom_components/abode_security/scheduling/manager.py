@@ -290,7 +290,8 @@ class ScheduleManager:
             # "work was dropped" without saying which is not much help to
             # someone debugging a schedule that skipped a reload.
             _LOGGER.debug(
-                "Dropped %s; schedule manager is shut down", coro.__qualname__
+                "Dropped %s; schedule manager is shut down",
+                getattr(coro, "__qualname__", coro),
             )
             coro.close()
             return None
