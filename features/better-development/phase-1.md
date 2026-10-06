@@ -6,7 +6,7 @@
 Create a dockerized Home Assistant development environment that auto-loads the integration with file watching for hot reload.
 
 ## Context
-Currently, testing requires deploying to production (ssh to 192.168.1.60), which is cumbersome and risky. This phase creates a local Docker environment that mimics production but runs entirely on your development machine.
+Currently, testing requires deploying to production (ssh to <ha-host>), which is cumbersome and risky. This phase creates a local Docker environment that mimics production but runs entirely on your development machine.
 
 ## Prerequisites
 - Docker and Docker Compose installed
