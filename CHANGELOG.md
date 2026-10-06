@@ -198,6 +198,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -  confirm panel state before calling a schedule failed
 -  stop offering alarm types Abode rejects, and surface failures
 
+## v1.2.4 (2026-10-06)
+
+### Other Changes
+- Point HA host at 10.10.10.60 after LAN renumber
+
 ## [1.0.0] - 2024-11-23
 
 ### ✨ Initial Release
