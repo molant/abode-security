@@ -27,7 +27,7 @@ dependencies = [
 dev = [
     # Type checking
     "mypy==2.4.0",
-    "types-requests==2.33.0.20260906",
+    "types-requests==2.33.0.20261006",
     # Pyright complements mypy by catching cached_property / variable-override
     # compatibility issues against HA's entity base classes (issue #70). Pinned
     # to match the locally-validated version; bump deliberately with the next
