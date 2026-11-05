@@ -89,6 +89,13 @@ jobs:
         #   CVE-2026-102274 — pyjwt 2.13.0 (HA pins; fix 2.14.0)
         #   CVE-2026-102275 — pyjwt 2.13.0 (HA pins; fix 2.15.0)
         #   PYSEC-2026-4140..4151 — pyjwt 2.13.0 (HA pins; fix 2.14.0, 4141 needs 2.15.0)
+        #   GHSA-pxh4-856f-4h89 — pyjwt 2.13.0 (HA pins; fix 2.14.0)
+        #   CVE-2026-111063..111066, CVE-2026-111748..111750, GHSA-2g87-pp6c-29x5
+        #     — aiohttp 3.14.3 (HA pins; fix 3.14.4, HA 2026.10.0)
+        #   CVE-2026-112390..112406, CVE-2026-112891..112900, CVE-2026-96638,
+        #   CVE-2026-96640, CVE-2026-96778, GHSA-78g4-xqwv-q3g8,
+        #   PYSEC-2026-4326..4343 — pillow 12.3.0 (HA pins; fix 13.0.0, HA 2026.11.0)
+        #   PYSEC-2026-4321 — uv 0.12.5 (HA pins; fix 0.13.4, HA 2026.10.3)
         #
         # `--python 3.14` is load-bearing: pip-audit resolves the requirement
         # set in a throwaway venv, and on a default (older) interpreter that
@@ -112,7 +119,56 @@ jobs:
             --ignore-vuln PYSEC-2026-4148 \
             --ignore-vuln PYSEC-2026-4149 \
             --ignore-vuln PYSEC-2026-4150 \
-            --ignore-vuln PYSEC-2026-4151
+            --ignore-vuln PYSEC-2026-4151 \
+            --ignore-vuln GHSA-pxh4-856f-4h89 \
+            --ignore-vuln CVE-2026-111063 \
+            --ignore-vuln CVE-2026-111064 \
+            --ignore-vuln CVE-2026-111065 \
+            --ignore-vuln CVE-2026-111066 \
+            --ignore-vuln CVE-2026-111748 \
+            --ignore-vuln CVE-2026-111749 \
+            --ignore-vuln CVE-2026-111750 \
+            --ignore-vuln GHSA-2g87-pp6c-29x5 \
+            --ignore-vuln CVE-2026-112390 \
+            --ignore-vuln CVE-2026-112391 \
+            --ignore-vuln CVE-2026-112393 \
+            --ignore-vuln CVE-2026-112395 \
+            --ignore-vuln CVE-2026-112399 \
+            --ignore-vuln CVE-2026-112400 \
+            --ignore-vuln CVE-2026-112401 \
+            --ignore-vuln CVE-2026-112404 \
+            --ignore-vuln CVE-2026-112406 \
+            --ignore-vuln CVE-2026-112891 \
+            --ignore-vuln CVE-2026-112892 \
+            --ignore-vuln CVE-2026-112893 \
+            --ignore-vuln CVE-2026-112894 \
+            --ignore-vuln CVE-2026-112895 \
+            --ignore-vuln CVE-2026-112897 \
+            --ignore-vuln CVE-2026-112899 \
+            --ignore-vuln CVE-2026-112900 \
+            --ignore-vuln CVE-2026-96638 \
+            --ignore-vuln CVE-2026-96640 \
+            --ignore-vuln CVE-2026-96778 \
+            --ignore-vuln GHSA-78g4-xqwv-q3g8 \
+            --ignore-vuln PYSEC-2026-4326 \
+            --ignore-vuln PYSEC-2026-4327 \
+            --ignore-vuln PYSEC-2026-4328 \
+            --ignore-vuln PYSEC-2026-4329 \
+            --ignore-vuln PYSEC-2026-4330 \
+            --ignore-vuln PYSEC-2026-4331 \
+            --ignore-vuln PYSEC-2026-4332 \
+            --ignore-vuln PYSEC-2026-4333 \
+            --ignore-vuln PYSEC-2026-4334 \
+            --ignore-vuln PYSEC-2026-4335 \
+            --ignore-vuln PYSEC-2026-4336 \
+            --ignore-vuln PYSEC-2026-4337 \
+            --ignore-vuln PYSEC-2026-4338 \
+            --ignore-vuln PYSEC-2026-4339 \
+            --ignore-vuln PYSEC-2026-4340 \
+            --ignore-vuln PYSEC-2026-4341 \
+            --ignore-vuln PYSEC-2026-4342 \
+            --ignore-vuln PYSEC-2026-4343 \
+            --ignore-vuln PYSEC-2026-4321
 
   npm-audit-frontend:
     name: npm audit (frontend)
