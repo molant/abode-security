@@ -26,8 +26,8 @@ dependencies = [
 # requirements-dev.txt; pyproject.toml + uv.lock is authoritative now.
 dev = [
     # Type checking
-    "mypy==2.4.0",
-    "types-requests==2.33.0.20260906",
+    "mypy==2.4.1",
+    "types-requests==2.33.0.20261006",
     # Pyright complements mypy by catching cached_property / variable-override
     # compatibility issues against HA's entity base classes (issue #70). Pinned
     # to match the locally-validated version; bump deliberately with the next
@@ -49,7 +49,7 @@ dev = [
     "aioresponses==0.7.9",
 
     # Code quality
-    "ruff==0.16.10",
+    "ruff==0.17.3",
 
     # Used directly by config_flow.py and conftest.py.
     # Lower-bound only: homeassistant pins requests to a specific patch version
