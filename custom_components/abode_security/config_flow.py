@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Any, cast
 
-import voluptuous as vol
+import probatio as vol
 from homeassistant.config_entries import (
     SOURCE_REAUTH,
     ConfigEntry,

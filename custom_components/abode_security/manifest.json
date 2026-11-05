@@ -23,6 +23,6 @@
   ],
   "single_config_entry": true,
   "version": "1.2.4",
-  "minimum_home_assistant_version": "2024.1.0",
+  "minimum_home_assistant_version": "2026.10.0",
   "diagnostics": true
 }

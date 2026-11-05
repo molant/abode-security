@@ -6,7 +6,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any, cast
 
-import voluptuous as vol
+import probatio as vol
 from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api.decorators import (
     async_response,

@@ -5,13 +5,11 @@ from __future__ import annotations
 from math import ceil
 from typing import Any
 
-from homeassistant.components.light import (
+from homeassistant.components.light import LightEntity
+from homeassistant.components.light.const import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP_KELVIN,
     ATTR_HS_COLOR,
-    LightEntity,
-)
-from homeassistant.components.light.const import (
     DEFAULT_MAX_KELVIN,
     DEFAULT_MIN_KELVIN,
     ColorMode,

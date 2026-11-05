@@ -64,8 +64,7 @@ def _render_notify_data(hass, scope: dict[str, Any]) -> dict[str, Any]:
 
     Deliberately reads the template out of the blueprint rather than
     reimplementing the merge, so a change to how the three dicts are combined
-    is covered here. The merge avoids HA's `combine` filter, which needs
-    2024.10+ while the integration declares a 2024.1 floor.
+    is covered here.
     """
     notify_step = _blueprint()["action"][1]
     tmpl = notify_step["data"]["data"]
