@@ -140,10 +140,4 @@ action:
     data:
       title: "{{ title_text }}"
       message: "{{ message_text }}"
-      # Merged with dict(pairs) rather than HA's `combine` filter, which only
-      # exists on 2024.10+ — this blueprint has to work on the version floor
-      # the integration declares in manifest.json.
-      data: >-
-        {{ dict(link_data.items() | list
-                + image_data.items() | list
-                + push_data.items() | list) }}
+      data: "{{ link_data | combine(image_data, push_data) }}"

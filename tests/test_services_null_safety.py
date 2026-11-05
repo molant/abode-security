@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, Mock, patch
 
+import probatio as vol
 import pytest
-import voluptuous as vol
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.abode_security.abode.exceptions import (
