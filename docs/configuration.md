@@ -26,7 +26,7 @@ After setup, open the integration's **Configure** dialog to tune:
 The integration ships a visual panel at `/abode_security` with three tabs:
 
 - **Modes** — Home, Standby, and Away. Switch the active mode and see which actions each mode runs.
-- **Actions** — rules that watch one or more **Home Assistant sensors** (any entity, not just Abode), wait an optional delay, and optionally arm an Abode alarm (burglar, panic, medical, smoke/CO, etc.) or fire a notification-only event.
+- **Actions** — rules that watch one or more **Home Assistant sensors** (any entity, not just Abode), wait an optional delay, and optionally raise an Abode panic, silent panic or medical alarm (see [`trigger_alarm`](#abode_securitytrigger_alarm) for why burglar, smoke and CO are not possible) or fire a notification-only event.
 - **Cameras** — every camera entity in Home Assistant, so snapshot notifications can deep-link to the right one regardless of source integration.
 
 **Home schedules** let you enable automatic arming/disarming on a weekly timetable.
@@ -36,7 +36,7 @@ The integration ships a visual panel at `/abode_security` with three tabs:
 > Home Assistant renamed "services" to "actions" in the UI; YAML accepts either `service:` or `action:`. Call these from **Developer Tools → Actions**.
 
 ### `abode_security.trigger_alarm`
-Trigger a manual alarm. `alarm_type` is one of `PANIC`, `SILENT_PANIC`, `MEDICAL` — the only three Abode accepts on demand. `CO`, `SMOKE`, `SMOKE_CO` and `BURGLAR` are inbound classifications reported by sensors; the API rejects them with `400 errorCode 16013`, and the service now refuses them up front.
+Trigger a manual alarm. `alarm_type` is one of `PANIC`, `SILENT_PANIC`, `MEDICAL` — the only three Abode accepts on demand. `CO`, `SMOKE`, `SMOKE_CO` and `BURGLAR` are inbound classifications reported by sensors; the API rejects them with `400 errorCode 16013`, and the service refuses them up front. A non-Abode sensor therefore cannot raise a genuine Abode burglar alarm; the closest is `PANIC`, which Abode reports to monitoring as a panic, not an intrusion.
 
 ```yaml
 action: abode_security.trigger_alarm

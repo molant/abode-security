@@ -27,7 +27,7 @@ The built-in Abode integration can only react to Abode's own sensors. This one l
 | Abode devices (sensors, cameras, locks, alarm panel) | ✅ | ✅ |
 | Trigger alarms & actions from **any HA sensor or camera** | ❌ | ✅ |
 | Visual editor for modes, actions & schedules | ❌ | ✅ |
-| Manual alarm trigger (panic / medical / CO / smoke / burglar) | ❌ | ✅ |
+| Manual alarm trigger (panic / silent panic / medical — [why not burglar?](docs/configuration.md#abode_securitytrigger_alarm)) | ❌ | ✅ |
 | Rich notifications with camera snapshots | ❌ | ✅ |
 | Scheduled arming / disarming | ❌ | ✅ |
 
